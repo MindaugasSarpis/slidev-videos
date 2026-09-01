@@ -1,0 +1,16 @@
+# managed video dirs — raws and encodes are never committed (releases host them)
+videos/raw/
+videos/hq/
+public/videos/
+public/videos-hq
+dist/
+node_modules/
+__pycache__/
+*.egg-info/
+# stray masters safety net
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.m4v
+*.avi
