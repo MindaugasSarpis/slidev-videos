@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slidev-videos"
+version = "0.1.0"
+description = "Release-hosted video pipeline CLI for Slidev decks (manifest-driven fetch/encode/publish/check)"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+[project.scripts]
+slidev-videos = "slidev_videos.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+slidev_videos = ["shared.toml"]

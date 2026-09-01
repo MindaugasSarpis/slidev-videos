@@ -1,0 +1,14 @@
+# Shared clip registry for slidev-videos consumers.
+#
+# Entries are CERN/space B-roll and CGI sims shared by more than one deck,
+# published on this repo's `videos-shared` GitHub Release (1080p H.264 web
+# encodes). The initial 33-entry library lands with the shared-library
+# encode pass (course spec §5.3); until then this stub keeps `check` and
+# `pull --include-shared` well-defined (no shared names).
+#
+# Naming: lowercase snake_case, no resolution/codec suffixes; CDS clips keep
+# their report-number digits (e.g. cern_footage_2022_013_001.mp4).
+
+[defaults]
+release_tag = "videos-shared"
+repo        = "MindaugasSarpis/slidev-videos"
