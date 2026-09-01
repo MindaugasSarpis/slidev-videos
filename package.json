@@ -1,0 +1,19 @@
+{
+  "name": "slidev-addon-videos",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Slidev addon: full-bleed VideoPlayer streaming from GitHub Release assets with a local/remote fallback chain",
+  "repository": { "type": "git", "url": "https://github.com/MindaugasSarpis/slidev-videos.git" },
+  "license": "MIT",
+  "keywords": ["slidev-addon", "video"],
+  "files": ["components", "README.md"],
+  "scripts": {
+    "build:example": "slidev build example/slides.md --out dist --base /",
+    "smoke": "node scripts/smoke-example.mjs"
+  },
+  "devDependencies": {
+    "@slidev/cli": "^52.1.0",
+    "@slidev/theme-default": "latest",
+    "playwright-chromium": "^1.49.0"
+  }
+}
