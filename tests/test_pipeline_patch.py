@@ -1,5 +1,6 @@
 """Behaviour added by the config-layer patch: trim args, gh --repo, fetch parser."""
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -97,3 +98,40 @@ def test_parser_has_fetch_and_project_and_build_quick(capsys):
     with pytest.raises(SystemExit):
         pipeline.main(["build", "--help"])
     assert "--quick" in capsys.readouterr().out
+
+
+# --- two-pass loudnorm must measure the same audio the encode processes ------
+
+FAKE_STATS = ('{ "input_i" : "-8.62", "input_tp" : "0.39", "input_lra" : "8.6", '
+              '"input_thresh" : "-20.99", "output_i" : "-16.0", "output_tp" : "-1.5", '
+              '"output_lra" : "8.6", "output_thresh" : "-28.4", "normalization_type" : "linear", '
+              '"target_offset" : "0.02" }')
+
+
+def _capture_measure(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr=FAKE_STATS)
+
+    monkeypatch.setattr(pipeline, "_probe_audio_codec", lambda p: "aac")
+    monkeypatch.setattr(pipeline.subprocess, "run", fake_run)
+    return calls
+
+
+def test_loudness_measured_on_trimmed_segment(monkeypatch, tmp_path):
+    calls = _capture_measure(monkeypatch)
+    af = pipeline._loudnorm_args(tmp_path / "x.mp4", entry(trim=("1:40", "3:10")))
+    (cmd,) = calls
+    # The first pass seeks like the encode does: -ss before -i, -t after it.
+    assert cmd[cmd.index("-i") - 2:cmd.index("-i")] == ["-ss", "1:40"]
+    assert cmd[cmd.index("-i") + 2:cmd.index("-i") + 4] == ["-t", "90.000"]
+    assert "measured_I=-8.62" in af[1] and "linear=true" in af[1]
+
+
+def test_loudness_measured_whole_when_untrimmed(monkeypatch, tmp_path):
+    calls = _capture_measure(monkeypatch)
+    pipeline._loudnorm_args(tmp_path / "x.mp4", entry())
+    (cmd,) = calls
+    assert "-ss" not in cmd and "-t" not in cmd
