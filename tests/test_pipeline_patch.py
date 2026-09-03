@@ -1,4 +1,5 @@
 """Behaviour added by the config-layer patch: trim args, gh --repo, fetch parser."""
+import re
 from pathlib import Path
 
 import pytest
@@ -64,7 +65,15 @@ def test_shared_manifest_reads_bundled_registry(tmp_path):
     shared_defaults, shared_videos = pipeline.load_shared_manifest()
     assert shared_defaults["release_tag"] == "videos-shared"
     assert shared_defaults["repo"] == "MindaugasSarpis/slidev-videos"
-    assert shared_videos == []   # stub registry has no entries yet
+    # The shared library (course spec §5.3): populated, unique, valid
+    # profiles, §5.2 naming (snake_case, no resolution/codec suffixes).
+    assert len(shared_videos) >= 34
+    names = [v.name for v in shared_videos]
+    assert len(set(names)) == len(names)
+    for v in shared_videos:
+        assert v.profile in pipeline.PROFILE_NAMES, v.name
+        assert re.fullmatch(r"[a-z0-9_]+\.(mp4|webm)", v.name), v.name
+        assert not re.search(r"(1080p|2160p|h26[45]|hevc)", v.name), v.name
 
 
 def test_shared_disabled(tmp_path):
