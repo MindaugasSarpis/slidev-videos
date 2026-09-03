@@ -15,5 +15,8 @@
     "@slidev/cli": "^52.1.0",
     "@slidev/theme-default": "latest",
     "playwright-chromium": "^1.49.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["playwright-chromium"]
   }
 }
