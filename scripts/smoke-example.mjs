@@ -9,6 +9,8 @@
 //   5. `p` toggles play/pause (a paused clip with no media still flips
 //      `paused` back and forth via play()/pause()).
 // Media requests are aborted so the missing clips never stall the run.
+// No fixed sleeps: every assertion polls for the state it expects (`until`),
+// so a slow CI runner only makes the run slower, not flaky.
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
@@ -53,10 +55,21 @@ const state = (n) => page.evaluate((n) => {
     stored: localStorage.getItem('slidev-addon-videos:volume'),
   }
 }, n)
+// Poll slide n's state until `pred` holds (or the deadline passes); returns
+// the last observed state either way so the caller's check() can report it.
+const until = async (n, pred, timeout = 5000) => {
+  const deadline = Date.now() + timeout
+  let s = await state(n)
+  while (!pred(s) && Date.now() < deadline) {
+    await page.waitForTimeout(25)
+    s = await state(n)
+  }
+  return s
+}
+const press = async (key, times = 1) => { for (let i = 0; i < times; i++) await page.keyboard.press(key) }
 const goto = async (n) => {
   await page.evaluate((n) => { location.hash = '#/' + n }, n)
   await page.waitForSelector(`.slidev-page[data-slidev-no="${n}"] video`, { state: 'attached', timeout: 15000 })
-  await page.waitForTimeout(300)
 }
 
 // Every media URL the player asks for, in order — the chain is observed
@@ -83,49 +96,51 @@ const preloads = await page.evaluate(() => [...document.querySelectorAll('link[r
 check('no shared-release preload when shared: false', !preloads.some(u => u.includes('slidev-videos')), preloads.join(','))
 
 // --- volume: config default, keys, clamps, badge, persistence -------------
-let s = await state(2)
+let s = await until(2, (s) => near(s.volume, 0.4))
 check('videos.volume applied on activation', near(s.volume, 0.4), `volume=${s.volume}`)
 check('no badge before any key', s.badge === null && s.stored === null)
 
-await page.keyboard.press('+'); await page.waitForTimeout(80)
-s = await state(2)
+await press('+')
+s = await until(2, (s) => near(s.volume, 0.5) && s.badge !== null && s.stored !== null)
 check('`+` steps volume up by 0.1', near(s.volume, 0.5), `volume=${s.volume}`)
 check('`+` shows the badge', s.badge === '🔊 50%', `badge=${s.badge}`)
 check('`+` persists the level', s.stored === '0.5', `stored=${s.stored}`)
 
-await page.keyboard.press('='); await page.waitForTimeout(80)
-s = await state(2)
+await press('=')
+s = await until(2, (s) => near(s.volume, 0.6))
 check('`=` counts as `+`', near(s.volume, 0.6), `volume=${s.volume}`)
 
-for (let i = 0; i < 8; i++) await page.keyboard.press('-')
-await page.waitForTimeout(80)
-s = await state(2)
+await press('-', 8)
+s = await until(2, (s) => s.volume === 0 && s.badge === '🔇 0%')
 check('`-` clamps at 0 and shows the muted badge', s.volume === 0 && s.badge === '🔇 0%', `volume=${s.volume} badge=${s.badge}`)
 
-for (let i = 0; i < 12; i++) await page.keyboard.press('+')
-await page.waitForTimeout(80)
-s = await state(2)
+await press('+', 12)
+s = await until(2, (s) => s.volume === 1)
 check('`+` clamps at 1', s.volume === 1, `volume=${s.volume}`)
 
-for (let i = 0; i < 3; i++) await page.keyboard.press('-')
-await page.waitForTimeout(1500)
-s = await state(2)
+// The badge must be seen at the new level first, then disappear on its own.
+await press('-', 3)
+s = await until(2, (s) => near(s.volume, 0.7) && s.badge === '🔊 70%')
+check('badge shows the stepped level', s.badge === '🔊 70%', `badge=${s.badge} volume=${s.volume}`)
+s = await until(2, (s) => s.badge === null)
 check('badge fades after ~1 s', s.badge === null && near(s.volume, 0.7), `badge=${s.badge} volume=${s.volume}`)
 
 // --- `p` toggles play/pause on the active clip ------------------------------
-await page.keyboard.press('p'); await page.waitForTimeout(80)
-const afterP = await state(2)
-await page.keyboard.press('p'); await page.waitForTimeout(80)
-const afterPP = await state(2)
-check('`p` toggles paused', afterP.paused !== afterPP.paused, `p=${afterP.paused} pp=${afterPP.paused}`)
+const before = await state(2)
+await press('p')
+const afterP = await until(2, (s) => s.paused !== before.paused)
+await press('p')
+const afterPP = await until(2, (s) => s.paused === before.paused)
+check('`p` toggles paused', afterP.paused !== before.paused && afterPP.paused === before.paused, `start=${before.paused} p=${afterP.paused} pp=${afterPP.paused}`)
 
 // --- the level carries over to the next clip ---------------------------------
 await goto(3)
-s = await state(3)
+s = await until(3, (s) => near(s.volume, 0.7))
 check('session level applied to the next clip', near(s.volume, 0.7), `volume=${s.volume}`)
 
 // --- Slidev navigation keys are untouched -----------------------------------
-await page.keyboard.press('ArrowLeft'); await page.waitForTimeout(300)
+await press('ArrowLeft')
+await page.waitForFunction(() => location.hash === '#/2', null, { timeout: 5000 }).catch(() => {})
 const hash = await page.evaluate(() => location.hash)
 check('arrow navigation still works', hash === '#/2', `hash=${hash}`)
 
