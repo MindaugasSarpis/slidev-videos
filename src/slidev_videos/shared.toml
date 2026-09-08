@@ -162,8 +162,8 @@ notes   = "ATLAS-FOOTAGE-2022-004-002 — descending the ATLAS shaft (0:29, 3:2 
 
 [[videos]]
 name    = "atlas_video_2021_001_001.mp4"
-profile = "standard"
-notes   = "ATLAS-VIDEO-2021-001-001 — ATLAS detector overview (0:49). Source: cern/atlas_video_2021_001_001_1080ph265.mp4"
+profile = "silent-loop"
+notes   = "ATLAS-VIDEO-2021-001-001 — ATLAS detector overview (0:49), silent: the source's audio track is digital silence, so the web copy strips it. Source: cern/atlas_video_2021_001_001_1080ph265.mp4"
 
 [[videos]]
 name    = "cms.mp4"
@@ -172,8 +172,8 @@ notes   = "CMS detector (~0:30). Source: cern/cms.mp4"
 
 [[videos]]
 name    = "cern_footage_2022_042_001.mp4"
-profile = "standard"
-notes   = "CERN-FOOTAGE-2022-042-001 — LHCb detector 3D fly-in (0:56). Source: cern/cern_footage_2022_042_001.mov"
+profile = "silent-loop"
+notes   = "CERN-FOOTAGE-2022-042-001 — LHCb detector 3D fly-in (0:56), silent: the source's audio track is digital silence, so the web copy strips it. Source: cern/cern_footage_2022_042_001.mov"
 
 [[videos]]
 name    = "lhcb.mp4"
@@ -203,8 +203,8 @@ notes   = "CERN-FOOTAGE-2022-013-006 — CERN data centre, tape robot (2:04). Tr
 
 [[videos]]
 name    = "cern_footage_2025_048_001.mp4"
-profile = "standard"
-notes   = "CERN-FOOTAGE-2025-048-001 — WLCG globe animation (0:23; 1962x1080 source scaled to a 1920 long edge). Source: cern/cern_footage_2025_048_001.mp4"
+profile = "silent-loop"
+notes   = "CERN-FOOTAGE-2025-048-001 — WLCG globe animation (0:23; 1962x1080 source scaled to a 1920 long edge), silent: the source's audio track is digital silence, so the web copy strips it. Source: cern/cern_footage_2025_048_001.mp4"
 
 [[videos]]
 name    = "cern_footage_2025_049_001.mp4"

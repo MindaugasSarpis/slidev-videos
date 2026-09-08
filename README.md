@@ -15,8 +15,8 @@ Release-hosted video pipeline for Slidev decks, in one repo:
 
 ## Install (per consumer repo)
 
-    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.3.0"
-    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.3.0
+    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.3.1"
+    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.3.1
 
 ## The player (`slidev-addon-videos`)
 

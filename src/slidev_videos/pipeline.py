@@ -87,6 +87,36 @@ def _find_monorepo_root(start: Path) -> Path | None:
     return None
 
 
+def bank_manifest_names(raw_dir: Path, project_root: Path) -> set[str]:
+    """Names declared by every project that shares raw_dir as a raw bank.
+
+    When raw_dir lies outside the project (a monorepo bank such as
+    <repo>/videos/raw shared by every talk), walk the bank's repo — the
+    nearest ancestor of raw_dir holding a videos.toml, else raw_dir's parent —
+    for other projects' manifests, so a sibling talk's raws are not reported
+    as this talk's ORPHAN RAW. Empty when the bank is inside the project.
+    """
+    raw_dir = raw_dir.resolve()
+    project_root = project_root.resolve()
+    if project_root == raw_dir or project_root in raw_dir.parents:
+        return set()
+    top = _find_monorepo_root(raw_dir.parent) or raw_dir.parent
+    names: set[str] = set()
+    for cfg in top.rglob(_config.CONFIG_NAME):
+        if any(part in SKIP_SCAN_DIRS for part in cfg.relative_to(top).parts):
+            continue
+        proj = cfg.parent
+        manifest = proj / _config._read(cfg).get("project", {}).get("manifest", "videos/manifest.toml")
+        if not manifest.is_file():
+            continue
+        try:
+            with manifest.open("rb") as f:
+                names |= {v["name"] for v in tomllib.load(f).get("videos", []) if "name" in v}
+        except (OSError, tomllib.TOMLDecodeError):
+            continue
+    return names
+
+
 def _load_global_defaults() -> dict:
     return dict(_PROJECT.defaults) if _PROJECT else {}
 
@@ -1206,7 +1236,8 @@ def cmd_check(_: argparse.Namespace) -> int:
     # Shared-overlap files in any tier are valid (inherited copies pulled
     # for offline use, or talk overrides); they're only flagged if absent
     # from both manifests.
-    for name in sorted(raw_files - manifest_names - shared_names):
+    bank_names = bank_manifest_names(RAW_DIR, TALK)   # sibling talks' raws in a shared bank
+    for name in sorted(raw_files - manifest_names - shared_names - bank_names):
         print(f"  ORPHAN RAW:       {name}")
         problems += 1
 
