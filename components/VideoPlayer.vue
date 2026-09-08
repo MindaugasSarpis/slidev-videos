@@ -1,3 +1,29 @@
+<script>
+// Module scope (runs once): state shared by every VideoPlayer instance.
+import { ref } from 'vue'
+
+// ---- session volume ---------------------------------------------------------
+// `+` / `-` set a presenter-chosen level that sticks for every later clip in
+// this browser (this module-scope ref is shared by all players, mirrored to
+// localStorage), so one adjustment at the venue fixes the whole talk. Until a
+// key is pressed each clip uses its `volume` prop / `videos.volume` config.
+// Venue lesson: a Mac over HDMI ignores keyboard and room volume controls
+// (digital output), so the in-page level is the only handle the presenter has.
+const VOLUME_KEY = 'slidev-addon-videos:volume'
+const VOLUME_STEP = 0.1
+const sessionVolume = ref(readStoredVolume())
+function readStoredVolume() {
+  try {
+    const v = parseFloat(localStorage.getItem(VOLUME_KEY))
+    return Number.isFinite(v) && v >= 0 && v <= 1 ? v : null
+  } catch { return null }
+}
+function setSessionVolume(v) {
+  sessionVolume.value = v
+  try { localStorage.setItem(VOLUME_KEY, String(v)) } catch {}
+}
+</script>
+
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useIsSlideActive, useNav, useSlideContext, configs } from '@slidev/client'
@@ -8,7 +34,8 @@ import { useIsSlideActive, useNav, useSlideContext, configs } from '@slidev/clie
 //     release: videos-web         VITE_VIDEO_SHARED_REPO + VITE_VIDEO_SHARED_RELEASE
 //     shared: owner/repo@tag | false
 //     fit: cover | contain
-//     hq: false
+//     hq: false                   (opt-in: only clips with an encode-hq copy)
+//     volume: 1                   (0..1, default level before `+`/`-` are used)
 const CFG = (configs && configs.videos) || {}
 const ENV = import.meta.env
 const REPO    = CFG.repo    || ENV.VITE_VIDEO_REPO    || ''
@@ -40,41 +67,59 @@ if (!REMOTE_BASE && !SHARED_REMOTE_BASE && typeof console !== 'undefined') {
 const props = defineProps({
   src:      { type: String, required: true },
   fallback: { type: String, default: '' },   // explicit URL override for the own-release step
+  // Start playing when the slide becomes active. `false` = wait for the
+  // presenter to press play (the clip still preloads so its first frame and
+  // the controls are visible) — a cold open the presenter cues by hand.
+  autoplay: { type: Boolean, default: true },
   loop:     { type: Boolean, default: false },
   muted:    { type: Boolean, default: false },
   controls: { type: Boolean, default: true },
-  // Prefer the local visually-lossless venue master (public/videos-hq/<src>)
-  // when present. Falls through to the web tier automatically when absent.
+  // Native controls stay hidden and only appear while the pointer is over the
+  // bottom control strip, or for a few seconds after a click/tap on the video.
+  // `false` = controls always visible (when `controls` is on).
+  autoHideControls: { type: Boolean, default: true },
+  // Try the venue-quality `videos-hq/` copy first. Opt-in per clip (or via
+  // `videos.hq`): only clips with an `encode-hq` copy have one; for any other
+  // clip the attempt just 404s and races the fallback chain.
   hq:       { type: Boolean, default: undefined },
-  // Per-clip playback attenuation (0..1) — the live escape hatch for a clip
-  // that plays hot despite loudness-normalized encodes.
-  volume:   { type: Number, default: 1 },
+  // Playback volume, 0..1. Applied on every activation unless the presenter
+  // has set a session level with `+` / `-`. `undefined` = `videos.volume`
+  // config, else 1.
+  volume:   { type: Number, default: undefined },
   // cover = fill the frame edge-to-edge (default; crops non-16:9 slightly).
   // contain = letterbox instead of cropping (ultra-wide/portrait clips).
   fit:      { type: String, default: '' },
 })
-const effHq  = computed(() => props.hq === undefined ? (CFG.hq ?? true) : props.hq)
-const effFit = computed(() => props.fit || CFG.fit || 'cover')
+const effHq     = computed(() => props.hq === undefined ? (CFG.hq ?? false) : props.hq)
+const effFit    = computed(() => props.fit || CFG.fit || 'cover')
+const clamp01   = (v) => Math.min(1, Math.max(0, v))
+const effVolume = computed(() => {
+  const v = props.volume === undefined ? CFG.volume : props.volume
+  return Number.isFinite(v) ? clamp01(v) : 1
+})
 
 // Fallback chain. Deploys strip local videos/ (served from the release), so
 // PROD probes the remotes first — a guaranteed local 404 only delays playback.
 // DEV keeps local copies and probes them first (fast, offline).
+// VITE_VIDEOS_LOCAL_FIRST=1 at build time flips a keep-videos (offline
+// backup) build to local-first.
 const base = computed(() => import.meta.env.BASE_URL || '/')
 const hqLocalSrc = computed(() => `${base.value}videos-hq/${props.src}`)
 const webLocalSrc = computed(() => `${base.value}videos/${props.src}`)
 const webRemoteSrc = computed(() => props.fallback || (REMOTE_BASE ? `${REMOTE_BASE}/${props.src}` : ''))
 const sharedRemoteSrc = computed(() => SHARED_REMOTE_BASE ? `${SHARED_REMOTE_BASE}/${props.src}` : '')
+const LOCAL_FIRST = import.meta.env.DEV || ENV.VITE_VIDEOS_LOCAL_FIRST === '1'
 const fallbackChain = computed(() => {
   const locals = effHq.value ? [hqLocalSrc.value, webLocalSrc.value] : [webLocalSrc.value]
   const remotes = [webRemoteSrc.value, sharedRemoteSrc.value]
-  const chain = (import.meta.env.PROD ? [...remotes, ...locals] : [...locals, ...remotes])
-    .filter(Boolean)
+  const chain = (LOCAL_FIRST ? [...locals, ...remotes] : [...remotes, ...locals]).filter(Boolean)
   return chain.filter((url, i) => i === 0 || url !== chain[i - 1])
 })
 
 const videoRef = ref(null)
 const sourceRef = ref(null)
-const currentSrc = ref(fallbackChain.value[0] || '')
+const chainIndex = ref(0)
+const currentSrc = computed(() => fallbackChain.value[chainIndex.value] || '')
 const status = ref('idle')
 const isActive = useIsSlideActive()
 const hasBeenActive = ref(false)
@@ -86,73 +131,28 @@ const mimeType = computed(() => {
   return 'video/mp4'
 })
 
-// --- Custom controls state ---
-const playing = ref(false)
-const currentTime = ref(0)
-const duration = ref(0)
-const isMuted = ref(true)
-const progressPercent = computed(() => duration.value ? (currentTime.value / duration.value) * 100 : 0)
-const controlsVisible = ref(false)
-
-function formatTime(s) {
-  if (!isFinite(s)) return '0:00'
-  const m = Math.floor(s / 60)
-  const sec = Math.floor(s % 60)
-  return `${m}:${sec.toString().padStart(2, '0')}`
-}
-
-function onTimeUpdate() {
-  const v = videoRef.value
-  if (!v) return
-  currentTime.value = v.currentTime
-  duration.value = v.duration || 0
-  playing.value = !v.paused
-  isMuted.value = v.muted
-}
-
-function togglePlay() {
-  const v = videoRef.value
-  if (!v) return
-  if (v.paused) v.play().catch(() => {})
-  else v.pause()
-  playing.value = !v.paused
-}
-
-function toggleMute() {
-  const v = videoRef.value
-  if (!v) return
-  v.muted = !v.muted
-  isMuted.value = v.muted
-}
-
-function seek(e) {
-  const v = videoRef.value
-  if (!v || !duration.value) return
-  const rect = e.currentTarget.getBoundingClientRect()
-  const ratio = (e.clientX - rect.left) / rect.width
-  v.currentTime = ratio * duration.value
-}
-
-function showControls() { controlsVisible.value = true }
-function hideControls() { controlsVisible.value = false }
-
 // --- Fallback chain advance ---
 let switching = false
 function onError() {
   if (switching || (!hasBeenActive.value && !warmed.value)) return
-  const chain = fallbackChain.value
-  const idx = chain.indexOf(currentSrc.value)
-  if (idx === -1 || idx === chain.length - 1) {
+  // A <source> error is only real once resource selection has given up
+  // (NETWORK_NO_SOURCE). Chrome also fires stale ones — from the empty src the
+  // element mounted with, or from a request it aborted itself to re-issue
+  // with a Range header — while a fresh load is already in flight; acting on
+  // those skips a working tier and can exhaust the chain.
+  const video = videoRef.value
+  if (video && video.networkState !== HTMLMediaElement.NETWORK_NO_SOURCE) return
+  if (chainIndex.value < fallbackChain.value.length - 1) {
+    switching = true
+    status.value = 'loading'
+    chainIndex.value += 1
+    nextTick(() => {
+      videoRef.value?.load()
+      switching = false
+    })
+  } else {
     status.value = 'error'
-    return
   }
-  switching = true
-  status.value = 'loading'
-  currentSrc.value = chain[idx + 1]
-  nextTick(() => {
-    videoRef.value?.load()
-    switching = false
-  })
 }
 
 function syncPlayback() {
@@ -167,7 +167,13 @@ function syncPlayback() {
       }
     }
     video.currentTime = 0
-    video.volume = Math.min(1, Math.max(0, props.volume))
+    video.volume = sessionVolume.value ?? effVolume.value
+    if (!props.autoplay) {
+      // Manual start: the presenter's click on the controls is the gesture,
+      // so it may play with sound straight away.
+      video.muted = props.muted
+      return
+    }
     video.muted = true
     video.play().then(() => {
       if (!props.muted) video.muted = false
@@ -183,14 +189,116 @@ watch(isActive, syncPlayback, { immediate: true })
 
 function onLoaded() {
   status.value = 'ready'
-  duration.value = videoRef.value?.duration || 0
   syncPlayback()
 }
 
+// ---- auto-hiding controls -------------------------------------------------
+// The native control bar sits along the bottom edge. We toggle the `controls`
+// attribute itself (not CSS: the bar's DOM differs per browser), so it is
+// simply absent until wanted: pointer inside the bottom strip → shown; pointer
+// elsewhere or gone → hidden after a short grace; click/tap on the video →
+// shown for a few seconds. When shown, the bar handles its own hit-testing —
+// there is no overlay element to steal its clicks. Pointer tracking is done
+// on `window`, not the player: Slidev's own navigation bar floats over the
+// bottom of the slide and would otherwise swallow the hover.
+const CONTROL_STRIP_PX = 72      // the native bar is ~50-60px tall
+const HIDE_GRACE_MS = 700        // pointer left the strip
+const CLICK_SHOW_MS = 3500       // after a click/tap
+const wrapRef = ref(null)
+const controlsVisible = ref(false)
+const showControls = computed(() => props.controls && (!props.autoHideControls || controlsVisible.value))
+let hideTimer = null
+function scheduleHide(ms) {
+  clearTimeout(hideTimer)
+  hideTimer = setTimeout(() => { controlsVisible.value = false }, ms)
+}
+function reveal(ms) {
+  clearTimeout(hideTimer)
+  controlsVisible.value = true
+  if (ms != null) scheduleHide(ms)
+}
+function onWindowMove(e) {
+  if (!props.autoHideControls || !isActive.value || !wrapRef.value) return
+  const r = wrapRef.value.getBoundingClientRect()
+  const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
+  const inStrip = inside && e.clientY >= r.bottom - CONTROL_STRIP_PX
+  if (inStrip) reveal()
+  else if (controlsVisible.value) scheduleHide(HIDE_GRACE_MS)
+}
+function onPointerGone() {
+  // Pointer left the player (or the window): no further mousemove will come.
+  if (props.autoHideControls && controlsVisible.value) scheduleHide(HIDE_GRACE_MS)
+}
+function onVideoClick(e) {
+  if (!props.autoHideControls) return
+  const r = e.currentTarget.getBoundingClientRect()
+  // A click inside the strip lands on the (now visible) native bar — leave it
+  // to the browser. Elsewhere on the picture: reveal for a moment.
+  if (e.clientY < r.bottom - CONTROL_STRIP_PX) reveal(CLICK_SHOW_MS)
+}
+function onVideoTouch() {
+  if (props.autoHideControls) reveal(CLICK_SHOW_MS)
+}
+
+// ---- keyboard ---------------------------------------------------------------
+// `p` toggles play/pause, `+` / `-` step the volume — all on the active
+// slide's player and without revealing the control bar (Slidev binds
+// space/arrows/o/d/g/f; these keys are free). `=` counts as `+` so the
+// unshifted key works too; `_` likewise as `-`.
+const BADGE_MS = 1200
+const volumeBadge = ref(null)   // 0-100 while the badge is shown
+let badgeTimer = null
+function flashVolume(v) {
+  volumeBadge.value = Math.round(v * 100)
+  clearTimeout(badgeTimer)
+  badgeTimer = setTimeout(() => { volumeBadge.value = null }, BADGE_MS)
+}
+function stepVolume(video, dir) {
+  const next = clamp01(Math.round((video.volume + dir * VOLUME_STEP) * 10) / 10)
+  video.volume = next
+  if (dir > 0 && video.muted && !props.muted) video.muted = false
+  setSessionVolume(next)
+  flashVolume(next)
+}
+function onKey(e) {
+  if (!isActive.value) return
+  const key = e.key
+  const isPlay = key === 'p' || key === 'P'
+  const isUp = key === '+' || key === '='
+  const isDown = key === '-' || key === '_'
+  if (!isPlay && !isUp && !isDown) return
+  if (e.metaKey || e.ctrlKey || e.altKey) return
+  const t = e.target
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+  const video = videoRef.value
+  if (!video) return
+  e.preventDefault()
+  if (isUp) return stepVolume(video, +1)
+  if (isDown) return stepVolume(video, -1)
+  if (video.paused) {
+    video.muted = props.muted
+    video.play().catch(() => {})
+  } else {
+    video.pause()
+  }
+}
+
 onMounted(() => {
+  window.addEventListener('keydown', onKey)
+  window.addEventListener('mousemove', onWindowMove, { passive: true })
+  document.documentElement.addEventListener('mouseleave', onPointerGone)
   // <source> error events don't bubble to <video> on iOS Safari.
   sourceRef.value?.addEventListener('error', onError)
+  // The immediate watcher above may fire before refs are populated —
+  // re-run once refs exist so the initially-active slide actually loads.
   syncPlayback()
+})
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKey)
+  window.removeEventListener('mousemove', onWindowMove)
+  document.documentElement.removeEventListener('mouseleave', onPointerGone)
+  clearTimeout(hideTimer)
+  clearTimeout(badgeTimer)
 })
 
 // Look-ahead preload for upcoming slides' videos:
@@ -242,7 +350,7 @@ onUnmounted(removePreload)
 </script>
 
 <template>
-  <div class="video-player" @mouseenter="controls && showControls()" @mouseleave="controls && hideControls()" @click="controls && togglePlay()">
+  <div ref="wrapRef" class="video-player" @mouseleave="onPointerGone">
     <div v-if="status === 'loading' || status === 'idle'" class="video-status">Loading video&hellip;</div>
     <div v-if="status === 'error'" class="video-status video-error">
       Video not available: <code>{{ src }}</code>
@@ -250,28 +358,25 @@ onUnmounted(removePreload)
     <video
       ref="videoRef"
       :loop="loop"
+      :controls="showControls"
       muted
       playsinline
       webkit-playsinline
-      :preload="warmed || hasBeenActive ? 'auto' : 'none'"
+      :preload="warmed || hasBeenActive || !autoplay ? 'auto' : 'none'"
       :style="{ objectFit: effFit }"
       @loadeddata="onLoaded"
       @error="onError"
-      @timeupdate="onTimeUpdate"
-      @play="playing = true"
-      @pause="playing = false"
+      @click="onVideoClick"
+      @touchstart.passive="onVideoTouch"
       :class="{ 'video-ready': status === 'ready' }"
     >
       <source ref="sourceRef" :src="hasBeenActive || warmed ? currentSrc : ''" :type="mimeType" />
     </video>
-    <div v-if="controls && status === 'ready'" class="custom-controls" :class="{ visible: controlsVisible }" @click.stop>
-      <button class="ctrl-btn" @click="togglePlay">{{ playing ? '⏸' : '▶' }}</button>
-      <span class="ctrl-time">{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
-      <div class="ctrl-progress" @click="seek">
-        <div class="ctrl-progress-fill" :style="{ width: progressPercent + '%' }"></div>
+    <Transition name="volume-badge">
+      <div v-if="volumeBadge !== null" class="volume-badge" aria-live="polite">
+        {{ volumeBadge === 0 ? '🔇' : '🔊' }} {{ volumeBadge }}%
       </div>
-      <button class="ctrl-btn" @click="toggleMute">{{ isMuted ? '🔇' : '🔊' }}</button>
-    </div>
+    </Transition>
   </div>
 </template>
 
@@ -283,7 +388,6 @@ onUnmounted(removePreload)
   justify-content: center;
   align-items: center;
   background: black;
-  cursor: pointer;
 }
 .video-player video {
   display: block;
@@ -309,50 +413,24 @@ onUnmounted(removePreload)
   color: #ef4444;
   opacity: 1;
 }
-.custom-controls {
+.volume-badge {
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 12px 20px;
-  background: linear-gradient(transparent, rgba(0,0,0,0.7));
-  opacity: 0;
-  transition: opacity 0.3s;
-  cursor: default;
-}
-.custom-controls.visible { opacity: 1; }
-.ctrl-btn {
-  background: none;
-  border: none;
+  top: 1rem;
+  right: 1rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 0.4rem;
+  background: rgba(0, 0, 0, 0.6);
   color: white;
-  font-size: 24px;
-  cursor: pointer;
-  padding: 4px 8px;
-  line-height: 1;
-}
-.ctrl-btn:hover { opacity: 0.8; }
-.ctrl-time {
-  color: rgba(255,255,255,0.8);
-  font-size: 18px;
+  font-size: 1rem;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  min-width: 120px;
+  pointer-events: none;
 }
-.ctrl-progress {
-  flex: 1;
-  height: 8px;
-  background: rgba(255,255,255,0.25);
-  border-radius: 4px;
-  cursor: pointer;
-  position: relative;
+.volume-badge-enter-active,
+.volume-badge-leave-active {
+  transition: opacity 0.25s ease;
 }
-.ctrl-progress-fill {
-  height: 100%;
-  background: white;
-  border-radius: 4px;
-  transition: width 0.1s linear;
+.volume-badge-enter-from,
+.volume-badge-leave-to {
+  opacity: 0;
 }
 </style>
