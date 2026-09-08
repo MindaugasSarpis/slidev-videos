@@ -15,8 +15,8 @@ Release-hosted video pipeline for Slidev decks, in one repo:
 
 ## Install (per consumer repo)
 
-    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.3.1"
-    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.3.1
+    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.3.2"
+    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.3.2
 
 ## The player (`slidev-addon-videos`)
 
@@ -109,14 +109,19 @@ Manifest (`videos/manifest.toml`) entries:
 them as inherited. `scripts/fetch-shared-raws.sh` rebuilds the local raw
 bank (`videos/raw/`, ~15 GB) from the Drive masters.
 
+Library clips are **full length**. A deck that wants a shorter cut lists the
+clip in its own manifest with a `trim` and publishes to its own release; the
+talk release wins the player's chain over the library, and the raw stays
+whole. (Until 2026-09-09 six entries carried a course reel's 90 s trims.)
+
 Names changed when the outreach decks moved onto the library (2026-09-08):
 
 | old name (outreach decks) | library name |
 |---|---|
 | cern_video_2019_050_008_1080ph265.mp4 | cern_video_2019_050_008.mp4 |
-| cassini.mov | cassini_grand_finale.mp4 (90 s trim) |
-| perseverence_rover_landing_nasa.mp4 | perseverance_rover_landing_nasa.mp4 (1:40–3:10 trim) |
-| cern_footage_2022_013_001_1080p_lhc.mp4 | cern_footage_2022_013_001.mp4 (90 s trim) |
+| cassini.mov | cassini_grand_finale.mp4 |
+| perseverence_rover_landing_nasa.mp4 | perseverance_rover_landing_nasa.mp4 |
+| cern_footage_2022_013_001_1080p_lhc.mp4 | cern_footage_2022_013_001.mp4 |
 | drone_climbing_mountain_2.mp4 | drone_climbing_mountain.mp4 |
 | expansion_funnel_h264_1080p.webm | expansion_funnel.webm |
 | lhcb_aciu.mov | lhcb_aciu.mp4 |

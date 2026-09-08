@@ -1,6 +1,6 @@
 {
   "name": "slidev-addon-videos",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "type": "module",
   "description": "Slidev addon: full-bleed VideoPlayer streaming from GitHub Release assets with a local/remote fallback chain",
   "repository": { "type": "git", "url": "https://github.com/MindaugasSarpis/slidev-videos.git" },

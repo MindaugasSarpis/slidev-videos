@@ -12,8 +12,12 @@
 # Each `notes` says what the clip shows and the exact source it was encoded
 # from (gdrive folders under gdrive:work/outreach/resources/videos/, or the
 # course's archived HEVC release `videos` on
-# MindaugasSarpis/CERN_lessons_on_data_analysis). `trim` entries also record
-# why the web copy is cut; the raw stays whole so a trim is reversible.
+# MindaugasSarpis/CERN_lessons_on_data_analysis).
+#
+# Library clips are FULL LENGTH (policy since 2026-09-09; until then six
+# entries carried the course reel's 90 s trims). A deck that wants a shorter
+# cut lists the clip in its own manifest with a `trim` and publishes to its
+# own release — the talk release wins the player's chain over the library.
 
 [defaults]
 release_tag = "videos-shared"
@@ -39,14 +43,12 @@ notes   = "Mariner 4, 1965 — first close-up image of Mars, slow pan with audio
 [[videos]]
 name    = "perseverance_rover_landing_nasa.mp4"
 profile = "high-motion"
-trim    = ["1:40", "3:10"]
-notes   = "NASA Perseverance Mars landing, EDL camera footage (3:10; true 3840x2160 H.264 60 fps master, scaled to 1080p). Trim 1:40–3:10: the parachute descent and touchdown are the last 90 s; the earlier part is titles and the cruise-stage separation. Source: science/perseverence_rover_landing_nasa.mp4 (spelling fixed in the shared name)"
+notes   = "NASA Perseverance Mars landing, EDL camera footage, full 3:10 (true 3840x2160 H.264 60 fps master, scaled to 1080p): titles, cruise-stage separation, then the parachute descent and touchdown from 1:40. Source: science/perseverence_rover_landing_nasa.mp4 (spelling fixed in the shared name)"
 
 [[videos]]
 name    = "cassini_grand_finale.mp4"
 profile = "standard"
-trim    = ["0:00", "1:30"]
-notes   = "Cassini Grand Finale — Saturn ring-dive animation, no voice-over (3:41). Trim 0:00–1:30: the approach and first ring dive fit a reel slot; the rest repeats the dive geometry. Source: cosmology/cassini_grand_finale_no_vo.mp4"
+notes   = "Cassini Grand Finale — Saturn ring-dive animation, no voice-over, full 3:41 (the first ring dive is in the opening 1:30). Source: cosmology/cassini_grand_finale_no_vo.mp4"
 
 [[videos]]
 name    = "stars_pan_audio.mp4"
@@ -66,8 +68,7 @@ notes   = "Hubble Space Telescope in orbit (0:33). Source: course release `video
 [[videos]]
 name    = "webb_reel.mp4"
 profile = "standard"
-trim    = ["0:00", "1:30"]
-notes   = "JWST image reel (2:58). Trim 0:00–1:30: the first 90 s carry the headline images; keeps the reel slot short. Source: released/webb_reel.mp4"
+notes   = "JWST image reel, full 2:58 (the headline images are in the first 1:30). Source: released/webb_reel.mp4"
 
 [[videos]]
 name    = "milky_way_sim_audio.mp4"
@@ -129,8 +130,7 @@ notes   = "Voyage into the world of atoms — zoom from a hair to quarks (2:01).
 [[videos]]
 name    = "cloud_chamber_audio.mp4"
 profile = "standard"
-trim    = ["0:00", "1:30"]
-notes   = "Cloud chamber with particle tracks, with audio (2:29). Trim 0:00–1:30: tracks are visible from the start; 90 s is enough for a reel slot. Source: released/cloud_chamber_audio.mp4"
+notes   = "Cloud chamber with particle tracks, with audio, full 2:29 (tracks are visible from the start). Source: released/cloud_chamber_audio.mp4"
 
 [[videos]]
 name    = "standard_model.mp4"
@@ -152,8 +152,7 @@ notes   = "CERN site aerial, short (0:11). Source: released/cern_overview_short.
 [[videos]]
 name    = "cern_footage_2022_013_001.mp4"
 profile = "standard"
-trim    = ["0:00", "1:30"]
-notes   = "CERN-FOOTAGE-2022-013-001 — real LHC tunnel travelling shot (4:13). Trim 0:00–1:30: the travelling shot continues unchanged for four minutes; 90 s fits a reel slot. Source: cern/cern_footage_2022_013_001_1080p_lhc.mp4"
+notes   = "CERN-FOOTAGE-2022-013-001 — real LHC tunnel travelling shot, full 4:13 (the shot continues unchanged; decks that want less trim it in their own manifest). Source: cern/cern_footage_2022_013_001_1080p_lhc.mp4"
 
 [[videos]]
 name    = "atlas_footage_2022_004_002.mp4"
@@ -198,8 +197,7 @@ notes   = "ATLAS-VIDEO-2023-013-001 — ATLAS event display (0:30). Source: cern
 [[videos]]
 name    = "cern_footage_2022_013_006.mp4"
 profile = "standard"
-trim    = ["0:00", "1:30"]
-notes   = "CERN-FOOTAGE-2022-013-006 — CERN data centre, tape robot (2:04). Trim 0:00–1:30: racks and the tape library are covered in the first 90 s. Source: cern/cern_footage_2022_013_006_1080p_data_center.mp4"
+notes   = "CERN-FOOTAGE-2022-013-006 — CERN data centre, tape robot, full 2:04. Source: cern/cern_footage_2022_013_006_1080p_data_center.mp4"
 
 [[videos]]
 name    = "cern_footage_2025_048_001.mp4"
