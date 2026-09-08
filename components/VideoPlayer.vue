@@ -301,14 +301,24 @@ onUnmounted(() => {
   clearTimeout(badgeTimer)
 })
 
-// Look-ahead preload for upcoming slides' videos:
-//  - PROD: warm the browser cache via <link rel="preload" as="video"> against
-//    the most reliable remote (shared release when configured — the own
-//    release may 404 for inherited clips).
-//  - DEV: attach the <source> early and let the element buffer.
+// Only the real slide (and the presenter's main view) gets a <video>. The
+// overview / next-slide preview render a static placeholder instead: the
+// overview mounts every slide at once, so a video-heavy deck would put ~30
+// media elements on the machine, and its copy of the CURRENT slide is
+// "active" too, so it re-downloaded the clip being watched.
+const { $page, $renderContext } = useSlideContext()
+const isLive = computed(() => $renderContext.value === 'slide' || $renderContext.value === 'presenter')
+
+// Look-ahead preload for the next PRELOAD_AHEAD slides' videos: attach the
+// <source> early and let the element buffer (preload="auto"), in dev AND in
+// production. Production used to warm the browser cache with
+// <link rel="preload" as="video"> instead — Chrome rejects that `as` value
+// ("<link rel=preload> uses an unsupported `as` value") and fetches nothing,
+// so deployed decks started every clip cold (found on the deployed World of
+// Particles deck, 2026-09-07). Placeholder instances (overview) have no
+// <video>, so the warm is a no-op there.
 const PRELOAD_AHEAD = 3
 const { currentPage } = useNav()
-const { $page } = useSlideContext()
 
 const isUpcoming = computed(() => {
   const here = $page?.value
@@ -318,39 +328,21 @@ const isUpcoming = computed(() => {
   return distance > 0 && distance <= PRELOAD_AHEAD
 })
 
-const shouldPreload = computed(() => import.meta.env.PROD && isUpcoming.value)
-
-watch(() => import.meta.env.DEV && isUpcoming.value, (warm) => {
-  if (!warm || warmed.value || hasBeenActive.value) return
+watch(isUpcoming, (warm) => {
+  if (!warm || warmed.value || hasBeenActive.value || !isLive.value) return
   warmed.value = true
   status.value = 'loading'
   nextTick(() => videoRef.value?.load())
 }, { immediate: true })
-
-let preloadLink = null
-function addPreload() {
-  if (preloadLink || typeof document === 'undefined') return
-  const url = sharedRemoteSrc.value || webRemoteSrc.value
-  if (!url) return
-  preloadLink = document.createElement('link')
-  preloadLink.rel = 'preload'
-  preloadLink.as = 'video'
-  preloadLink.href = url
-  preloadLink.type = mimeType.value
-  document.head.appendChild(preloadLink)
-}
-function removePreload() {
-  if (!preloadLink) return
-  preloadLink.remove()
-  preloadLink = null
-}
-
-watch(shouldPreload, (yes) => yes ? addPreload() : removePreload(), { immediate: true })
-onUnmounted(removePreload)
 </script>
 
 <template>
   <div ref="wrapRef" class="video-player" @mouseleave="onPointerGone">
+    <div v-if="!isLive" class="video-placeholder">
+      <svg class="video-placeholder-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5z" fill="currentColor" /></svg>
+      <span class="video-status">{{ src }}</span>
+    </div>
+    <template v-else>
     <div v-if="status === 'loading' || status === 'idle'" class="video-status">Loading video&hellip;</div>
     <div v-if="status === 'error'" class="video-status video-error">
       Video not available: <code>{{ src }}</code>
@@ -377,6 +369,7 @@ onUnmounted(removePreload)
         {{ volumeBadge === 0 ? '🔇' : '🔊' }} {{ volumeBadge }}%
       </div>
     </Transition>
+    </template>
   </div>
 </template>
 
@@ -412,6 +405,22 @@ onUnmounted(removePreload)
 .video-error {
   color: #ef4444;
   opacity: 1;
+}
+.video-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  color: white;
+}
+.video-placeholder .video-status {
+  position: static;
+  padding: 0;
+}
+.video-placeholder-icon {
+  width: 4rem;
+  height: 4rem;
+  opacity: 0.6;
 }
 .volume-badge {
   position: absolute;

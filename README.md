@@ -56,7 +56,12 @@ exhausted the slide shows `Video not available: <src>`.
 
 **Playback** is slide-driven: rewind + play on activation (muted first, then
 unmuted unless `muted`), pause + rewind on deactivation. The three slides ahead
-are preloaded.
+are preloaded (the `<source>` is attached early, in dev and production alike).
+
+**Overview and previews.** In Slidev's overview grid (`o`) and the presenter's
+next-slide preview the player renders a static placeholder, not a `<video>`:
+the overview mounts every slide at once, and its copy of the current slide
+would otherwise re-download the clip being watched.
 
 **Keyboard**, on the active slide's clip, without revealing the control bar:
 

@@ -80,6 +80,10 @@ page.on('request', (r) => { if (r.resourceType() === 'media' || /\.(mp4|webm|mov
 
 await page.goto(`http://localhost:${port}/`, { waitUntil: 'load' })
 await page.waitForSelector('.slidev-layout', { timeout: 30000 })
+// PROD look-ahead: slide 2 is within 3 slides of slide 1, so its clip must be
+// requested while slide 1 is still up.
+for (let i = 0; i < 100 && !mediaRequests.includes(expected); i++) await new Promise((r) => setTimeout(r, 100))
+check('prod look-ahead requests the next clip before its slide is active', mediaRequests.includes(expected), mediaRequests.join(','))
 await goto(2)
 // The chain is remote → local in a production build; both are aborted, so it
 // must exhaust and report the clip as unavailable.
@@ -92,8 +96,8 @@ check('remote failure falls back to the local tier', !!local, mediaRequests.join
 const errText = await page.evaluate(() => document.querySelector('.slidev-page[data-slidev-no="2"] .video-error').textContent.trim())
 check('exhausted chain shows "Video not available"', /Video not available: ?clip_example\.mp4/.test(errText), errText)
 // shared: false must keep the shared release out of the chain entirely.
-const preloads = await page.evaluate(() => [...document.querySelectorAll('link[rel="preload"][as="video"]')].map(l => l.href))
-check('no shared-release preload when shared: false', !preloads.some(u => u.includes('slidev-videos')), preloads.join(','))
+const links = await page.evaluate(() => document.querySelectorAll('link[rel="preload"][as="video"]').length)
+check('no <link rel=preload as=video> (Chrome rejects it)', links === 0, `links=${links}`)
 
 // --- volume: config default, keys, clamps, badge, persistence -------------
 let s = await until(2, (s) => near(s.volume, 0.4))
@@ -137,6 +141,18 @@ check('`p` toggles paused', afterP.paused !== before.paused && afterPP.paused ==
 await goto(3)
 s = await until(3, (s) => near(s.volume, 0.7))
 check('session level applied to the next clip', near(s.volume, 0.7), `volume=${s.volume}`)
+
+// --- overview grid renders placeholders, not <video> elements --------------
+// Slidev keeps the main view's slides mounted (that is what the look-ahead
+// relies on), so the invariant is: opening the overview adds placeholders
+// and not one more <video>.
+const vidsBefore = await page.evaluate(() => document.querySelectorAll('video').length)
+await press('o')
+await page.waitForFunction(() => document.querySelectorAll('.video-placeholder').length >= 2, null, { timeout: 10000 }).catch(() => {})
+const ov = await page.evaluate(() => ({ ph: document.querySelectorAll('.video-placeholder').length, vids: document.querySelectorAll('video').length }))
+check('overview shows placeholders instead of videos', ov.ph >= 2 && ov.vids === vidsBefore, `placeholders=${ov.ph} videos=${ov.vids} (before overview: ${vidsBefore})`)
+await press('Escape')
+await page.waitForFunction(() => document.querySelectorAll('.video-placeholder').length === 0, null, { timeout: 10000 }).catch(() => {})
 
 // --- Slidev navigation keys are untouched -----------------------------------
 await press('ArrowLeft')
