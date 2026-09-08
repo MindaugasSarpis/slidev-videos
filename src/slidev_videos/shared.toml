@@ -2,8 +2,8 @@
 #
 # Entries are CERN/space B-roll and CGI sims shared by more than one deck,
 # published on this repo's `videos-shared` GitHub Release (1080p H.264 web
-# encodes). The 34-entry library was encoded in the shared-library encode
-# pass (course spec §5.3, D3, 2026-09-03); `check` and `pull --include-shared`
+# encodes). The 43-entry library (34 from the 2026-09-03 D3 encode pass, course spec
+# §5.3; 9 promoted from outreach_talks on 2026-09-08); `check` and `pull --include-shared`
 # in consumer projects resolve these names against that release.
 #
 # Naming: lowercase snake_case, no resolution/codec suffixes; CDS clips keep
@@ -84,6 +84,31 @@ name    = "expansion_funnel.webm"
 profile = "remux"
 notes   = "Cosmic expansion funnel diagram animation (0:30; VP8 in WebM, remuxed as-is — already browser-safe). Source: released/expansion_funnel_h264_1080p.webm"
 
+[[videos]]
+name    = "mars_surface.mp4"
+profile = "standard"
+notes   = "Mars surface footage, 0:55, silent (H.264 15 Mbps 1080p source). Source: released/mars_surface.mp4 (outreach, promoted 2026-09-08)"
+
+[[videos]]
+name    = "blue_ghost_lunar_orbit.mp4"
+profile = "standard"
+notes   = "Firefly Blue Ghost lunar orbit footage (raw 1080p H.264 5.7 Mbps). Source: released/blue_ghost_lunar_orbit.mp4 (outreach, promoted 2026-09-08)"
+
+[[videos]]
+name    = "saturn_v_launch_nasa.mp4"
+profile = "high-motion"
+notes   = "Saturn V launch, NASA archival footage with sound, 2:55 (raw 1080p H.264 9.8 Mbps). Source: released/saturn_v_launch_nasa.mp4 (outreach, promoted 2026-09-08)"
+
+[[videos]]
+name    = "beyond_cmb.mp4"
+profile = "standard"
+notes   = "Beyond-the-CMB science reel, silent (H.264 11.6 Mbps 720p source, stays 720p — no upscale). Source: released/beyond_cmb.mp4 (outreach, promoted 2026-09-08)"
+
+[[videos]]
+name    = "cmb_sonification_drone.mp4"
+profile = "standard"
+notes   = "CMB sonification drone render, 1800x1040, with audio. Source: released/cmb_sonification_drone.mp4 (outreach crash-course lineage, promoted 2026-09-08)"
+
 # --- particle physics --------------------------------------------------------
 
 [[videos]]
@@ -106,6 +131,16 @@ name    = "cloud_chamber_audio.mp4"
 profile = "standard"
 trim    = ["0:00", "1:30"]
 notes   = "Cloud chamber with particle tracks, with audio (2:29). Trim 0:00–1:30: tracks are visible from the start; 90 s is enough for a reel slot. Source: released/cloud_chamber_audio.mp4"
+
+[[videos]]
+name    = "standard_model.mp4"
+profile = "standard"
+notes   = "Standard Model overview, 0:23 with audio (2880x1600 9:5 source, scaled to 1920 wide; letterboxes on 16:9). Source: released/sm.mov (outreach, promoted 2026-09-08)"
+
+[[videos]]
+name    = "atoms.mp4"
+profile = "high-motion"
+notes   = "CG zoom into atoms, 1080p (raw HEVC 10.2 Mbps, re-encoded H.264). Source: released/atoms.mov (outreach, promoted 2026-09-08)"
 
 # --- CERN / LHC / experiments ------------------------------------------------
 
@@ -144,6 +179,11 @@ notes   = "CERN-FOOTAGE-2022-042-001 — LHCb detector 3D fly-in (0:56). Source:
 name    = "lhcb.mp4"
 profile = "standard"
 notes   = "LHCb reel with audio (0:47). Source: released/lhcb.mp4"
+
+[[videos]]
+name    = "lhcb_aciu.mp4"
+profile = "standard-tight"
+notes   = "LHCb thanks reel in Lithuanian ('Ačiū'), 2:28 with audio — the closer of the Lithuanian crash-course decks. Distinct from the course's English lhcb_thanks. Source: released/lhcb_aciu.mov (2880x1600 HEVC 2.4 GB venue master; outreach, promoted 2026-09-08)"
 
 [[videos]]
 name    = "cern_footage_2024_006_012.mp4"
@@ -200,3 +240,10 @@ notes   = "CERN-FOOTAGE-2025-014-002 — FCC map with labels (0:18). Source: cer
 name    = "cern_footage_2024_010_002.mp4"
 profile = "standard"
 notes   = "CERN-FOOTAGE-2024-010-002 — FCC-hh tunnel render (0:10). Source: cern/cern_footage_2024_010_002.mp4"
+
+# --- outreach lineage (venue-grade B-roll reused across the Lithuanian decks) --
+
+[[videos]]
+name    = "mountain.mp4"
+profile = "high-motion"
+notes   = "Mountain aerial with edited audio, 3:07 — the Yaga 2026-07-18 opener. Raw is 4K30 H.264 207 Mbps + 24-bit PCM (4.9 GB); the web encode transcodes the PCM to AAC. Source: released/mountain.mov (outreach, promoted 2026-09-08)"
