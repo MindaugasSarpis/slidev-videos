@@ -9,14 +9,14 @@ Release-hosted video pipeline for Slidev decks, in one repo:
   GitHub Release assets.
 - **`slidev-addon-videos`** — the full-bleed `VideoPlayer` component with a
   local → own-release → shared-release fallback chain, slide-driven playback,
-  look-ahead preload and custom controls.
+  look-ahead preload, native auto-hide controls and keyboard volume.
 - **The shared clip library** — `src/slidev_videos/shared.toml` (registry) +
   this repo's `videos-shared` Release (the encodes).
 
 ## Install (per consumer repo)
 
-    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.1.0"
-    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.1.0
+    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.2.0"
+    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.2.0
 
 ## The player (`slidev-addon-videos`)
 
@@ -115,4 +115,4 @@ pass `--project <dir>`.
 3. Embed clips as `<VideoPlayer src="name.mp4" />` — shared-library names
    stream from this repo's `videos-shared` release with no further setup.
 
-Design spec: `CERN_lessons_on_data_analysis/docs/superpowers/specs/2026-09-01-video-pipeline-package-design.md`.
+Design spec: [2026-09-01 video pipeline package design](https://github.com/MindaugasSarpis/CERN_lessons_on_data_analysis/blob/main/docs/superpowers/specs/2026-09-01-video-pipeline-package-design.md) (in the course repo).
