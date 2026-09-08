@@ -104,6 +104,7 @@ Manifest (`videos/manifest.toml`) entries:
     slidev-videos check          # manifest vs slides vs raw/web
     slidev-videos preflight      # what will the deployed deck actually serve?
     slidev-videos pull           # restore local web copies from the release
+    slidev-videos discover "cloud chamber" lhc --source cds,nasa   # find new clips; prints [[videos]] snippets
 
 Run from anywhere inside a project (`videos.toml` is found by walking up), or
 pass `--project <dir>`.

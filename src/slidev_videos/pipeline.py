@@ -1937,7 +1937,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="slidev-videos", description=__doc__)
     parser.add_argument("--project", default=None,
                         help="project directory (default: walk up from cwd for videos.toml)")
+    # `discover` is a self-contained archive search (CDS/NASA/ESO/Commons);
+    # it needs no project, so it bypasses videos.toml discovery entirely.
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    if raw_argv[:1] == ["discover"]:
+        from . import discover
+        return discover.main(raw_argv[1:])
     sub = parser.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("discover", help="search open archives (CDS/NASA/ESO/Hubble/Webb/NOIRLab/Commons) for clips; prints [[videos]] snippets")
 
     p_sync = sub.add_parser("sync", help="rclone manifest-listed raw files from Drive")
     p_sync.add_argument("--dry-run", action="store_true")
