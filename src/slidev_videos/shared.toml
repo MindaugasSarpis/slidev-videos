@@ -2,13 +2,201 @@
 #
 # Entries are CERN/space B-roll and CGI sims shared by more than one deck,
 # published on this repo's `videos-shared` GitHub Release (1080p H.264 web
-# encodes). The initial 33-entry library lands with the shared-library
-# encode pass (course spec §5.3); until then this stub keeps `check` and
-# `pull --include-shared` well-defined (no shared names).
+# encodes). The 34-entry library was encoded in the shared-library encode
+# pass (course spec §5.3, D3, 2026-09-03); `check` and `pull --include-shared`
+# in consumer projects resolve these names against that release.
 #
 # Naming: lowercase snake_case, no resolution/codec suffixes; CDS clips keep
 # their report-number digits (e.g. cern_footage_2022_013_001.mp4).
+#
+# Each `notes` says what the clip shows and the exact source it was encoded
+# from (gdrive folders under gdrive:work/outreach/resources/videos/, or the
+# course's archived HEVC release `videos` on
+# MindaugasSarpis/CERN_lessons_on_data_analysis). `trim` entries also record
+# why the web copy is cut; the raw stays whole so a trim is reversible.
 
 [defaults]
 release_tag = "videos-shared"
 repo        = "MindaugasSarpis/slidev-videos"
+
+# --- space / astronomy -------------------------------------------------------
+
+[[videos]]
+name    = "skylapse.mp4"
+profile = "silent-loop"
+notes   = "CERN aerial timelapse loop (7:29). Source: released/skylapse.mp4"
+
+[[videos]]
+name    = "drone_climbing_mountain.mp4"
+profile = "high-motion"
+notes   = "Drone ascent up a mountain face (0:27). Source: released/drone_climbing_mountain.mp4"
+
+[[videos]]
+name    = "nasa_mars_mariner_4_pan_audio.mp4"
+profile = "standard"
+notes   = "Mariner 4, 1965 — first close-up image of Mars, slow pan with audio (0:20). Source: released/nasa_mars_mariner_4_pan_audio.mp4"
+
+[[videos]]
+name    = "perseverance_rover_landing_nasa.mp4"
+profile = "high-motion"
+trim    = ["1:40", "3:10"]
+notes   = "NASA Perseverance Mars landing, EDL camera footage (3:10; true 3840x2160 H.264 60 fps master, scaled to 1080p). Trim 1:40–3:10: the parachute descent and touchdown are the last 90 s; the earlier part is titles and the cruise-stage separation. Source: science/perseverence_rover_landing_nasa.mp4 (spelling fixed in the shared name)"
+
+[[videos]]
+name    = "cassini_grand_finale.mp4"
+profile = "standard"
+trim    = ["0:00", "1:30"]
+notes   = "Cassini Grand Finale — Saturn ring-dive animation, no voice-over (3:41). Trim 0:00–1:30: the approach and first ring dive fit a reel slot; the rest repeats the dive geometry. Source: cosmology/cassini_grand_finale_no_vo.mp4"
+
+[[videos]]
+name    = "stars_pan_audio.mp4"
+profile = "standard"
+notes   = "Starfield pan with ambient audio (0:20). Source: course release `videos` asset Stars_Pan_Audio.mp4 (HEVC release copy used as the raw — no Drive original)"
+
+[[videos]]
+name    = "telescope.mp4"
+profile = "standard"
+notes   = "Telescope under the night sky (0:40). Source: science/telescope.mp4"
+
+[[videos]]
+name    = "hubble.mp4"
+profile = "standard"
+notes   = "Hubble Space Telescope in orbit (0:33). Source: course release `videos` asset Hubble.mp4 (HEVC release copy used as the raw — no Drive original)"
+
+[[videos]]
+name    = "webb_reel.mp4"
+profile = "standard"
+trim    = ["0:00", "1:30"]
+notes   = "JWST image reel (2:58). Trim 0:00–1:30: the first 90 s carry the headline images; keeps the reel slot short. Source: released/webb_reel.mp4"
+
+[[videos]]
+name    = "milky_way_sim_audio.mp4"
+profile = "high-motion"
+notes   = "Milky Way galaxy formation simulation with audio (1:01). Source: released/milky_way_sim_audio.mp4"
+
+[[videos]]
+name    = "sdss_universe_zoom.mp4"
+profile = "standard"
+notes   = "SDSS galaxy map fly-through, zoom out from Earth to the large-scale structure (0:30, trim 3 cut). Source: cosmology/sdss_universe_zoom_trim_3.mp4"
+
+[[videos]]
+name    = "expansion_funnel.webm"
+profile = "remux"
+notes   = "Cosmic expansion funnel diagram animation (0:30; VP8 in WebM, remuxed as-is — already browser-safe). Source: released/expansion_funnel_h264_1080p.webm"
+
+# --- particle physics --------------------------------------------------------
+
+[[videos]]
+name    = "qgp_formation.mp4"
+profile = "high-motion"
+notes   = "Quark-gluon plasma formation in a heavy-ion collision, CGI (0:33). Source: released/qgp_formation.mp4"
+
+[[videos]]
+name    = "cern_footage_2015_006_001.mp4"
+profile = "standard"
+notes   = "CERN-FOOTAGE-2015-006-001 — Standard Model particle table animation (0:34). Source: cern/cern_footage_2015_006_001.mov (1.7 GB master)"
+
+[[videos]]
+name    = "voyage_in_to_the_world_of_atoms.mp4"
+profile = "standard"
+notes   = "Voyage into the world of atoms — zoom from a hair to quarks (2:01). Source: released/voyage_in_to_the_world_of_atoms.mp4"
+
+[[videos]]
+name    = "cloud_chamber_audio.mp4"
+profile = "standard"
+trim    = ["0:00", "1:30"]
+notes   = "Cloud chamber with particle tracks, with audio (2:29). Trim 0:00–1:30: tracks are visible from the start; 90 s is enough for a reel slot. Source: released/cloud_chamber_audio.mp4"
+
+# --- CERN / LHC / experiments ------------------------------------------------
+
+[[videos]]
+name    = "cern_overview_short.mp4"
+profile = "standard"
+notes   = "CERN site aerial, short (0:11). Source: released/cern_overview_short.mp4"
+
+[[videos]]
+name    = "cern_footage_2022_013_001.mp4"
+profile = "standard"
+trim    = ["0:00", "1:30"]
+notes   = "CERN-FOOTAGE-2022-013-001 — real LHC tunnel travelling shot (4:13). Trim 0:00–1:30: the travelling shot continues unchanged for four minutes; 90 s fits a reel slot. Source: cern/cern_footage_2022_013_001_1080p_lhc.mp4"
+
+[[videos]]
+name    = "atlas_footage_2022_004_002.mp4"
+profile = "standard"
+notes   = "ATLAS-FOOTAGE-2022-004-002 — descending the ATLAS shaft (0:29, 3:2 aspect). Source: cern/atlas_footage_2022_004_002_1080p_shaft.mp4"
+
+[[videos]]
+name    = "atlas_video_2021_001_001.mp4"
+profile = "standard"
+notes   = "ATLAS-VIDEO-2021-001-001 — ATLAS detector overview (0:49). Source: cern/atlas_video_2021_001_001_1080ph265.mp4"
+
+[[videos]]
+name    = "cms.mp4"
+profile = "standard"
+notes   = "CMS detector (~0:30). Source: cern/cms.mp4"
+
+[[videos]]
+name    = "cern_footage_2022_042_001.mp4"
+profile = "standard"
+notes   = "CERN-FOOTAGE-2022-042-001 — LHCb detector 3D fly-in (0:56). Source: cern/cern_footage_2022_042_001.mov"
+
+[[videos]]
+name    = "lhcb.mp4"
+profile = "standard"
+notes   = "LHCb reel with audio (0:47). Source: released/lhcb.mp4"
+
+[[videos]]
+name    = "cern_footage_2024_006_012.mp4"
+profile = "standard"
+notes   = "CERN-FOOTAGE-2024-006-012 — beam-pipe collision burst animation (0:27). Source: cern/uploaded_cern_footage_2024_006_012.mp4"
+
+[[videos]]
+name    = "atlas_video_2023_013_001.mp4"
+profile = "standard"
+notes   = "ATLAS-VIDEO-2023-013-001 — ATLAS event display (0:30). Source: cern/atlas_video_2023_013_001_1080p_event_display.mp4"
+
+[[videos]]
+name    = "cern_footage_2022_013_006.mp4"
+profile = "standard"
+trim    = ["0:00", "1:30"]
+notes   = "CERN-FOOTAGE-2022-013-006 — CERN data centre, tape robot (2:04). Trim 0:00–1:30: racks and the tape library are covered in the first 90 s. Source: cern/cern_footage_2022_013_006_1080p_data_center.mp4"
+
+[[videos]]
+name    = "cern_footage_2025_048_001.mp4"
+profile = "standard"
+notes   = "CERN-FOOTAGE-2025-048-001 — WLCG globe animation (0:23; 1962x1080 source scaled to a 1920 long edge). Source: cern/cern_footage_2025_048_001.mp4"
+
+[[videos]]
+name    = "cern_footage_2025_049_001.mp4"
+profile = "standard"
+notes   = "CERN-FOOTAGE-2025-049-001 — '1 exabyte' data-growth chart animation (0:10). Source: cern/cern_footage_2025_049_001.mp4"
+
+[[videos]]
+name    = "cern_video_2015_024_001.mp4"
+profile = "standard"
+notes   = "CERN-VIDEO-2015-024-001 — accelerator complex, detector, data centre, WLCG, Higgs bump (2:51). Source: cern/cern_video_2015_024_001_1080p.mp4 (the CDS 1080p export; the 3.5 GB .mov master was not used)"
+
+[[videos]]
+name    = "cern_footage_2024_006_001.mp4"
+profile = "standard"
+notes   = "CERN-FOOTAGE-2024-006-001 — FCC map aerial (0:18). Source: cern/cern_footage_2024_006_001.mp4"
+
+[[videos]]
+name    = "cern_video_2025_029_001.mp4"
+profile = "standard"
+notes   = "CERN-VIDEO-2025-029-001 — a rare B→K*μμ decay through LHCb, captions, no voice (2:28). Source: cern/cern_video_2025_029_001_1080p.mp4 (the CDS 1080p export; the 1.8 GB .mov master was not used)"
+
+[[videos]]
+name    = "cern_video_2019_050_008.mp4"
+profile = "standard"
+notes   = "CERN-VIDEO-2019-050-008 — vacuum / beam-pipe animation (1:35). Source: cern/cern_video_2019_050_008_1080ph265.mp4"
+
+[[videos]]
+name    = "cern_footage_2025_014_002.mp4"
+profile = "standard"
+notes   = "CERN-FOOTAGE-2025-014-002 — FCC map with labels (0:18). Source: cern/cern_footage_2025_014_002.mp4"
+
+[[videos]]
+name    = "cern_footage_2024_010_002.mp4"
+profile = "standard"
+notes   = "CERN-FOOTAGE-2024-010-002 — FCC-hh tunnel render (0:10). Source: cern/cern_footage_2024_010_002.mp4"

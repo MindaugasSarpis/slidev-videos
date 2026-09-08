@@ -1,34 +1,34 @@
 # slidev-videos
 
-Release-hosted video pipeline for Slidev decks: a Python CLI (`slidev-videos`)
-to fetch/encode/publish/check clips against a TOML manifest, a Slidev addon
-(`slidev-addon-videos`) that ships the full-bleed `VideoPlayer` component, and
-the shared clip library (`shared.toml` registry + the `videos-shared` GitHub
-Release of 1080p H.264 encodes).
+Release-hosted video pipeline for Slidev decks, in one repo:
 
-Status: CLI config layer + pipeline and the addon player are implemented;
-CI, the tagged release and the shared library encode are still to come, per
-the design spec in
-`CERN_lessons_on_data_analysis/docs/superpowers/specs/2026-09-01-video-pipeline-package-design.md`
-(§3–§6). Consumers: the CERN lessons course, cern_outreach_talks, World of Particles.
+- **`slidev-videos`** (Python ≥3.11, stdlib only) — manifest-driven CLI:
+  `fetch · sync · encode · encode-hq · publish · publish-hq · pull · pull-hq ·
+  check · shared-check · clean · preflight · venue · build`. Web tier is
+  1080p H.264 with EBU R128 loudness normalisation; clips are hosted as
+  GitHub Release assets.
+- **`slidev-addon-videos`** — the full-bleed `VideoPlayer` component with a
+  local → own-release → shared-release fallback chain, slide-driven playback,
+  look-ahead preload and custom controls.
+- **The shared clip library** — `src/slidev_videos/shared.toml` (registry) +
+  this repo's `videos-shared` Release (the encodes).
 
-Install (once released):
+## Install (per consumer repo)
 
     pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.1.0"
     pnpm add -D github:MindaugasSarpis/slidev-videos#v0.1.0
 
 ## The player (`slidev-addon-videos`)
 
-Add the addon and point it at your release in the deck headmatter:
+Enable the addon and point it at your release in the deck headmatter:
 
-    pnpm add -D github:MindaugasSarpis/slidev-videos
-    
     ---
-    addons: [videos]
+    addons:
+      - slidev-addon-videos
     videos:
-      repo: owner/repo          # GitHub repo whose release hosts the clips
+      repo: You/your-course     # GitHub repo whose release hosts the clips
       release: videos-web       # release tag (default: videos)
-      shared: owner/repo@tag    # or `false` to skip the shared library
+      shared: MindaugasSarpis/slidev-videos@videos-shared   # or `false`
       fit: cover                # cover | contain (default cover)
       hq: false                 # try public/videos-hq/<src> first (default false)
       volume: 1                 # 0..1 default playback level (default 1)
@@ -75,3 +75,44 @@ volume controls (digital output), so the in-page level is the only handle.
 Smoke test: `pnpm build:example && pnpm smoke` (Playwright, headless) checks
 the headmatter reaches the chain, the fallback order, `videos.volume`, the
 three keys and the sticky level.
+
+## videos.toml (project root)
+
+    [project]                # optional — defaults are the classic talk layout
+    slides_dir = "lectures/content/slides"
+    public_dir = "lectures/content/public"
+
+    [defaults]
+    repo          = "You/your-course"   # default: origin remote
+    release_tag   = "videos-web"
+    source_remote = "gdrive:your/raws"  # for `sync`
+    # web_long_edge_px = 1920, max_size_mb = 200, loudnorm = true, ...
+
+Manifest (`videos/manifest.toml`) entries:
+
+    [[videos]]
+    name    = "clip.mp4"
+    profile = "standard"          # remux | standard | standard-tight | silent-loop | high-motion
+    used_in = ["L01"]
+    trim    = ["0:20", "1:50"]    # optional; remux trims on keyframes
+    notes   = "what it shows"
+
+## Day to day
+
+    slidev-videos fetch <url> --name Clip --used-in L05
+    slidev-videos encode && slidev-videos publish
+    slidev-videos check          # manifest vs slides vs raw/web
+    slidev-videos preflight      # what will the deployed deck actually serve?
+    slidev-videos pull           # restore local web copies from the release
+
+Run from anywhere inside a project (`videos.toml` is found by walking up), or
+pass `--project <dir>`.
+
+## New course, three steps
+
+1. `videos.toml` at the repo root (see above) + an empty `videos/manifest.toml`.
+2. Install both packages, add the `addons:` and `videos:` headmatter.
+3. Embed clips as `<VideoPlayer src="name.mp4" />` — shared-library names
+   stream from this repo's `videos-shared` release with no further setup.
+
+Design spec: `CERN_lessons_on_data_analysis/docs/superpowers/specs/2026-09-01-video-pipeline-package-design.md`.

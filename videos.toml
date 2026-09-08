@@ -1,0 +1,19 @@
+# The package repo is itself a slidev-videos project whose manifest IS the
+# shared clip registry. `slidev-videos encode|publish|preflight|shared-check`
+# run from here maintain the `videos-shared` GitHub Release.
+
+[project]
+manifest = "src/slidev_videos/shared.toml"
+
+[defaults]
+repo          = "MindaugasSarpis/slidev-videos"
+release_tag   = "videos-shared"
+# This project *is* the shared library: disable the shared chain so that
+# preflight/publish/pull do not resolve this release as its own fallback.
+shared        = false
+# Shared raws are assembled from several gdrive folders under their shared
+# names (each entry's `notes` records the exact source path), so `sync` only
+# restores the subset whose name is unchanged from this folder; the rest were
+# fetched with explicit `rclone copyto` (D3, 2026-09-03).
+source_remote = "gdrive:work/outreach/resources/videos/released"
+encoder       = "cpu"     # libx264 — no NVENC on the encode machines; videotoolbox is HEVC-only

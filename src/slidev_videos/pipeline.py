@@ -47,6 +47,7 @@ import tomllib
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from collections.abc import Sequence
 from pathlib import Path
 
 # Project root and layout come from videos.toml (see config.py); main()
@@ -282,15 +283,27 @@ LOUDNORM_I, LOUDNORM_TP, LOUDNORM_LRA = -16.0, -1.5, 11.0
 LOUDNESS_TOLERANCE_LU = 2.0
 
 
-def _measure_loudness(src: str | Path) -> dict | None:
+def _measure_loudness(
+    src: str | Path,
+    trim_in: Sequence[str] = (),
+    trim_out: Sequence[str] = (),
+) -> dict | None:
     """First loudnorm pass: R128 stats of the first audio stream.
 
     Audio-only decode (video is not touched), works on local paths and
     https URLs alike. Returns the parsed measurement dict or None when the
     source has no audio / is unreadable / measurement fails.
+
+    `trim_in`/`trim_out` are the encode's `_trim_args` so that a trimmed
+    clip is measured over the segment that will actually be encoded. Stats
+    of the whole raw describe different audio: the linear gain is off by the
+    segment-vs-whole difference, and a whole-clip LRA above the target (or a
+    peak that the whole-clip gain would push past TP) silently drops the
+    second pass into dynamic mode even when the segment itself qualifies for
+    linear — which is how a 90 s cut of a 3-minute clip landed at -18.7 LUFS.
     """
     out = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-nostdin", "-i", str(src),
+        ["ffmpeg", "-hide_banner", "-nostdin", *trim_in, "-i", str(src), *trim_out,
          "-map", "0:a:0", "-af",
          f"loudnorm=I={LOUDNORM_I}:TP={LOUDNORM_TP}:LRA={LOUDNORM_LRA}:print_format=json",
          "-f", "null", "-"],
@@ -317,7 +330,7 @@ def _loudnorm_args(raw: Path, entry: VideoEntry) -> list[str]:
         return []
     if _probe_audio_codec(raw) is None:
         return []  # silent source
-    measured = _measure_loudness(raw)
+    measured = _measure_loudness(raw, *_trim_args(entry))
     if measured is None:
         print(f"  ! {entry.name}: loudness measurement failed; encoding without loudnorm",
               file=sys.stderr)
