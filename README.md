@@ -15,8 +15,8 @@ Release-hosted video pipeline for Slidev decks, in one repo:
 
 ## Install (per consumer repo)
 
-    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.2.0"
-    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.2.0
+    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.3.0"
+    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.3.0
 
 ## The player (`slidev-addon-videos`)
 
@@ -101,6 +101,28 @@ Manifest (`videos/manifest.toml`) entries:
     used_in = ["L01"]
     trim    = ["0:20", "1:50"]    # optional; remux trims on keyframes
     notes   = "what it shows"
+
+## The shared library
+
+`src/slidev_videos/shared.toml` lists 43 clips served from this repo's
+`videos-shared` release. Consumers reference them by name; `check` reports
+them as inherited. `scripts/fetch-shared-raws.sh` rebuilds the local raw
+bank (`videos/raw/`, ~15 GB) from the Drive masters.
+
+Names changed when the outreach decks moved onto the library (2026-09-08):
+
+| old name (outreach decks) | library name |
+|---|---|
+| cern_video_2019_050_008_1080ph265.mp4 | cern_video_2019_050_008.mp4 |
+| cassini.mov | cassini_grand_finale.mp4 (90 s trim) |
+| perseverence_rover_landing_nasa.mp4 | perseverance_rover_landing_nasa.mp4 (1:40–3:10 trim) |
+| cern_footage_2022_013_001_1080p_lhc.mp4 | cern_footage_2022_013_001.mp4 (90 s trim) |
+| drone_climbing_mountain_2.mp4 | drone_climbing_mountain.mp4 |
+| expansion_funnel_h264_1080p.webm | expansion_funnel.webm |
+| lhcb_aciu.mov | lhcb_aciu.mp4 |
+| sm.mov | standard_model.mp4 (silent) |
+| atoms.mov | atoms.mp4 |
+| mountain.mov | mountain.mp4 |
 
 ## Day to day
 

@@ -134,8 +134,8 @@ notes   = "Cloud chamber with particle tracks, with audio (2:29). Trim 0:00–1:
 
 [[videos]]
 name    = "standard_model.mp4"
-profile = "standard"
-notes   = "Standard Model overview, 0:23 with audio (2880x1600 9:5 source, scaled to 1920 wide; letterboxes on 16:9). Source: released/sm.mov (outreach, promoted 2026-09-08)"
+profile = "silent-loop"
+notes   = "Standard Model overview, 0:23, silent — the source's AAC track is digital silence, so the web copy strips it (2880x1600 9:5 source, scaled to 1920 wide; letterboxes on 16:9). Source: released/sm.mov (outreach, promoted 2026-09-08)"
 
 [[videos]]
 name    = "atoms.mp4"
