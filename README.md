@@ -55,8 +55,13 @@ local-first too. Each `<source>` failure advances the chain; when it is
 exhausted the slide shows `Video not available: <src>`.
 
 **Playback** is slide-driven: rewind + play on activation (muted first, then
-unmuted unless `muted`), pause + rewind on deactivation. The three slides ahead
-are preloaded (the `<source>` is attached early, in dev and production alike).
+unmuted unless `muted`), pause + rewind on deactivation. A `<source>` is only
+attached inside a sliding window — the live slide, the three ahead (preloaded
+early, in dev and production alike) and the one just passed; every other
+player is detached and `load()`ed empty so the browser frees its media
+pipeline. Chrome caps the number of media elements loaded at once (~10 per
+page on desktop) and beyond that a `load()` silently never completes, which
+is what froze a 32-clip reel from its 9th clip on (v0.3.3).
 
 **Overview and previews.** In Slidev's overview grid (`o`) and the presenter's
 next-slide preview the player renders a static placeholder, not a `<video>`:

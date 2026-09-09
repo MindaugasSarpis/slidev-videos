@@ -122,8 +122,6 @@ const chainIndex = ref(0)
 const currentSrc = computed(() => fallbackChain.value[chainIndex.value] || '')
 const status = ref('idle')
 const isActive = useIsSlideActive()
-const hasBeenActive = ref(false)
-const warmed = ref(false)
 
 const mimeType = computed(() => {
   const ext = props.src.split('.').pop()?.toLowerCase()
@@ -134,7 +132,7 @@ const mimeType = computed(() => {
 // --- Fallback chain advance ---
 let switching = false
 function onError() {
-  if (switching || (!hasBeenActive.value && !warmed.value)) return
+  if (switching || !attached.value) return
   // A <source> error is only real once resource selection has given up
   // (NETWORK_NO_SOURCE). Chrome also fires stale ones — from the empty src the
   // element mounted with, or from a request it aborted itself to re-issue
@@ -159,13 +157,7 @@ function syncPlayback() {
   const video = videoRef.value
   if (!video) return
   if (isActive.value) {
-    if (!hasBeenActive.value) {
-      hasBeenActive.value = true
-      if (!warmed.value) {
-        status.value = 'loading'
-        nextTick(() => videoRef.value?.load())
-      }
-    }
+    if (!attached.value) return          // the attach watcher loads first, then re-runs this
     video.currentTime = 0
     video.volume = sessionVolume.value ?? effVolume.value
     if (!props.autoplay) {
@@ -309,30 +301,43 @@ onUnmounted(() => {
 const { $page, $renderContext } = useSlideContext()
 const isLive = computed(() => $renderContext.value === 'slide' || $renderContext.value === 'presenter')
 
-// Look-ahead preload for the next PRELOAD_AHEAD slides' videos: attach the
-// <source> early and let the element buffer (preload="auto"), in dev AND in
-// production. Production used to warm the browser cache with
-// <link rel="preload" as="video"> instead — Chrome rejects that `as` value
-// ("<link rel=preload> uses an unsupported `as` value") and fetches nothing,
-// so deployed decks started every clip cold (found on the deployed World of
-// Particles deck, 2026-09-07). Placeholder instances (overview) have no
-// <video>, so the warm is a no-op there.
+// Attach window. A <video> only carries its <source> while its slide is the
+// live one, one of the next PRELOAD_AHEAD slides (look-ahead: attach early
+// with preload="auto" so the clip buffers while the current slide is up, in
+// dev AND in production — <link rel="preload" as="video"> is rejected by
+// Chrome and preloaded nothing, found on the deployed World of Particles
+// deck 2026-09-07), or one of the KEEP_BEHIND slides just passed (a back-step
+// resumes instantly). Everything else is detached and load()ed empty so the
+// browser releases its media pipeline: Chrome caps the number of media
+// elements that may be loaded at once (per renderer, ~10 on desktop), and
+// beyond it every further load() just sits in NETWORK_LOADING with
+// readyState 0 — no error, no event. Keeping every visited clip attached
+// froze the World of Particles deck from its 9th clip on, web and offline
+// alike (2026-09-09). Placeholder instances (overview) have no <video>.
 const PRELOAD_AHEAD = 3
+const KEEP_BEHIND = 1
 const { currentPage } = useNav()
 
-const isUpcoming = computed(() => {
+const distance = computed(() => {
   const here = $page?.value
   const now = currentPage?.value
-  if (!here || !now) return false
-  const distance = here - now
-  return distance > 0 && distance <= PRELOAD_AHEAD
+  if (!here || !now) return null
+  return here - now
 })
+const isUpcoming = computed(() => distance.value !== null && distance.value > 0 && distance.value <= PRELOAD_AHEAD)
+const isJustPassed = computed(() => distance.value !== null && distance.value < 0 && -distance.value <= KEEP_BEHIND)
+const attached = computed(() => isLive.value && (isActive.value || isUpcoming.value || isJustPassed.value))
 
-watch(isUpcoming, (warm) => {
-  if (!warm || warmed.value || hasBeenActive.value || !isLive.value) return
-  warmed.value = true
-  status.value = 'loading'
-  nextTick(() => videoRef.value?.load())
+watch(attached, (yes) => {
+  if (yes) {
+    status.value = 'loading'
+    nextTick(() => { videoRef.value?.load(); syncPlayback() })
+  } else {
+    status.value = 'idle'
+    // <source src=""> is in the DOM after this tick; load() on it aborts the
+    // fetch and frees the decoder/buffer for the clips still in the window.
+    nextTick(() => videoRef.value?.load())
+  }
 }, { immediate: true })
 </script>
 
@@ -354,7 +359,7 @@ watch(isUpcoming, (warm) => {
       muted
       playsinline
       webkit-playsinline
-      :preload="warmed || hasBeenActive || !autoplay ? 'auto' : 'none'"
+      :preload="attached || !autoplay ? 'auto' : 'none'"
       :style="{ objectFit: effFit }"
       @loadeddata="onLoaded"
       @error="onError"
@@ -362,7 +367,7 @@ watch(isUpcoming, (warm) => {
       @touchstart.passive="onVideoTouch"
       :class="{ 'video-ready': status === 'ready' }"
     >
-      <source ref="sourceRef" :src="hasBeenActive || warmed ? currentSrc : ''" :type="mimeType" />
+      <source ref="sourceRef" :src="attached ? currentSrc : ''" :type="mimeType" />
     </video>
     <Transition name="volume-badge">
       <div v-if="volumeBadge !== null" class="volume-badge" aria-live="polite">
