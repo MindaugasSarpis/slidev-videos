@@ -1,0 +1,160 @@
+/* slidev-addon-stage — the base kit for slides that live over the stage.
+   Slidev loads this from the addon; every rule is keyed on html[data-stage],
+   which the Stage component sets while it is mounted, so a deck that loads
+   the addon without a `stage:` block is left alone. Colours come from the
+   palette (--stage-* on <html>). Sizes are px against Slidev's 980-wide
+   canvas. A deck overrides any of it from its own styles/index.css. */
+
+html[data-stage] {
+  --stage-font: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --stage-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --stage-card: rgba(var(--stage-bg-rgb, 5, 5, 7), 0.55);
+}
+
+/* --- Typeface (the faces are loaded by the Stage component) */
+html[data-stage] .slidev-layout,
+html[data-stage] .slidev-layout .card,
+html[data-stage] .slidev-layout table,
+html[data-stage] .slidev-layout .caption,
+html[data-stage] .slidev-layout .src {
+  font-family: var(--stage-font);
+}
+
+/* --- Headings. Themes set their own sizes at equal specificity, hence !important. */
+html[data-stage] .slidev-layout h1 {
+  font-size: 42px !important;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  margin: 0 0 18px;
+  color: var(--stage-fg);
+}
+html[data-stage] .slidev-layout.section h1 { font-size: 44px !important; font-weight: 600 !important; line-height: 1.15 !important; }
+html[data-stage] .slidev-layout.statement h1 { font-size: 56px !important; font-weight: 700 !important; }
+
+/* --- The world lives under the slides: slides are transparent so it shows
+   through; cards keep their text on a translucent fill with no drawn edge
+   (StageHalo draws the hazy border). */
+html[data-stage] .slidev-layout,
+html[data-stage] .slidev-layout.cover,
+html[data-stage] .slidev-layout.section,
+html[data-stage] .slidev-layout.fact,
+html[data-stage] .slidev-layout.statement,
+html[data-stage] .slidev-layout.center-bkg {
+  background: transparent !important;
+  color: var(--stage-fg);
+}
+html[data-stage] .slidev-page,
+html[data-stage] #slide-content,
+html[data-stage] #slideshow { background: transparent !important; }
+
+/* --- Cards */
+html[data-stage] .card {
+  background: var(--stage-card) !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-radius: 12px;
+  padding: 16px 20px;
+  max-width: 60ch;
+  font-size: 20px;
+}
+html[data-stage] .card::before { display: none; }
+html[data-stage] .card h2 { font-size: 22px; font-weight: 600; line-height: 1.25; margin: 0 0 8px; padding-left: 0; }
+html[data-stage] .card p, html[data-stage] .card li { font-size: 20px; line-height: 1.35; }
+html[data-stage] .card ul, html[data-stage] .card ol { font-size: 20px; line-height: 1.35; padding-left: 1.1em; margin: 0.35rem 0 0; }
+html[data-stage] .card li { margin: 0.15em 0; }
+
+/* Cards rise in as a slide arrives (staggered), the way the HUD does. */
+@keyframes stage-card-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+html[data-stage] .slidev-page .card { animation: stage-card-in 0.7s var(--stage-ease) both; }
+html[data-stage] .slidev-page .card:nth-child(2) { animation-delay: 0.08s; }
+html[data-stage] .slidev-page .card:nth-child(3) { animation-delay: 0.16s; }
+
+/* --- Text blocks */
+html[data-stage] .caption { font-size: 20px; line-height: 1.35; max-width: 60ch; color: var(--stage-fg); opacity: 0.92; }
+html[data-stage] .quote-line { font-size: 22px; font-weight: 500; line-height: 1.35; max-width: 60ch; color: var(--stage-fg); }
+html[data-stage] .quote-line .who,
+html[data-stage] .quote-hero .who { display: block; margin-top: 12px; font-size: 15px; font-weight: 400; color: var(--stage-dim); letter-spacing: 0.04em; }
+html[data-stage] .kicker { font-size: 12.5px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--stage-accent); margin: 0 0 14px; }
+/* a large quotation beside something that stands in the world */
+html[data-stage] .quote-hero { position: absolute; right: 4%; top: 22%; width: 43%; font-size: 26px; line-height: 1.35; font-weight: 500; color: var(--stage-fg); }
+html[data-stage] .quote-hero.wide { left: 44px; right: auto; top: 28%; width: 68%; }
+/* a diagram on the same translucent ground as a card */
+html[data-stage] .plate { padding: 10px 14px 6px; border-radius: 10px; background: var(--stage-card); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+/* captions for a slide whose picture is the world: low, full width */
+html[data-stage] .world-caption { position: absolute; left: 44px; right: 44px; bottom: 58px; }
+
+/* --- Layout: a figure on one side, ≤ 60ch of text on the other. Widths are
+   `.col-*` because UnoCSS already owns `w-40` (= 10rem). */
+html[data-stage] .row { display: flex; gap: 28px; align-items: flex-start; }
+html[data-stage] .stage-area { max-height: 340px; }
+html[data-stage] .col-40 { flex: 0 0 40%; max-width: 40%; }
+html[data-stage] .col-45 { flex: 0 0 45%; max-width: 45%; }
+html[data-stage] .col-50 { flex: 0 0 50%; max-width: 50%; }
+html[data-stage] .col-55 { flex: 0 0 55%; max-width: 55%; }
+html[data-stage] .col-60 { flex: 0 0 60%; max-width: 60%; }
+html[data-stage] .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; max-width: none; }
+html[data-stage] .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; max-width: none; }
+
+/* --- Footer: one `.src` line per slide, bottom-left. */
+html[data-stage] .src {
+  position: absolute; left: 44px; bottom: 22px;
+  font-size: 12px; line-height: 1.3; opacity: 0.7; letter-spacing: 0.02em;
+  max-width: 86%; color: var(--stage-fg);
+}
+
+/* --- While the stage is on a stop (html[data-space-stop]) the slide's own
+   content goes away, so the record and its figure have the screen. */
+html[data-stage] .slidev-page .slidev-layout { transition: opacity 0.55s ease; }
+html[data-stage][data-space-stop="1"] .slidev-page .slidev-layout { opacity: 0; }
+
+/* --- Cover in the hero's type. Markdown:
+       # kicker
+       # Title
+       ## subtitle
+       <div class="mt-md">byline</div>                                         */
+html[data-stage] .slidev-layout.cover { font-family: var(--stage-font); padding-left: 11% !important; text-align: left; display: flex; flex-direction: column; justify-content: center; }
+html[data-stage] .slidev-layout.cover h1:first-of-type { font-size: 12.5px !important; font-weight: 500 !important; letter-spacing: 0.12em; text-transform: uppercase; color: var(--stage-accent); margin: 0 0 20px !important; }
+html[data-stage] .slidev-layout.cover h1:nth-of-type(2) { font-size: 66px !important; font-weight: 700 !important; line-height: 0.98 !important; letter-spacing: -0.02em; text-transform: uppercase; color: var(--stage-fg); margin: 0 0 26px !important; max-width: 12ch; }
+html[data-stage] .slidev-layout.cover h2 { font-size: 12px !important; font-weight: 400 !important; letter-spacing: 0.1em; text-transform: uppercase; color: var(--stage-dim); line-height: 1.9 !important; max-width: 62ch; margin: 0 !important; }
+html[data-stage] .slidev-layout.cover .mt-md { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--stage-dim); margin-top: 18px; }
+html[data-stage] .slidev-layout.cover .src { position: static; white-space: nowrap; font-size: 11px; margin-top: 28px; }
+/* The cover's title lands with whatever builds itself at the hero station:
+   Stage clears html[data-space-assembled] while it assembles and sets it
+   when the last node lands (always set without WebGL). */
+html[data-stage] .slidev-layout.cover h1,
+html[data-stage] .slidev-layout.cover h2,
+html[data-stage] .slidev-layout.cover .mt-md { transition: opacity 1.4s ease 0.1s, transform 1.4s var(--stage-ease) 0.1s; }
+html[data-stage]:not([data-space-assembled]) .slidev-layout.cover h1,
+html[data-stage]:not([data-space-assembled]) .slidev-layout.cover h2,
+html[data-stage]:not([data-space-assembled]) .slidev-layout.cover .mt-md { opacity: 0; transform: translateY(8px); }
+@media print {
+  html[data-stage] .slidev-layout.cover h1,
+  html[data-stage] .slidev-layout.cover h2,
+  html[data-stage] .slidev-layout.cover .mt-md { opacity: 1 !important; transform: none !important; }
+}
+html[data-stage] .slidev-layout.cover::before, html[data-stage] .slidev-layout.cover hr { display: none !important; }
+/* a radial darkening behind the cover text, so the world does not cut through the title */
+html[data-stage] .slidev-layout.cover::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(60% 55% at 32% 50%, rgba(var(--stage-bg-rgb, 5, 5, 7), 0.55), transparent 70%);
+  pointer-events: none; z-index: 0;
+}
+html[data-stage] .slidev-layout.cover > * { position: relative; z-index: 1; }
+/* themes that ship a photo backdrop for the cover: the world is the backdrop here */
+html[data-stage] .slidev-layout.cover .cover-bg, html[data-stage] .slidev-layout.cover .vol-light { display: none !important; }
+html[data-stage] .slidev-page .slidev-layout.cover { background: transparent !important; background-image: none !important; }
+
+/* --- Section, fact, statement */
+html[data-stage] .slidev-layout.section h1 + p,
+html[data-stage] .slidev-layout.section .sub { font-size: 20px; color: var(--stage-dim); max-width: 60ch; }
+html[data-stage] .slidev-layout.fact h1 { font-size: 64px !important; font-weight: 700 !important; letter-spacing: -0.02em; }
+html[data-stage] .slidev-layout.fact h1 + p {
+  font-size: 26px !important; font-weight: 400 !important; color: var(--stage-fg); opacity: 0.85 !important;
+  max-width: 60ch; margin: 18px auto 0 !important;
+}
+html[data-stage] .slidev-layout.statement .mt-md { font-size: 14px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--stage-dim); }
+html[data-stage] .slidev-layout.statement .src { position: static; margin-top: 28px; }

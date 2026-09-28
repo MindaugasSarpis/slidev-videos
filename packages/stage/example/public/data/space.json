@@ -1,0 +1,77 @@
+{
+  "hero": "hero",
+  "poses": {
+    "far": { "station": "grid", "dist": 22, "yaw": -35, "pitch": 14 }
+  },
+  "stations": [
+    {
+      "id": "hero",
+      "pos": [-26, 0, 0],
+      "look": { "target": [-7.8, 0.4, 0], "dist": 15, "yaw": -22, "pitch": 7, "sway": 9 },
+      "gather": 3.6,
+      "pulse": 6,
+      "objects": [
+        {
+          "type": "constellation",
+          "pos": [0, 0, 0],
+          "radius": 3.1,
+          "nodeRadius": 0.72,
+          "label": "five ideas, one body",
+          "nodes": [
+            { "pos": [1.2, 0.9, 0.3], "color": "#5b93ff" },
+            { "pos": [0.4, -1.5, -0.9], "color": "#dfe6ee" },
+            { "pos": [1.5, -0.3, -1.2], "color": "#9bb8ff" },
+            { "pos": [-0.9, 1.3, -1.0], "color": "#dfe6ee" },
+            { "pos": [-1.3, -0.6, 0.6], "color": "#8e7dff" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "path",
+      "pos": [6, 0, 0],
+      "look": { "target": [2.4, 0, 0], "dist": 10, "yaw": -24, "pitch": 7 },
+      "objects": [
+        {
+          "type": "tracks",
+          "pos": [0, 0, 0],
+          "pulse": true,
+          "nodes": [{ "pos": [0, 0, 0], "size": 0.16, "color": "#5b93ff" }],
+          "tracks": [
+            { "points": [[-4, 0, 0], [0, 0, 0]], "label": "in", "labelAt": "mid", "width": 2 },
+            { "points": [[0, 0, 0], [4, 1.6, 0.4]], "label": "one way", "color": "#5b93ff" },
+            { "points": [[0, 0, 0], [4.2, -0.4, -0.8]], "label": "another", "color": "#9bb8ff" },
+            { "points": [[0, 0, 0], [3.4, -1.8, 0.9]], "label": "not taken", "dashed": true, "fade": 0.6 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "marks",
+      "pos": [30, 0, -2],
+      "look": { "dist": 11, "yaw": -18, "pitch": 8 },
+      "objects": [
+        {
+          "type": "orbs",
+          "pos": [0, 0, 0],
+          "items": [
+            { "id": "first", "pos": [-3, 0, 0], "color": "#5b93ff" },
+            { "id": "second", "pos": [0, 0.4, 0.6], "color": "#8e7dff" },
+            { "id": "open", "pos": [3, -0.2, -0.4], "color": "#9bb8ff", "faint": true, "label": "still open" }
+          ]
+        },
+        { "type": "ring", "pos": [0, 0, 0], "radius": 4.6, "thickness": 0.008, "tilt": 78, "spin": 0.05 },
+        { "type": "bar", "pos": [-3, -2.2, 0], "length": 3, "label": "3 units" }
+      ]
+    },
+    {
+      "id": "grid",
+      "pos": [60, 0, 0],
+      "look": { "dist": 10, "yaw": -30, "pitch": 6 },
+      "objects": [
+        { "type": "grid", "pos": [0, -1.5, 0], "from": -10, "to": 14, "step": 2 },
+        { "type": "text", "pos": [3, 0.6, -4], "height": 0.5, "text": "what comes next\nis not drawn yet" }
+      ]
+    }
+  ]
+}

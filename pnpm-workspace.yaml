@@ -1,0 +1,6 @@
+# The toolkit's packages. The repo root is itself a package
+# (slidev-addon-videos); every further tool lives under packages/.
+packages:
+  - packages/*
+onlyBuiltDependencies:
+  - playwright-chromium

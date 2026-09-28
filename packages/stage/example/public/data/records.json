@@ -1,0 +1,7 @@
+{
+  "records": [
+    { "id": "first", "label": "The first mark", "found": "2015", "rows": [["found", "2015"], ["by", "the first survey"], ["status", "established"]] },
+    { "id": "second", "label": "The second mark", "found": "2019", "status": "established", "note": "nine times the data" }
+  ],
+  "figures": {}
+}
