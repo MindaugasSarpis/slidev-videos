@@ -1,0 +1,20 @@
+import { createServer } from 'node:http';
+import { readFile, stat } from 'node:fs/promises';
+import { join, extname } from 'node:path';
+import { chromium } from 'playwright-chromium';
+const DIST = process.argv[2];
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.woff2': 'font/woff2', '.svg': 'image/svg+xml', '.png': 'image/png' };
+const srv = createServer(async (req, res) => { let p = decodeURIComponent(new URL(req.url, 'http://x').pathname); if (p === '/') p = '/index.html'; try { await stat(join(DIST, p)); } catch { p = '/index.html'; } res.setHeader('Content-Type', MIME[extname(p)] || 'application/octet-stream'); res.end(await readFile(join(DIST, p))); }).listen(8770);
+const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+await page.goto('http://localhost:8770/#/33'); await page.waitForTimeout(5000);
+const info = await page.evaluate(() => {
+  const pg = document.querySelector('.slidev-page[data-slidev-no="33"]'); const lay = pg.querySelector('.slidev-layout');
+  const refs = lay.querySelector('.refs'); const p = refs.querySelector('p');
+  const cs = getComputedStyle(p), rs = getComputedStyle(refs), ls = getComputedStyle(lay), h1 = getComputedStyle(lay.querySelector('h1'));
+  const R = (el) => { const b = el.getBoundingClientRect(); return [Math.round(b.top), Math.round(b.bottom), Math.round(b.height)]; };
+  const scale = lay.getBoundingClientRect().width / lay.offsetWidth;
+  return { scale, lay: R(lay), h1: R(lay.querySelector('h1')), h1margin: [h1.marginTop, h1.marginBottom], refs: R(refs), p: { fs: cs.fontSize, lh: cs.lineHeight, mt: cs.marginTop, mb: cs.marginBottom }, refsCols: rs.columnCount, layPad: [ls.paddingTop, ls.paddingBottom], layClass: lay.className };
+});
+console.log(JSON.stringify(info));
+await browser.close(); srv.close();
