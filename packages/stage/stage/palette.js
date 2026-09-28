@@ -25,6 +25,8 @@ export const PALETTES = {
     highlight: '#dff1ff',  // the shell round a lit stop
     ink: '#e6e9ee',        // labels on objects
     paper: '#5c6066',      // a page's albedo tint
+    nebula: '#3a7fa8',     // far clouds behind the dust (drawn when the look's `nebula` > 0) …
+    nebulaAlt: '#5a4a9c',  // … shading into this
   },
   // Deeper and bluer: an ultramarine dust over a blue-black ground.
   blue: {
@@ -40,6 +42,8 @@ export const PALETTES = {
     highlight: '#d9e6ff',
     ink: '#e3eaf8',
     paper: '#565d6e',
+    nebula: '#2447c8',
+    nebulaAlt: '#6a3fd0',
   },
   // Warm: amber dust over a brown-black ground.
   ember: {
@@ -55,8 +59,23 @@ export const PALETTES = {
     highlight: '#ffe9d2',
     ink: '#f1e7dc',
     paper: '#66605a',
+    nebula: '#c4562a',
+    nebulaAlt: '#8a2f4f',
   },
 };
+
+// What goes with a palette besides its colours: engine options a deck gets
+// with the name unless it sets them itself (`stage.options`). The classic
+// look is Startertalk's, and stays as it was: no nebula.
+export const LOOKS = {
+  classic: { nebula: 0 },
+  blue: { nebula: 0.8 },
+  ember: { nebula: 0.7 },
+};
+export function resolveLook(input) {
+  const name = typeof input === 'string' ? input : (input && typeof input === 'object' ? input.base : null);
+  return { ...(LOOKS[name] || {}) };
+}
 
 export const DEFAULT_PALETTE = PALETTES.classic;
 

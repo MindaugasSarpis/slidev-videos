@@ -18,6 +18,7 @@ uniform vec4 uUv;       // the part of the frame that is visible: offset.xy, sca
 uniform vec2 uCanvas;   // canvas size in px
 uniform float uCellPx;  // one cell's width in px
 uniform float uProgress, uFade, uTime, uLeave;
+uniform float uGlow;    // 1: the glow pass — the same grains again, wide and faint, added over
 uniform vec3 uDust;
 out vec4 vColor;
 out float vLanded;
@@ -63,6 +64,15 @@ void main() {
   float alpha = uFade * smoothstep(0.0, 0.12, uProgress) * mix(0.5 + 0.4 * aSeed.y, 1.0, smoothstep(0.4, 1.0, p));
   vColor = vec4(col, alpha);
   vLanded = smoothstep(0.94, 1.0, p);   // square only on the last step home: a square in flight reads as confetti
+  if (uGlow > 0.5) {
+    // A halo round every fourth grain, brightest in mid-flight and gone by
+    // the time it lands, so the settled picture is the picture and nothing more.
+    float on = step(0.75, fract(aSeed.x * 7.0 + aSeed.y * 3.0));
+    float airborne = smoothstep(0.0, 0.25, fly) * (1.0 - smoothstep(0.85, 1.0, fly) * 0.5);
+    gl_PointSize = min(uCellPx * (3.2 + 3.0 * aSeed.z) * persp, 64.0) * on;
+    vColor = vec4(mix(col, dust, 0.35), alpha * 0.22 * airborne * on);
+    vLanded = 0.0;
+  }
 }`;
 
 const FRAG = `#version 300 es
@@ -122,7 +132,7 @@ export function createDust(canvas) {
     console.warn('[slidev-addon-videos]', e.message || e);
     return null;
   }
-  loc = Object.fromEntries(['uTex', 'uRect', 'uUv', 'uCanvas', 'uCellPx', 'uProgress', 'uFade', 'uTime', 'uLeave', 'uDust']
+  loc = Object.fromEntries(['uTex', 'uRect', 'uUv', 'uCanvas', 'uCellPx', 'uProgress', 'uFade', 'uTime', 'uLeave', 'uGlow', 'uDust']
     .map((n) => [n, gl.getUniformLocation(prog, n)]));
 
   // One grid serves every sheet: cells are in picture fractions, so the same
@@ -218,7 +228,15 @@ export function createDust(canvas) {
       gl.uniform1f(loc.uLeave, s.mode === 'leave' ? 1 : 0);
       gl.uniform3f(loc.uDust, s.dust[0], s.dust[1], s.dust[2]);
       gl.bindTexture(gl.TEXTURE_2D, s.tex);
+      gl.uniform1f(loc.uGlow, 0);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       gl.drawArrays(gl.POINTS, 0, grid.count);
+      // the glow, added over; nothing to add once the whole sheet has landed
+      if (s.progress < 0.98) {
+        gl.uniform1f(loc.uGlow, 1);
+        gl.blendFunc(gl.ONE, gl.ONE);
+        gl.drawArrays(gl.POINTS, 0, grid.count);
+      }
     }
     gl.bindVertexArray(null);
     if (sheets.size) raf = requestAnimationFrame(frame);

@@ -179,6 +179,42 @@ def test_cuts_a_strip_and_indexes_it(tmp_path, capsys):
 
 
 @pytest.mark.skipif(not HAVE_FFMPEG, reason="needs ffmpeg")
+def test_a_url_ffprobe_cannot_read_is_downloaded_and_cut(tmp_path, capsys, monkeypatch):
+    """Some ffmpeg builds crash on HTTPS; the clip is then fetched and cut locally."""
+    make_project(tmp_path, PER_CLIP)
+    clip = tmp_path / "elsewhere.mp4"
+    make_clip(clip, seconds=5)
+    url = "https://example.invalid/releases/download/tag/b.mp4"
+    monkeypatch.setattr(pipeline, "_frames_source", lambda name, *_: ("talk-release", url))
+    real_probe = pipeline._probe_media
+    monkeypatch.setattr(pipeline, "_probe_media", lambda src: None if src.startswith("http") else real_probe(src))
+    fetched = []
+
+    def fake_download(u, dest):
+        fetched.append(u)
+        shutil.copyfile(clip, dest)
+        return True
+    monkeypatch.setattr(pipeline, "_download", fake_download)
+
+    assert run(tmp_path) == 0
+    assert fetched == [url]
+    assert "downloaded to cut" in capsys.readouterr().out
+    out_dir = tmp_path / "public" / "video-frames"
+    assert json.loads((out_dir / "index.json").read_text())["clips"]["b.mp4"]["size"] == [640, 360]
+    assert sorted(p.name for p in out_dir.iterdir()) == ["b.mp4.jpg", "index.json"]   # the download is gone
+
+
+def test_a_failed_download_fails_that_clip(tmp_path, capsys, monkeypatch):
+    make_project(tmp_path, PER_CLIP)
+    monkeypatch.setattr(pipeline.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(pipeline, "_frames_source", lambda name, *_: ("talk-release", "https://example.invalid/b.mp4"))
+    monkeypatch.setattr(pipeline, "_probe_media", lambda src: None)
+    monkeypatch.setattr(pipeline, "_download", lambda u, dest: False)
+    assert run(tmp_path) == 1
+    assert "the download failed" in capsys.readouterr().out
+
+
+@pytest.mark.skipif(not HAVE_FFMPEG, reason="needs ffmpeg")
 def test_all_and_prune(tmp_path):
     make_project(tmp_path, PER_CLIP)
     for name in ("a.mp4", "b.mp4"):

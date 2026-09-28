@@ -29,7 +29,6 @@ html[data-stage] .slidev-layout h1 {
   margin: 0 0 18px;
   color: var(--stage-fg);
 }
-html[data-stage] .slidev-layout.section h1 { font-size: 44px !important; font-weight: 600 !important; line-height: 1.15 !important; }
 html[data-stage] .slidev-layout.statement h1 { font-size: 56px !important; font-weight: 700 !important; }
 
 /* --- The world lives under the slides: slides are transparent so it shows
@@ -116,9 +115,9 @@ html[data-stage][data-space-stop="1"] .slidev-page .slidev-layout { opacity: 0; 
        ## subtitle
        <div class="mt-md">byline</div>                                         */
 html[data-stage] .slidev-layout.cover { font-family: var(--stage-font); padding-left: 11% !important; text-align: left; display: flex; flex-direction: column; justify-content: center; }
-html[data-stage] .slidev-layout.cover h1:first-of-type { font-size: 12.5px !important; font-weight: 500 !important; letter-spacing: 0.12em; text-transform: uppercase; color: var(--stage-accent); margin: 0 0 20px !important; }
-html[data-stage] .slidev-layout.cover h1:nth-of-type(2) { font-size: 66px !important; font-weight: 700 !important; line-height: 0.98 !important; letter-spacing: -0.02em; text-transform: uppercase; color: var(--stage-fg); margin: 0 0 26px !important; max-width: 12ch; }
-html[data-stage] .slidev-layout.cover h2 { font-size: 12px !important; font-weight: 400 !important; letter-spacing: 0.1em; text-transform: uppercase; color: var(--stage-dim); line-height: 1.9 !important; max-width: 62ch; margin: 0 !important; }
+html[data-stage] .slidev-layout.cover h1:first-of-type { font-size: 12.5px !important; font-weight: 500 !important; letter-spacing: 0.12em !important; text-transform: uppercase; color: var(--stage-accent) !important; margin: 0 0 20px !important; }
+html[data-stage] .slidev-layout.cover h1:nth-of-type(2) { font-size: 66px !important; font-weight: 700 !important; line-height: 0.98 !important; letter-spacing: -0.02em !important; text-transform: uppercase; color: var(--stage-fg) !important; margin: 0 0 26px !important; max-width: 12ch; }
+html[data-stage] .slidev-layout.cover h2 { font-size: 12px !important; font-weight: 400 !important; letter-spacing: 0.1em !important; text-transform: uppercase; color: var(--stage-dim) !important; line-height: 1.9 !important; max-width: 62ch; margin: 0 !important; }
 html[data-stage] .slidev-layout.cover .mt-md { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--stage-dim); margin-top: 18px; }
 html[data-stage] .slidev-layout.cover .src { position: static; white-space: nowrap; font-size: 11px; margin-top: 28px; }
 /* The cover's title lands with whatever builds itself at the hero station:
@@ -144,13 +143,59 @@ html[data-stage] .slidev-layout.cover::after {
   pointer-events: none; z-index: 0;
 }
 html[data-stage] .slidev-layout.cover > * { position: relative; z-index: 1; }
-/* themes that ship a photo backdrop for the cover: the world is the backdrop here */
-html[data-stage] .slidev-layout.cover .cover-bg, html[data-stage] .slidev-layout.cover .vol-light { display: none !important; }
+/* themes that ship a photo backdrop, light glows or a rule for the cover: the world is the backdrop here */
+html[data-stage] .slidev-layout.cover .cover-bg,
+html[data-stage] .slidev-layout.cover .vol-light,
+html[data-stage] .slidev-layout.cover .cover-accent { display: none !important; }
+html[data-stage] .slidev-layout.cover .cover-content { padding: 0 !important; max-width: none; }
 html[data-stage] .slidev-page .slidev-layout.cover { background: transparent !important; background-image: none !important; }
 
-/* --- Section, fact, statement */
+/* --- Section: the title stands low and left, so what the station holds has
+   the frame. Markdown: `# Part I` and a line under it. */
+html[data-stage] .slidev-layout.section { display: flex !important; flex-direction: column; justify-content: flex-end; align-items: flex-start; padding: 0 0 9% 8% !important; }
+html[data-stage] .slidev-layout.section > div { margin: 0 !important; text-align: left !important; }
+html[data-stage] .slidev-layout.section h1 { font-size: 12.5px !important; font-weight: 500 !important; letter-spacing: 0.12em; text-transform: uppercase; color: var(--stage-accent) !important; margin: 0 0 14px !important; }
 html[data-stage] .slidev-layout.section h1 + p,
-html[data-stage] .slidev-layout.section .sub { font-size: 20px; color: var(--stage-dim); max-width: 60ch; }
+html[data-stage] .slidev-layout.section .sub {
+  font-size: 44px !important; font-weight: 700; line-height: 1.02; letter-spacing: -0.02em; text-transform: uppercase;
+  color: var(--stage-fg) !important; opacity: 1 !important; max-width: 16ch; margin: 0 !important;
+}
+/* a section with its title alone keeps it large */
+html[data-stage] .slidev-layout.section h1:only-child { font-size: 44px !important; font-weight: 700 !important; letter-spacing: -0.02em; line-height: 1.02 !important; color: var(--stage-fg) !important; margin: 0 !important; }
+
+/* --- Display type rises in, line after line, as its slide arrives (a slide
+   shown again starts again: Slidev shows and hides pages with `display`). */
+@keyframes stage-rise { from { opacity: 0; transform: translateY(0.6em); } to { opacity: 1; transform: none; } }
+html[data-stage] .slidev-layout.section h1,
+html[data-stage] .slidev-layout.section h1 + p,
+html[data-stage] .slidev-layout.section .sub,
+html[data-stage] .slidev-layout.statement h1,
+html[data-stage] .slidev-layout.statement .mt-md,
+html[data-stage] .slidev-layout.fact h1,
+html[data-stage] .slidev-layout.fact h1 + p,
+html[data-stage] .slidev-layout .world-caption,
+html[data-stage] .slidev-layout .quote-hero { animation: stage-rise 0.9s var(--stage-ease) both; }
+html[data-stage] .slidev-layout.section h1 { animation-delay: 0.35s; }
+html[data-stage] .slidev-layout.section h1 + p,
+html[data-stage] .slidev-layout.section .sub { animation-delay: 0.5s; }
+html[data-stage] .slidev-layout.statement h1,
+html[data-stage] .slidev-layout.fact h1 { animation-delay: 0.4s; }
+html[data-stage] .slidev-layout.statement .mt-md,
+html[data-stage] .slidev-layout.fact h1 + p { animation-delay: 0.6s; }
+html[data-stage] .slidev-layout .world-caption,
+html[data-stage] .slidev-layout .quote-hero { animation-delay: 0.45s; }
+/* a content slide's title comes first, its cards after it */
+html[data-stage] .slidev-layout:not(.cover):not(.section):not(.statement):not(.fact) > h1 { animation: stage-rise 0.7s var(--stage-ease) both; }
+html[data-stage] .slidev-page .card { animation-delay: 0.12s; }
+html[data-stage] .slidev-page .card:nth-child(2),
+html[data-stage] .slidev-page .row > :nth-child(2) { animation-delay: 0.22s; }
+html[data-stage] .slidev-page .card:nth-child(3),
+html[data-stage] .slidev-page .row > :nth-child(3) { animation-delay: 0.32s; }
+@media (prefers-reduced-motion: reduce), print {
+  html[data-stage] .slidev-layout * { animation: none !important; }
+}
+
+/* --- Fact, statement */
 html[data-stage] .slidev-layout.fact h1 { font-size: 64px !important; font-weight: 700 !important; letter-spacing: -0.02em; }
 html[data-stage] .slidev-layout.fact h1 + p {
   font-size: 26px !important; font-weight: 400 !important; color: var(--stage-fg); opacity: 0.85 !important;

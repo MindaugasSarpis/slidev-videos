@@ -2,7 +2,7 @@ import {
   WebGLRenderer, Scene, PerspectiveCamera, OrthographicCamera, Mesh, Points, Group,
   PlaneGeometry, BufferGeometry, BufferAttribute, ShaderMaterial, DataTexture,
   WebGLRenderTarget, RGBAFormat, FloatType, HalfFloatType, NearestFilter,
-  AdditiveBlending, Vector2, Vector3, Vector4, Color,
+  AdditiveBlending, Vector2, Vector3, Vector4, Color, Matrix3,
   HemisphereLight, DirectionalLight, PointLight, PMREMGenerator, ACESFilmicToneMapping,
 } from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -13,6 +13,7 @@ import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { SIM_VERT, COPY_FRAG, VEL_FRAG, POS_FRAG, RENDER_VERT, RENDER_FRAG } from './shaders/passes.glsl.js';
+import { NOISE } from './shaders/noise.glsl.js';
 import { buildStation, helpers } from './builders.js';
 import { shell } from './materials.js';
 import { resolvePalette, hexToRgb } from './palette.js';
@@ -48,6 +49,7 @@ const DEFAULTS = {
   dustSize: 1.9,
   dustGain: 2.0,
   density: 1,            // scales the grain count (0.5 … 1.5)
+  nebula: 0,             // clouds of the palette's colour far behind the dust, 0 (none) … 1
   flight: [1.4, 4.5],    // shortest and longest flight, seconds
 };
 
@@ -55,13 +57,40 @@ const DEFAULTS = {
 // solid ground): the two radial glows the container's CSS carries for the
 // static fallback, in view fractions.
 const BG_VERT = /* glsl */ `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.9999, 1.0); }`;
+// With `nebula` > 0 the ground also carries slow clouds of the palette's two
+// nebula colours. They are painted on the inside of a sphere round the
+// camera (the lookup is the view direction), so they turn as the camera turns
+// and stand still as it travels: the far background of a world, not a
+// wallpaper on the slide.
 const BG_FRAG = /* glsl */ `
-uniform vec3 uBg, uGlow;
+uniform vec3 uBg, uGlow, uNebA, uNebB;
+uniform float uNebula, uTime, uAspect, uTanHalfFov;
+uniform mat3 uCamRot;
 varying vec2 vUv;
+${NOISE}
+float fbm(vec3 p) {
+  float a = 0.5, s = 0.0;
+  for (int i = 0; i < 4; i++) { s += a * snoise(p); p = p * 2.03 + vec3(11.7, 3.1, 7.9); a *= 0.5; }
+  return s;
+}
 void main() {
   float g1 = 1.0 - smoothstep(0.0, 0.62, length((vUv - vec2(0.78, 1.08)) / vec2(0.69, 0.78)));
   float g2 = 1.0 - smoothstep(0.0, 0.60, length((vUv - vec2(-0.12, -0.08)) / vec2(0.56, 0.67)));
-  gl_FragColor = vec4(uBg + uGlow * (0.07 * g1 + 0.05 * g2), 1.0);
+  vec3 col = uBg + uGlow * (0.07 * g1 + 0.05 * g2);
+  if (uNebula > 0.0) {
+    vec2 ndc = vUv * 2.0 - 1.0;
+    vec3 dir = normalize(uCamRot * vec3(ndc.x * uAspect * uTanHalfFov, ndc.y * uTanHalfFov, -1.0));
+    vec3 p = dir * 1.35 + vec3(0.0, 0.0, uTime * 0.006);
+    float warp = fbm(p * 1.7 + 4.0);
+    float n = fbm(p + 0.55 * warp);
+    float cloud = smoothstep(-0.05, 0.75, n);             // broad bodies
+    float wisp = smoothstep(0.25, 0.9, fbm(p * 2.6 - warp)); // finer structure inside them
+    vec3 neb = mix(uNebA, uNebB, smoothstep(-0.3, 0.5, warp)) * cloud * (0.55 + 0.75 * wisp);
+    // thinner toward the ground plane of the world, so the horizon stays calm behind text
+    neb *= 0.45 + 0.55 * smoothstep(-0.5, 0.6, dir.y);
+    col += neb * 0.16 * uNebula;
+  }
+  gl_FragColor = vec4(col, 1.0);
 }`;
 // The finish: a vignette, a touch of chromatic aberration toward the edges,
 // film grain.
@@ -120,7 +149,16 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   // (no sRGB → linear step): the look was tuned with the tone mapper lifting
   // them, and a converted ground comes out a shade too deep.
   const raw = (hex) => new Vector3(...hexToRgb(hex));
-  const bgMat = new ShaderMaterial({ vertexShader: BG_VERT, fragmentShader: BG_FRAG, depthTest: false, depthWrite: false, uniforms: { uBg: { value: raw(pal.bg) }, uGlow: { value: raw(pal.accent) } } });
+  const bgMat = new ShaderMaterial({
+    vertexShader: BG_VERT, fragmentShader: BG_FRAG, depthTest: false, depthWrite: false,
+    uniforms: {
+      uBg: { value: raw(pal.bg) }, uGlow: { value: raw(pal.accent) },
+      uNebA: { value: raw(pal.nebula) }, uNebB: { value: raw(pal.nebulaAlt) },
+      uNebula: { value: Math.min(1.5, Math.max(0, num(opt.nebula, 0))) },
+      uTime: { value: 0 }, uAspect: { value: 1 }, uTanHalfFov: { value: Math.tan(num(opt.fov, 50) * D2R / 2) },
+      uCamRot: { value: new Matrix3() },
+    },
+  });
   const bgQuad = new Mesh(new PlaneGeometry(2, 2), bgMat);
   bgQuad.renderOrder = -1000; bgQuad.frustumCulled = false; scene.add(bgQuad);
   // light: a cool sky over a dark ground, a key from upper left, and a fill
@@ -288,6 +326,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     applyDpr();
     composer.setSize(w, h);
     camera.aspect = w / h; camera.updateProjectionMatrix();
+    bgMat.uniforms.uAspect.value = w / h;
   }
   resize();
 
@@ -332,6 +371,8 @@ export function createSpace(canvas, container, { space, records = [], palette, o
       curPos.lerp(goalPos, k); curLook.lerp(goalLook, k);
     }
     camera.position.copy(curPos); camera.lookAt(curLook); camera.updateMatrixWorld();
+    bgMat.uniforms.uCamRot.value.setFromMatrix4(camera.matrixWorld);
+    bgMat.uniforms.uTime.value = elapsed;
     fill.position.copy(curLook).add(fillOffset);   // above and a little toward the camera, off the objects' faces
     fieldMat.uniforms.uFocus.value = curPos.distanceTo(curLook);
     finish.uniforms.uTime.value = elapsed;

@@ -1859,9 +1859,43 @@ def _frames_source(name: str, talk_assets, shared_assets) -> tuple[str, str] | N
     return None
 
 
+def _download(url: str, dest: Path) -> bool:
+    """Fetch url to dest (streamed). False on any failure; dest is removed then."""
+    import urllib.request
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "slidev-videos"})
+        with urllib.request.urlopen(req, timeout=60) as r, dest.open("wb") as f:
+            shutil.copyfileobj(r, f, 1 << 20)
+        return dest.stat().st_size > 0
+    except (OSError, ValueError):
+        dest.unlink(missing_ok=True)
+        return False
+
+
 def _frames_one(name: str, src: str, out_dir: Path, args: argparse.Namespace) -> tuple[str, dict | None, str]:
-    """Cut one strip. Returns (name, index entry or None, message)."""
+    """Cut one strip. Returns (name, index entry or None, message).
+
+    A release asset is read over HTTPS where ffmpeg can; some builds cannot
+    (the static Linux builds crash resolving a host name), so a URL that
+    ffprobe fails on is downloaded beside the strips, cut, and removed.
+    """
+    fetched: Path | None = None
     info = _probe_media(src)
+    if info is None and src.startswith(("http://", "https://")):
+        fetched = out_dir / f".{name}.src"
+        if not _download(src, fetched):
+            return name, None, "ffprobe can't read the URL and the download failed"
+        src = str(fetched)
+        info = _probe_media(src)
+    try:
+        return _frames_cut(name, src, info, out_dir, args, via_download=fetched is not None)
+    finally:
+        if fetched is not None:
+            fetched.unlink(missing_ok=True)
+
+
+def _frames_cut(name: str, src: str, info: dict | None, out_dir: Path,
+                args: argparse.Namespace, via_download: bool = False) -> tuple[str, dict | None, str]:
     if info is None:
         return name, None, "ffprobe can't read it"
     vstreams = [s for s in info.get("streams", []) if s.get("codec_type") == "video"]
@@ -1904,7 +1938,7 @@ def _frames_one(name: str, src: str, out_dir: Path, args: argparse.Namespace) ->
         "size": [width, height],
         "duration": round(duration, 3),
     }
-    return name, entry, human_size(out.stat().st_size)
+    return name, entry, human_size(out.stat().st_size) + (" (downloaded to cut)" if via_download else "")
 
 
 def _frames_current(entry: dict | None, out_dir: Path, args: argparse.Namespace) -> bool:

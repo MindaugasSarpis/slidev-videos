@@ -4,7 +4,7 @@ import '@fontsource/space-grotesk/500.css'
 import '@fontsource/space-grotesk/700.css'
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useNav, configs } from '@slidev/client'
-import { createSpace, usePlugin, resolvePalette, paletteVars, warmAudio, startHum, stopHum, humProbe } from '../index.js'
+import { createSpace, usePlugin, resolvePalette, resolveLook, paletteVars, warmAudio, startHum, stopHum, humProbe } from '../index.js'
 import StagePanel from './StagePanel.vue'
 
 // The persistent 3D world under a whole deck. The addon mounts it from its
@@ -20,7 +20,7 @@ import StagePanel from './StagePanel.vue'
 //     sound: true                # the hum while the camera is at `humAt`
 //     humAt: [hero]
 //     videos: true               # stir the dust with slidev-addon-videos' transitions, rest under a covering clip
-//     options: { bloom: 0.55, density: 1, … }   # see stage/space.js DEFAULTS
+//     options: { bloom: 0.55, density: 1, nebula: 0.8, … }   # see stage/space.js DEFAULTS
 //     auto: true                 # false: the deck mounts <Stage> itself (for the #hud slot)
 //
 // Each slide steers the camera through its frontmatter:
@@ -187,7 +187,7 @@ async function boot() {
       space: spaceDef,
       records: records?.records || records?.states || [],
       palette,
-      options: { ...(CFG.options || {}), hero: CFG.hero },
+      options: { ...resolveLook(props.palette ?? CFG.palette), ...(CFG.options || {}), hero: CFG.hero },
       asset,
       onArrive: () => { arrived.value = true },
       // what builds itself at the hero does so on arrival; the cover's title

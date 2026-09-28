@@ -58,9 +58,13 @@ layout: section
 space: { at: far }
 ---
 
-# A named pose
+# A section
 
-`poses` in space.json: `far`
+A named pose
+
+<!-- `far` is a pose named in space.json's `poses` -->
+
+
 
 ---
 space: { at: grid, dim: 0.7 }

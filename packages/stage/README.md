@@ -72,8 +72,25 @@ distance and ease in and out.
 | `halo` | `true` | the dust borders; `haloOn: '.card, .halo'` picks what gets one |
 | `dim` | `0.6` | the content-slide scrim; `layoutDim: { cover: 0.15, … }` per layout |
 | `hud` | — | `{ kicker, fields: [...] }` for the default stop panel |
-| `options` | — | engine numbers: `bloom`, `vignette`, `grain`, `aberration`, `exposure`, `density`, `dustSize`, `dustGain`, `gather`, `fov`, `flight: [min, max]`, `maxBufferWidth` |
+| `options` | — | engine numbers: `nebula` (far clouds in the palette's colours, 0–1), `bloom`, `vignette`, `grain`, `aberration`, `exposure`, `density`, `dustSize`, `dustGain`, `gather`, `fov`, `flight: [min, max]`, `maxBufferWidth` |
 | `auto` | `true` | `false`: the deck mounts `<Stage>` itself from its `global-bottom.vue`, to fill the `#hud` slot |
+
+### Palettes and looks
+
+| | ground | accent | dust | nebula |
+| --- | --- | --- | --- | --- |
+| `classic` | near-black | cyan `#7dd3fc` | dim cyan → white | off (Startertalk's look, unchanged) |
+| `blue` | blue-black | `#5b93ff` | ultramarine → pale blue | 0.8 |
+| `ember` | brown-black | `#ffb168` | amber → cream | 0.7 |
+
+A palette is fourteen colours (`stage/palette.js`); a *look* is the engine
+options that come with its name. The nebula is painted on a sphere round the
+camera, so it turns as the camera turns and stands still as it travels.
+`options` in the headmatter win over the look: `options: { nebula: 0 }`.
+
+Display type rises in as its slide arrives (section, statement, fact,
+`.world-caption`, `.quote-hero`, a content slide's title and cards); none of
+it under `prefers-reduced-motion`.
 
 ## The space file
 

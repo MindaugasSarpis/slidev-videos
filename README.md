@@ -92,7 +92,10 @@ frames`** writes a small strip of frames per clip into
 leaving the tile at the moment the presenter moved on. Where the clip is
 same-origin (dev mode, venue and portable builds) the frame on screen is read
 directly instead. No strip, no overlay, no WebGL2 or `prefers-reduced-motion`:
-the clip fades. `check` lists the `dust` clips that have no strip.
+the clip fades. `check` lists the `dust` clips that have no strip. `frames`
+cuts from the local copy if there is one, else from the release; where
+ffmpeg cannot read HTTPS (the static Linux builds crash on it) the clip is
+downloaded, cut and removed.
 
 Other addons can follow along on `window`: `slidev-videos:transition`
 `{ phase: 'enter' | 'leave', mode, src, duration }` and `slidev-videos:cover`

@@ -15,7 +15,7 @@
 import { registerBuilder, hasBuilder, builderTypes, builderFields, buildStation, buildConstellation, helpers } from './stage/builders.js';
 import { setLabelSegmenter, setLabelFont, makeLabel, makeText } from './stage/labels.js';
 import { orb, marble, shell, ball, setOrb } from './stage/materials.js';
-import { PALETTES, DEFAULT_PALETTE, definePalette, resolvePalette, paletteVars } from './stage/palette.js';
+import { PALETTES, DEFAULT_PALETTE, LOOKS, definePalette, resolvePalette, resolveLook, paletteVars } from './stage/palette.js';
 import { createSpace } from './stage/space.js';
 import { warmAudio, playCollision, startHum, stopHum, humProbe } from './stage/sound.js';
 
@@ -51,6 +51,6 @@ export {
   registerBuilder, hasBuilder, builderTypes, builderFields, buildStation, buildConstellation, helpers,
   setLabelSegmenter, setLabelFont, makeLabel, makeText,
   orb, marble, shell, ball, setOrb,
-  PALETTES, DEFAULT_PALETTE, definePalette, resolvePalette, paletteVars,
+  PALETTES, DEFAULT_PALETTE, LOOKS, definePalette, resolvePalette, resolveLook, paletteVars,
   warmAudio, playCollision, startHum, stopHum, humProbe,
 };
