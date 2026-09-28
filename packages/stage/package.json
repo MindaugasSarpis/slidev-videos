@@ -1,0 +1,47 @@
+{
+  "name": "slidev-addon-stage",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Slidev addon: one persistent 3D world under a whole deck — stations in a field of dust, a camera that flies from slide to slide, a cinematic render chain, palettes and a builder registry",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MindaugasSarpis/slidev-videos.git",
+    "directory": "packages/stage"
+  },
+  "license": "MIT",
+  "keywords": ["slidev-addon", "three", "keynote", "presentation"],
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./plugins/hadron": "./stage/plugins/hadron.js",
+    "./check": "./bin/check.mjs",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "slidev-stage-check": "bin/check.mjs",
+    "slidev-stage-shots": "bin/shots.mjs"
+  },
+  "files": ["components", "stage", "styles", "bin", "index.js", "global-top.vue", "global-bottom.vue", "README.md"],
+  "scripts": {
+    "build:example": "slidev build example/slides.md --out dist --base /",
+    "check:example": "node bin/check.mjs example",
+    "test": "node --test \"test/*.test.mjs\"",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@fontsource/space-grotesk": "^5.2.10",
+    "three": "^0.185.1"
+  },
+  "peerDependencies": {
+    "@slidev/cli": ">=52",
+    "playwright-chromium": ">=1.49"
+  },
+  "peerDependenciesMeta": {
+    "playwright-chromium": { "optional": true }
+  },
+  "devDependencies": {
+    "@slidev/cli": "^52.1.0",
+    "@slidev/theme-default": "0.25.0",
+    "playwright-chromium": "^1.49.0"
+  }
+}

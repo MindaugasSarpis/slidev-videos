@@ -10,6 +10,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg   # the frames tests cut real strips
       - run: pip install -e . pytest
       - run: python -m pytest tests -q
   addon:
@@ -20,7 +21,23 @@ jobs:
         with: { version: 10 }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg   # the example's one real clip
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium   # Linux system libs for the headless shell
+      - run: pnpm make:clip
       - run: pnpm build:example
       - run: pnpm smoke
+  stage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm stage:test
+      - run: node packages/stage/bin/check.mjs packages/stage/example
+      - run: pnpm stage:build
+      - run: pnpm stage:smoke
