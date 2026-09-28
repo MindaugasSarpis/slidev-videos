@@ -1,22 +1,25 @@
 # slidev-videos
 
-Release-hosted video pipeline for Slidev decks, in one repo:
+Tools for keynote-grade Slidev talks, in one repo. It began as the video
+pipeline and is growing into a toolkit: each tool is its own package, a deck
+takes the ones it wants.
 
-- **`slidev-videos`** (Python ≥3.11, stdlib only) — manifest-driven CLI:
-  `fetch · sync · encode · encode-hq · publish · publish-hq · pull · pull-hq ·
-  check · shared-check · clean · preflight · venue · build`. Web tier is
-  1080p H.264 with EBU R128 loudness normalisation; clips are hosted as
-  GitHub Release assets.
-- **`slidev-addon-videos`** — the full-bleed `VideoPlayer` component with a
-  local → own-release → shared-release fallback chain, slide-driven playback,
-  look-ahead preload, native auto-hide controls and keyboard volume.
-- **The shared clip library** — `src/slidev_videos/shared.toml` (registry) +
-  this repo's `videos-shared` Release (the encodes).
+| tool | where | what it is |
+| --- | --- | --- |
+| **`slidev-videos`** | `src/` (Python ≥3.11, stdlib only) | manifest-driven CLI: `fetch · sync · encode · encode-hq · publish · publish-hq · pull · pull-hq · check · shared-check · frames · clean · preflight · venue · build · discover`. Web tier is 1080p H.264 with EBU R128 loudness normalisation; clips are hosted as GitHub Release assets |
+| **`slidev-addon-videos`** | repo root | the full-bleed `VideoPlayer`: a local → own-release → shared-release fallback chain, slide-driven playback, look-ahead preload, `cut` / `fade` / `dust` transitions, native auto-hide controls, keyboard volume |
+| **`slidev-addon-stage`** | [`packages/stage`](packages/stage/README.md) | one persistent 3D world under a whole deck: stations in a field of dust, a camera that flies from slide to slide, palettes, a builder registry, halo borders, a validator and a screenshot tool |
+| **the shared clip library** | `src/slidev_videos/shared.toml` | the registry, with the encodes on this repo's `videos-shared` Release |
+
+The two addons know of each other only through window events: a clip that
+arrives as dust draws the stage's dust with it, and the stage rests its
+renderer under a clip that covers the slide. Either works alone.
 
 ## Install (per consumer repo)
 
-    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.3.2"
-    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.3.2
+    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.4.0"
+    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.4.0
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.4.0&path:/packages/stage"   # the stage, if wanted
 
 ## The player (`slidev-addon-videos`)
 
@@ -32,6 +35,8 @@ Enable the addon and point it at your release in the deck headmatter:
       fit: cover                # cover | contain (default cover)
       hq: false                 # try public/videos-hq/<src> first (default false)
       volume: 1                 # 0..1 default playback level (default 1)
+      transition: cut           # cut | fade | dust (default cut)
+      dust: '#7dd3fc'           # colour of the grains in flight (dust only)
     ---
 
     <VideoPlayer src="clip_name.mp4" />
@@ -44,7 +49,8 @@ own-release step), `autoplay` (default `true`; `false` = the presenter starts
 the clip by hand, it still preloads), `loop`, `muted`, `controls` (default
 `true`), `autoHideControls` (default `true`: the native bar appears only while
 the pointer is over the bottom strip or for a few seconds after a click/tap),
-`hq`, `volume`, `fit`. Prop beats headmatter beats env beats built-in.
+`hq`, `volume`, `fit`, `transition`, `dust`. Prop beats headmatter beats env
+beats built-in.
 
 **Source chain**, front to back: a production build tries the own release,
 then the shared release, then `videos/` and `videos-hq/` under the deck's
@@ -62,6 +68,35 @@ player is detached and `load()`ed empty so the browser frees its media
 pipeline. Chrome caps the number of media elements loaded at once (~10 per
 page on desktop) and beyond that a `load()` silently never completes, which
 is what froze a 32-clip reel from its 9th clip on (v0.3.3).
+
+**Transitions.** How a clip arrives and leaves with its slide
+(`videos.transition`, or `transition=` on one clip):
+
+| | arriving | leaving |
+| --- | --- | --- |
+| `cut` | on when ready (the default, as before v0.4) | off at once |
+| `fade` | the picture dissolves in over 0.45 s, the sound over 0.6 s | both fade out; the clip plays on unseen for the 0.4 s its sound takes to go |
+| `dust` | about a hundred thousand grains fly in and settle into the clip's first frame, each taking its pixel's colour as it lands (1.4 s); the clip dissolves in over them and starts | the frame on screen breaks into grains that scatter outward (1.0 s) while the next slide shows through |
+
+With a transition the player has no black ground: what is under the slide
+shows until the picture is up. The grains are drawn by an overlay the addon
+mounts itself (its `global-top.vue`; plain WebGL2, created on first use), so
+the deck must load the package as an addon, not symlink its `components/`.
+While a clip is slow to arrive the assembled sheet holds its first frame.
+
+The grains need the picture's pixels. Release assets are served without CORS
+headers, so a deployed deck can play a clip but not read it; **`slidev-videos
+frames`** writes a small strip of frames per clip into
+`public/video-frames/` (one 320 px tile every 4 s, at most 64, about
+150–350 KB a clip) for the deck to commit. Arriving uses the first tile,
+leaving the tile at the moment the presenter moved on. Where the clip is
+same-origin (dev mode, venue and portable builds) the frame on screen is read
+directly instead. No strip, no overlay, no WebGL2 or `prefers-reduced-motion`:
+the clip fades. `check` lists the `dust` clips that have no strip.
+
+Other addons can follow along on `window`: `slidev-videos:transition`
+`{ phase: 'enter' | 'leave', mode, src, duration }` and `slidev-videos:cover`
+`{ covered, src, fit }`.
 
 **Overview and previews.** In Slidev's overview grid (`o`) and the presenter's
 next-slide preview the player renders a static placeholder, not a `<video>`:
@@ -82,9 +117,12 @@ venue carries through the whole talk. A small `🔊 NN%` badge confirms the
 level for about a second. Rationale: a Mac over HDMI ignores keyboard and room
 volume controls (digital output), so the in-page level is the only handle.
 
-Smoke test: `pnpm build:example && pnpm smoke` (Playwright, headless) checks
-the headmatter reaches the chain, the fallback order, `videos.volume`, the
-three keys and the sticky level.
+Smoke test: `pnpm make:clip && pnpm build:example && pnpm smoke` (Playwright,
+headless) checks the headmatter reaches the chain, the fallback order,
+`videos.volume`, the three keys and the sticky level, and watches the `dust`
+transition end to end on a generated clip (`make:clip` needs ffmpeg; without
+the clip those checks are skipped with a note). `pnpm test:all` runs this and
+the stage's tests.
 
 ## videos.toml (project root)
 
@@ -138,7 +176,8 @@ Names changed when the outreach decks moved onto the library (2026-09-08):
 
     slidev-videos fetch <url> --name Clip --used-in L05
     slidev-videos encode && slidev-videos publish
-    slidev-videos check          # manifest vs slides vs raw/web
+    slidev-videos check          # manifest vs slides vs raw/web (and dust clips without a strip)
+    slidev-videos frames         # frame strips for the dust transition -> public/video-frames/ (commit them)
     slidev-videos preflight      # what will the deployed deck actually serve?
     slidev-videos pull           # restore local web copies from the release
     slidev-videos discover "cloud chamber" lhc --source cds,nasa   # find new clips; prints [[videos]] snippets
@@ -152,5 +191,20 @@ pass `--project <dir>`.
 2. Install both packages, add the `addons:` and `videos:` headmatter.
 3. Embed clips as `<VideoPlayer src="name.mp4" />` — shared-library names
    stream from this repo's `videos-shared` release with no further setup.
+   `src` may stand anywhere in the tag; `check`, `preflight` and `frames`
+   find it.
+4. For `transition: dust`: `slidev-videos frames`, and commit
+   `public/video-frames/`.
+
+## Adding a tool
+
+A new tool is a new directory under `packages/` with its own `package.json`
+(the workspace picks it up), README, tests and example deck; a Slidev addon
+puts `components/`, `styles/` and its `global-top.vue` / `global-bottom.vue`
+at its package root, where Slidev looks for them. Keep a tool configurable
+from the deck's headmatter, keep talk content out of it, and let tools meet
+through window events rather than imports, so a deck can take one without
+the others. `slidev-addon-videos` stays at the repo root so that existing
+`#v0.3.x` installs keep resolving.
 
 Design spec: [2026-09-01 video pipeline package design](https://github.com/MindaugasSarpis/CERN_lessons_on_data_analysis/blob/main/docs/superpowers/specs/2026-09-01-video-pipeline-package-design.md) (in the course repo).
