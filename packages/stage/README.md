@@ -179,7 +179,9 @@ deck's own `styles/index.css`.
 `check` validates the space file and that every `space.at` and stop in the
 deck resolves; run it after editing either. `shots` photographs a built deck
 slide by slide in a headless browser (WebGL on SwiftShader) and reports
-content running off a slide, where the camera stood, and page errors.
+content running off a slide, where the camera stood, and page errors. It
+needs `playwright-chromium` in the deck (`pnpm add -D playwright-chromium`,
+then `pnpm exec playwright install chromium`); nothing else in the addon does.
 
 ## Develop
 

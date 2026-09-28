@@ -84,7 +84,10 @@ function parseArgs(argv) {
 }
 
 export async function shoot(o) {
-  const { chromium } = await import('playwright-chromium');
+  let chromium;
+  try { ({ chromium } = await import('playwright-chromium')); } catch {
+    throw new Error('slidev-stage-shots needs playwright-chromium: pnpm add -D playwright-chromium && pnpm exec playwright install chromium');
+  }
   const dist = resolve(o.dist), out = resolve(o.out);
   await mkdir(out, { recursive: true });
   const { server, port } = await serve(dist);
@@ -96,7 +99,7 @@ export async function shoot(o) {
   const report = [];
   try {
     await page.goto(`http://localhost:${port}/#/1`);
-    await page.waitForSelector('.slidev-layout', { timeout: 60000 });
+    await page.waitForSelector('.slidev-layout', { state: 'attached', timeout: 60000 });   // attached, not visible: the first in the DOM may be a hidden slide
     await page.waitForTimeout(3000);
     // A built deck does not say how long it is, and Slidev mounts only the
     // slides near the current one: walk until a slide fails to appear.
@@ -147,7 +150,8 @@ export async function main(argv = process.argv.slice(2)) {
     console.log("usage: slidev-stage-shots <dist> <out-dir> [--slides 1-12,15] [--clicks '{\"9\":3}'] [--wait 4200] [--click-wait 9000] [--size 1600x900] [--json report.json]");
     return o.help ? 0 : 2;
   }
-  const result = await shoot(o);
+  let result;
+  try { result = await shoot(o); } catch (e) { console.error(e.message || e); return 1; }
   if (o.json) await writeFile(resolve(o.json), JSON.stringify(result, null, 2) + '\n');
   const over = result.report.filter((r) => (r.overflowPx ?? 0) > 0 || (r.overflowRightPx ?? 0) > 0);
   for (const r of result.report) console.log(`${r.frame}  at=${r.at ?? '-'}  station=${r.station ?? '-'}  overflow=${r.overflowPx ?? '-'}px`);

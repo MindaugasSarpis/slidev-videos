@@ -33,7 +33,11 @@
     "three": "^0.185.1"
   },
   "peerDependencies": {
-    "@slidev/cli": ">=52"
+    "@slidev/cli": ">=52",
+    "playwright-chromium": ">=1.49"
+  },
+  "peerDependenciesMeta": {
+    "playwright-chromium": { "optional": true }
   },
   "devDependencies": {
     "@slidev/cli": "^52.1.0",

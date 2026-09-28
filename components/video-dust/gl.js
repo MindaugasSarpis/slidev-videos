@@ -70,7 +70,7 @@ void main() {
     float on = step(0.75, fract(aSeed.x * 7.0 + aSeed.y * 3.0));
     float airborne = smoothstep(0.0, 0.25, fly) * (1.0 - smoothstep(0.85, 1.0, fly) * 0.5);
     gl_PointSize = min(uCellPx * (3.2 + 3.0 * aSeed.z) * persp, 64.0) * on;
-    vColor = vec4(mix(col, dust, 0.35), alpha * 0.22 * airborne * on);
+    vColor = vec4(mix(col, dust, 0.35), alpha * 0.14 * airborne * on);   // over a dark world 0.22 outshone the picture forming under it
     vLanded = 0.0;
   }
 }`;
