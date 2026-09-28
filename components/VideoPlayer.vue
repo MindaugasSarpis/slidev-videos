@@ -27,6 +27,7 @@ function setSessionVolume(v) {
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useIsSlideActive, useNav, useSlideContext, configs } from '@slidev/client'
+import { getOverlay, announce, warmStrip, stripFrame, liveFrame, fitPicture } from './video-dust/bus.js'
 
 // Config resolution (headmatter beats env beats built-ins):
 //   videos:                       VITE_VIDEO_REPO
@@ -36,6 +37,8 @@ import { useIsSlideActive, useNav, useSlideContext, configs } from '@slidev/clie
 //     fit: cover | contain
 //     hq: false                   (opt-in: only clips with an encode-hq copy)
 //     volume: 1                   (0..1, default level before `+`/`-` are used)
+//     transition: cut             (cut | fade | dust — how a clip arrives and leaves)
+//     dust: '#7dd3fc'             (the colour of the grains in flight, `dust` only)
 const CFG = (configs && configs.videos) || {}
 const ENV = import.meta.env
 const REPO    = CFG.repo    || ENV.VITE_VIDEO_REPO    || ''
@@ -89,10 +92,27 @@ const props = defineProps({
   // cover = fill the frame edge-to-edge (default; crops non-16:9 slightly).
   // contain = letterbox instead of cropping (ultra-wide/portrait clips).
   fit:      { type: String, default: '' },
+  // How the clip arrives and leaves with its slide:
+  //   cut   (default) on when ready, off at once
+  //   fade  the picture dissolves in and out, the sound fades with it
+  //   dust  the picture condenses out of particles and breaks back into them;
+  //         needs the addon's overlay and a frame to colour the grains from
+  //         (`slidev-videos frames`, or a same-origin clip) — else it fades
+  transition: { type: String, default: '' },
+  // Colour of the grains while they fly (`dust`). Default `videos.dust`, else #7dd3fc.
+  dust:     { type: String, default: '' },
 })
 const effHq     = computed(() => props.hq === undefined ? (CFG.hq ?? false) : props.hq)
 const effFit    = computed(() => props.fit || CFG.fit || 'cover')
 const clamp01   = (v) => Math.min(1, Math.max(0, v))
+const TRANSITIONS = ['cut', 'fade', 'dust']
+const REDUCED_MOTION = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+const effTransition = computed(() => {
+  const t = String(props.transition || CFG.transition || 'cut').toLowerCase()
+  if (!TRANSITIONS.includes(t)) return 'cut'
+  return t === 'dust' && REDUCED_MOTION ? 'fade' : t
+})
+const effDust = computed(() => props.dust || CFG.dust || '#7dd3fc')
 const effVolume = computed(() => {
   const v = props.volume === undefined ? CFG.volume : props.volume
   return Number.isFinite(v) ? clamp01(v) : 1
@@ -153,7 +173,161 @@ function onError() {
   }
 }
 
+// ---- fade / dust ------------------------------------------------------------
+// With a transition the picture is held back (`revealed`) until its moment and
+// the sound is ramped rather than switched. `run` numbers every arrival and
+// departure: each step after an await checks it, so a presenter stepping
+// through quickly never has a stale step start a clip on a slide already left.
+const FADE_MS = 450          // picture dissolve, and the sheet's hand-over to the <video>
+const DUST_ENTER_MS = 1400
+const DUST_LEAVE_MS = 1000
+const AUDIO_IN_MS = 600
+const AUDIO_OUT_MS = 400
+const revealed = ref(effTransition.value === 'cut')
+const instant = ref(false)   // hide without the dissolve: the sheet is already over the picture
+let phase = 'idle'           // idle | entering | shown | leaving
+let run = 0
+let sheet = null             // the arriving sheet, while it is up
+let ramp = null              // { raf, to }
+let settle = null            // resolves the wait for the clip to be ready
+
+const targetVolume = () => sessionVolume.value ?? effVolume.value
+function cancelRamp() {
+  if (ramp) { cancelAnimationFrame(ramp.raf); ramp = null }
+}
+function rampVolume(video, to, ms, then) {
+  cancelRamp()
+  const from = video.volume, t0 = performance.now()
+  const state = { raf: 0, to }
+  const step = (now) => {
+    const u = Math.min(1, (now - t0) / ms)
+    try { video.volume = clamp01(from + (to - from) * u) } catch {}
+    if (u < 1) state.raf = requestAnimationFrame(step)
+    else { if (ramp === state) ramp = null; then?.() }
+  }
+  ramp = state
+  state.raf = requestAnimationFrame(step)
+}
+function whenSettled() {
+  settle?.()
+  if (status.value === 'ready' || status.value === 'error') return Promise.resolve()
+  return new Promise((resolve) => { settle = () => { settle = null; resolve() } })
+}
+watch(status, (s) => { if (s === 'ready' || s === 'error') settle?.() })
+
+// Put a sheet of particles over the picture. The colours come from the frame
+// on screen when the page may read it, else from the clip's strip.
+async function raiseSheet(kind, time) {
+  const overlay = getOverlay()
+  const wrap = wrapRef.value
+  if (!overlay || !wrap) return null
+  const frame = liveFrame(videoRef.value) || await stripFrame(props.src, time)
+  if (!frame) return null
+  let box = wrap.getBoundingClientRect()
+  // A full-bleed player is the slide: use the slide's own box, which holds
+  // still while a sliding page transition carries the player across.
+  const stage = wrap.closest('#slide-content') || wrap.closest('.slidev-slide-content')
+  const sb = stage?.getBoundingClientRect()
+  if (sb && sb.width > 2 && (box.width < 2 || (Math.abs(box.width - sb.width) < 2 && Math.abs(box.height - sb.height) < 2))) box = sb
+  if (box.width < 2 || box.height < 2) return null
+  const { rect, uv } = fitPicture(box, frame.size, effFit.value)
+  return overlay[kind]({ image: frame.image, rect, uv, dust: effDust.value, source: frame.source, duration: kind === 'enter' ? DUST_ENTER_MS : DUST_LEAVE_MS })
+}
+
+async function enter() {
+  const id = ++run
+  phase = 'entering'
+  const mode = effTransition.value
+  const video = videoRef.value
+  cancelRamp()
+  instant.value = true
+  revealed.value = false
+  if (video) {
+    video.pause()
+    video.muted = true
+    if (video.currentTime > 0.01) { try { video.currentTime = 0 } catch {} }
+  }
+  announce('transition', { phase: 'enter', mode, src: props.src, duration: mode === 'dust' ? DUST_ENTER_MS : FADE_MS })
+  await nextTick()             // the slide is laid out before the sheet measures it
+  instant.value = false
+  if (id !== run) return
+  if (mode === 'dust') {
+    const handle = await raiseSheet('enter', 0)
+    if (id !== run) { handle?.cancel(); return }
+    sheet = handle
+    if (handle) {
+      await handle.assembled
+      if (id !== run) return
+    }
+  }
+  // The sheet holds the first frame for as long as the clip needs to arrive.
+  await whenSettled()
+  if (id !== run) return
+  phase = 'shown'
+  const v = videoRef.value
+  sheet?.release(status.value === 'error' ? 300 : FADE_MS)
+  sheet = null
+  revealed.value = true
+  if (!v || status.value === 'error') return
+  announce('cover', { covered: true, src: props.src, fit: effFit.value })
+  if (!props.autoplay) {
+    v.muted = props.muted
+    v.volume = targetVolume()
+    return
+  }
+  v.volume = 0
+  v.muted = true
+  v.play().then(() => {
+    if (id !== run) return
+    if (!props.muted) v.muted = false
+    rampVolume(v, targetVolume(), AUDIO_IN_MS)
+  }).catch(() => { try { v.volume = targetVolume() } catch {} })
+}
+
+async function exit() {
+  const id = ++run
+  const wasShown = phase === 'shown' && status.value === 'ready'
+  phase = 'leaving'
+  settle?.()
+  sheet?.cancel()
+  sheet = null
+  const mode = effTransition.value
+  const video = videoRef.value
+  announce('cover', { covered: false, src: props.src, fit: effFit.value })
+  announce('transition', { phase: 'leave', mode, src: props.src, duration: mode === 'dust' ? DUST_LEAVE_MS : FADE_MS })
+  let handle = null
+  if (mode === 'dust' && wasShown && video) {
+    handle = await raiseSheet('leave', video.currentTime || 0)
+    if (id !== run) { handle?.cancel(); return }
+  }
+  instant.value = !!handle     // the sheet is the picture now; the <video> goes at once
+  revealed.value = false
+  const rest = () => {
+    if (id !== run) return
+    phase = 'idle'
+    instant.value = false
+    const v = videoRef.value
+    if (!v) return
+    v.pause()
+    v.muted = true
+    try { v.currentTime = 0 } catch {}
+  }
+  // The clip plays on, unseen, while its sound fades; then it rests.
+  if (video && wasShown && !video.paused && !video.muted) rampVolume(video, 0, AUDIO_OUT_MS, rest)
+  else setTimeout(rest, handle ? 0 : FADE_MS)
+}
+
+function syncTransition() {
+  if (!videoRef.value) return
+  if (isActive.value) {
+    if (phase === 'idle' || phase === 'leaving') enter()
+  } else if (phase === 'entering' || phase === 'shown') {
+    exit()
+  }
+}
+
 function syncPlayback() {
+  if (effTransition.value !== 'cut') return syncTransition()
   const video = videoRef.value
   if (!video) return
   if (isActive.value) {
@@ -246,7 +420,10 @@ function flashVolume(v) {
   badgeTimer = setTimeout(() => { volumeBadge.value = null }, BADGE_MS)
 }
 function stepVolume(video, dir) {
-  const next = clamp01(Math.round((video.volume + dir * VOLUME_STEP) * 10) / 10)
+  // mid-fade the element's volume is on its way somewhere: step from where it is going
+  const from = ramp ? ramp.to : video.volume
+  cancelRamp()
+  const next = clamp01(Math.round((from + dir * VOLUME_STEP) * 10) / 10)
   video.volume = next
   if (dir > 0 && video.muted && !props.muted) video.muted = false
   setSessionVolume(next)
@@ -291,6 +468,11 @@ onUnmounted(() => {
   document.documentElement.removeEventListener('mouseleave', onPointerGone)
   clearTimeout(hideTimer)
   clearTimeout(badgeTimer)
+  run++
+  cancelRamp()
+  settle?.()
+  sheet?.cancel()
+  if (phase === 'shown') announce('cover', { covered: false, src: props.src, fit: effFit.value })
 })
 
 // Only the real slide (and the presenter's main view) gets a <video>. The
@@ -331,6 +513,8 @@ const attached = computed(() => isLive.value && (isActive.value || isUpcoming.va
 watch(attached, (yes) => {
   if (yes) {
     status.value = 'loading'
+    // the strip comes in with the clip, so the grains have their colours on arrival
+    if (effTransition.value === 'dust') warmStrip(props.src)
     nextTick(() => { videoRef.value?.load(); syncPlayback() })
   } else {
     status.value = 'idle'
@@ -342,13 +526,13 @@ watch(attached, (yes) => {
 </script>
 
 <template>
-  <div ref="wrapRef" class="video-player" @mouseleave="onPointerGone">
+  <div ref="wrapRef" class="video-player" :class="[`video-${effTransition}`, { 'video-instant': instant }]" :data-video-phase="revealed ? 'shown' : 'held'" @mouseleave="onPointerGone">
     <div v-if="!isLive" class="video-placeholder">
       <svg class="video-placeholder-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5z" fill="currentColor" /></svg>
       <span class="video-status">{{ src }}</span>
     </div>
     <template v-else>
-    <div v-if="status === 'loading' || status === 'idle'" class="video-status">Loading video&hellip;</div>
+    <div v-if="(status === 'loading' || status === 'idle') && effTransition === 'cut'" class="video-status">Loading video&hellip;</div>
     <div v-if="status === 'error'" class="video-status video-error">
       Video not available: <code>{{ src }}</code>
     </div>
@@ -365,7 +549,7 @@ watch(attached, (yes) => {
       @error="onError"
       @click="onVideoClick"
       @touchstart.passive="onVideoTouch"
-      :class="{ 'video-ready': status === 'ready' }"
+      :class="{ 'video-ready': status === 'ready' && revealed }"
     >
       <source ref="sourceRef" :src="attached ? currentSrc : ''" :type="mimeType" />
     </video>
@@ -399,6 +583,19 @@ watch(attached, (yes) => {
 .video-player video.video-ready {
   opacity: 1;
   pointer-events: auto;
+}
+/* fade / dust: what is under the slide shows until the picture is up, and the
+   picture dissolves rather than cuts (450 ms = FADE_MS). */
+.video-player.video-fade,
+.video-player.video-dust {
+  background: transparent;
+}
+.video-player.video-fade video,
+.video-player.video-dust video {
+  transition: opacity 0.45s ease;
+}
+.video-player.video-instant video {
+  transition: none;
 }
 .video-status {
   position: absolute;

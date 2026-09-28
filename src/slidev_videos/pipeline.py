@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Video asset pipeline: sync, encode, publish, check, encode-hq, publish-hq.
+"""Video asset pipeline: sync, encode, publish, check, frames, encode-hq, publish-hq.
 
 Reads videos/manifest.toml as the source of truth. Raws live in videos/raw/;
 encoded web copies are written to public/videos/ and published to a
@@ -9,8 +9,8 @@ and can be published to a parallel release (default tag: videos-hq-<talk>)
 so any machine can `gh release download` the venue masters instead of
 re-encoding them.
 
-A monorepo-wide shared registry at /videos/shared.toml declares clips
-that live in a shared GH Release and are inherited by talks at runtime
+The shared registry (src/slidev_videos/shared.toml, shipped with the
+package) declares clips that live in a shared GH Release and are inherited by talks at runtime
 (via VideoPlayer's fallback chain). Per-talk commands (sync, encode,
 publish, pull) operate ONLY on talk-owned clips; shared clips are not
 downloaded or re-encoded when working on a specific talk. The `check`
@@ -28,7 +28,8 @@ Subcommands:
     publish-hq     gh release upload HQ files to the parallel release
     pull-hq        gh release download HQ files -> videos/hq/
                    (--include-shared: also deck-referenced shared HQ masters)
-    shared-check   sanity-check the shared registry (run from repo root)
+    shared-check   sanity-check the shared registry (run from the package repo)
+    frames         frame strips for the `dust` transition -> public/video-frames/
     clean          delete local files whose remote copy is verified (dry-run default)
     preflight      venue lint: probe served codec/resolution/bitrate/audio/loudness
     venue          one-shot offline bundle: pull -> preflight -> build:portable -> zip
@@ -1158,7 +1159,9 @@ def cmd_pull_hq(args: argparse.Namespace) -> int:
 # check — sanity: orphans, missing, slide refs
 # ---------------------------------------------------------------------------
 
-VIDEO_REF_RE = re.compile(r'VideoPlayer\s+src="([^"]+)"')
+# `src` may stand anywhere in the tag; a bound `:src` / `v-bind:src` is an
+# expression, not a file name, and is left alone.
+VIDEO_REF_RE = re.compile(r'<VideoPlayer\b[^>]*?(?<![:\w-])src="([^"]+)"', re.S)
 
 # Directories whose .md files are never slides (deps, build output).
 SKIP_SCAN_DIRS = {"node_modules", "dist", "dist-portable", ".git"}
@@ -1276,6 +1279,19 @@ def cmd_check(_: argparse.Namespace) -> int:
             "portable builds will lack them; fix with videos:pull/pull-hq --include-shared:"
         )
         infos.extend(f"  - {n}" for n in inherited_not_local)
+
+    # A `dust` transition colours its grains from a frame strip; without one
+    # the clip quietly fades instead (it still plays).
+    dust = _dust_references()
+    if dust:
+        index = _read_frames_index(_frames_dir())
+        no_strip = sorted(n for n in dust if n not in index)
+        if no_strip:
+            infos.append(
+                f"{len(no_strip)} clip(s) use the dust transition without a frame strip — "
+                "they will fade instead; fix with `slidev-videos frames`:"
+            )
+            infos.extend(f"  - {n}" for n in no_strip)
 
     if problems == 0:
         owned = len(manifest_names)
@@ -1735,6 +1751,275 @@ def cmd_preflight(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# frames — strips of small frames for the player's `dust` transition
+# ---------------------------------------------------------------------------
+#
+# The `dust` transition draws a clip's picture as particles, so the page needs
+# the picture's pixels. GitHub serves release assets without CORS headers: a
+# deployed deck can play a clip but not read it. `frames` writes, per
+# deck-referenced clip, one JPEG holding a grid of small tiles — the first
+# frame, then one every few seconds — into <public>/video-frames/, with an
+# index.json the player reads. They are small, and they are committed with
+# the deck. Entering uses tile 0; leaving uses the tile at the moment the
+# presenter moved on (a same-origin clip — dev, venue build — is read live
+# instead, to the frame).
+
+FRAMES_DIRNAME = "video-frames"
+FRAMES_INDEX = "index.json"
+FRAMES_TILE_W = 320
+FRAMES_INTERVAL_S = 4.0
+FRAMES_MAX_TILES = 64
+FRAMES_COLS = 8
+FRAMES_VERSION = 1
+
+DUST_HEADMATTER_RE = re.compile(r"^videos:[ \t]*\n(?:[ \t]+.*\n|[ \t]*\n)*?[ \t]+transition:[ \t]*[\"']?dust\b", re.M)
+DUST_TAG_RE = re.compile(r'<VideoPlayer\b[^>]*?(?<![:\w-])transition="dust"[^>]*>', re.S)
+VIDEO_TAG_RE = re.compile(r'<VideoPlayer\b[^>]*>', re.S)
+TAG_SRC_RE = re.compile(r'(?<![:\w-])src="([^"]+)"')
+TAG_TRANSITION_RE = re.compile(r'(?<![:\w-])transition="([^"]+)"')
+
+
+def dust_refs_in(text: str) -> set[str]:
+    """Clips that arrive as dust in one deck file: every clip when the
+    headmatter says `videos.transition: dust` (bar those that opt out with
+    their own `transition=`), else the clips tagged `transition="dust"`."""
+    deck_wide = bool(DUST_HEADMATTER_RE.search(text))
+    out: set[str] = set()
+    for tag in VIDEO_TAG_RE.findall(text):
+        src = TAG_SRC_RE.search(tag)
+        if not src:
+            continue
+        own = TAG_TRANSITION_RE.search(tag)
+        if (own.group(1) == "dust") if own else deck_wide:
+            out.add(src.group(1))
+    return out
+
+
+def _dust_references() -> set[str]:
+    refs: set[str] = set()
+    for md in _deck_markdown(SLIDES_DIR):
+        try:
+            refs |= dust_refs_in(md.read_text(encoding="utf-8", errors="ignore"))
+        except OSError:
+            continue
+    return refs
+
+
+def _frames_dir() -> Path:
+    return WEB_DIR.parent / FRAMES_DIRNAME
+
+
+def _read_frames_index(d: Path) -> dict:
+    try:
+        data = json.loads((d / FRAMES_INDEX).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    clips = data.get("clips") if isinstance(data, dict) else None
+    return clips if isinstance(clips, dict) else {}
+
+
+def frames_plan(duration: float, interval: float = FRAMES_INTERVAL_S,
+                max_tiles: int = FRAMES_MAX_TILES, cols: int = FRAMES_COLS) -> dict:
+    """How a clip of `duration` seconds is cut into tiles.
+
+    One tile every `interval` seconds starting with the first frame; a clip
+    too long for `max_tiles` at that pace gets a wider interval instead of a
+    bigger strip. The count is kept to tiles that certainly exist (the last
+    one starts before the clip ends), so the player never lands on padding.
+    """
+    duration = max(0.0, float(duration))
+    interval = max(0.1, float(interval))
+    max_tiles = max(1, int(max_tiles))
+    if duration / interval + 1 > max_tiles:
+        # max_tiles tiles at 0, i, 2i, …: the last one starts one interval before the end
+        interval = duration / max_tiles if max_tiles > 1 else duration + 1
+    interval = round(interval, 3)
+    count = max(1, min(max_tiles, int(max(0.0, duration - 0.05) // interval) + 1))
+    cols = max(1, min(int(cols), count))
+    rows = -(-count // cols)
+    return {"interval": interval, "count": count, "cols": cols, "rows": rows}
+
+
+def frames_tile_size(width: int, height: int, tile_w: int = FRAMES_TILE_W) -> tuple[int, int]:
+    """Tile size for a width x height picture: `tile_w` wide, even height."""
+    if width <= 0 or height <= 0:
+        return tile_w, tile_w * 9 // 16
+    h = max(2, round(tile_w * height / width))
+    return tile_w, h + (h % 2)
+
+
+def _frames_source(name: str, talk_assets, shared_assets) -> tuple[str, str] | None:
+    """(tier, path or URL) to cut the strip from — the copy the deck will play."""
+    for label, path in (("local-web", WEB_DIR / name), ("local-hq", HQ_DIR / name)):
+        if path.is_file():
+            return label, str(path)
+    for label, assets in (("talk-release", talk_assets), ("shared-release", shared_assets)):
+        if assets and name in assets and assets[name].get("url"):
+            return label, assets[name]["url"]
+    return None
+
+
+def _frames_one(name: str, src: str, out_dir: Path, args: argparse.Namespace) -> tuple[str, dict | None, str]:
+    """Cut one strip. Returns (name, index entry or None, message)."""
+    info = _probe_media(src)
+    if info is None:
+        return name, None, "ffprobe can't read it"
+    vstreams = [s for s in info.get("streams", []) if s.get("codec_type") == "video"]
+    if not vstreams:
+        return name, None, "no video stream"
+    width = int(vstreams[0].get("width") or 0)
+    height = int(vstreams[0].get("height") or 0)
+    try:
+        duration = float(info.get("format", {}).get("duration") or 0)
+    except (TypeError, ValueError):
+        duration = 0.0
+    plan = frames_plan(duration, args.interval, args.max_tiles, FRAMES_COLS)
+    tw, th = frames_tile_size(width, height, args.tile_width)
+    out = out_dir / f"{name}.jpg"
+    tmp = out_dir / f".{name}.tmp.jpg"
+    # select: the first frame, then every frame at least `interval` after the
+    # last one kept — tile k is the picture at k * interval, tile 0 the opening frame.
+    vf = (
+        f"select='isnan(prev_selected_t)+gte(t-prev_selected_t\\,{plan['interval']})',"
+        f"scale={tw}:{th}:flags=bicubic,setsar=1,"
+        f"tile={plan['cols']}x{plan['rows']}:color=black"
+    )
+    cmd = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-i", src, "-an", "-sn", "-vf", vf, "-fps_mode", "vfr",
+        "-frames:v", "1", "-q:v", str(args.quality), "-f", "image2", "-update", "1", str(tmp),
+    ]
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0 or not tmp.is_file() or tmp.stat().st_size == 0:
+        tmp.unlink(missing_ok=True)
+        tail = (res.stderr or "").strip().splitlines()[-1:] or ["ffmpeg failed"]
+        return name, None, tail[0]
+    tmp.replace(out)
+    entry = {
+        "file": out.name,
+        "tile": [tw, th],
+        "cols": plan["cols"],
+        "count": plan["count"],
+        "interval": plan["interval"],
+        "size": [width, height],
+        "duration": round(duration, 3),
+    }
+    return name, entry, human_size(out.stat().st_size)
+
+
+def _frames_current(entry: dict | None, out_dir: Path, args: argparse.Namespace) -> bool:
+    """An existing strip made with the same settings needs no second cut."""
+    if not entry or not (out_dir / str(entry.get("file", ""))).is_file():
+        return False
+    plan = frames_plan(float(entry.get("duration") or 0), args.interval, args.max_tiles, FRAMES_COLS)
+    return (
+        entry.get("tile", [0])[0] == args.tile_width
+        and entry.get("interval") == plan["interval"]
+        and entry.get("count") == plan["count"]
+    )
+
+
+def cmd_frames(args: argparse.Namespace) -> int:
+    """Write frame strips for the clips the deck references."""
+    all_refs = sorted(_slide_references())
+    dust = _dust_references()
+    refs = all_refs if args.all else [r for r in all_refs if r in dust]
+    if getattr(args, "only", None):
+        wanted = set(args.only)
+        refs = [r for r in all_refs if r in wanted]
+        for missing in sorted(wanted - set(refs)):
+            print(f"  skip  {missing}: not referenced by the deck")
+    out_dir = _frames_dir()
+    index = _read_frames_index(out_dir)
+
+    if args.prune:
+        keep = set(all_refs)
+        dropped = sorted(set(index) - keep)
+        for name in dropped:
+            f = out_dir / str(index[name].get("file", ""))
+            print(f"  {'would drop' if args.dry_run else 'drop'}  {name}")
+            if not args.dry_run:
+                f.unlink(missing_ok=True)
+                del index[name]
+        # saved here: the run may find nothing left to cut and return early
+        if dropped and not args.dry_run:
+            _write_frames_index(out_dir, index)
+
+    if not refs:
+        print("No clips to cut: the deck has no `dust` clips "
+              "(set `videos.transition: dust`, tag a clip `transition=\"dust\"`, or pass --all).")
+        return 0
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        print("error: frames needs ffmpeg and ffprobe on PATH", file=sys.stderr)
+        return 2
+
+    todo = [n for n in refs if args.force or not _frames_current(index.get(n), out_dir, args)]
+    for name in refs:
+        if name not in todo:
+            print(f"  ok    {name}  (up to date)")
+    if not todo:
+        print(f"All {len(refs)} strip(s) up to date in {out_dir.relative_to(TALK)}/.")
+        return 0
+
+    # Release lookups only when some clip has no local copy.
+    need_remote = [n for n in todo if not (WEB_DIR / n).is_file() and not (HQ_DIR / n).is_file()]
+    talk_assets = shared_assets = None
+    if need_remote and shutil.which("gh"):
+        defaults, _ = load_manifest()
+        shared_defaults, _shared = load_shared_manifest()
+        talk_assets = _remote_assets(defaults["release_tag"])
+        shared_tag = shared_defaults.get("release_tag")
+        if shared_tag == defaults["release_tag"]:
+            shared_assets = talk_assets
+        elif shared_tag:
+            shared_assets = _remote_assets(shared_tag, shared_defaults.get("repo"))
+
+    jobs: list[tuple[str, str, str]] = []
+    failed = 0
+    for name in todo:
+        src = _frames_source(name, talk_assets, shared_assets)
+        if src is None:
+            print(f"  FAIL  {name}: no local copy and no release asset to cut from")
+            failed += 1
+            continue
+        jobs.append((name, *src))
+    if args.dry_run:
+        for name, tier, _src in jobs:
+            print(f"  would cut  {name}  [{tier}]")
+        return 1 if failed else 0
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    workers = max(1, min(int(args.jobs), len(jobs) or 1))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_frames_one, name, src, out_dir, args): (name, tier) for name, tier, src in jobs}
+        for fut in as_completed(futures):
+            name, tier = futures[fut]
+            try:
+                _, entry, msg = fut.result()
+            except Exception as exc:  # one clip must not sink the batch
+                entry, msg = None, str(exc)
+            if entry is None:
+                print(f"  FAIL  {name} [{tier}]: {msg}")
+                failed += 1
+                continue
+            index[name] = entry
+            print(f"  cut   {name} [{tier}]  {entry['count']} tile(s) every {entry['interval']:g} s, {msg}")
+    _write_frames_index(out_dir, index)
+
+    total = sum((out_dir / e["file"]).stat().st_size for e in index.values() if (out_dir / e["file"]).is_file())
+    print(f"\n{len(index)} strip(s) in {out_dir.relative_to(TALK)}/ ({human_size(total)}) — commit them with the deck.")
+    if failed:
+        print(f"{failed} clip(s) failed; they will fade instead of arriving as dust.")
+        return 1
+    return 0
+
+
+def _write_frames_index(out_dir: Path, clips: dict) -> None:
+    payload = {"version": FRAMES_VERSION, "clips": {k: clips[k] for k in sorted(clips)}}
+    (out_dir / FRAMES_INDEX).write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
 # venue — one-command offline bundle: pull → preflight → build → zip
 # ---------------------------------------------------------------------------
 
@@ -1779,7 +2064,7 @@ def cmd_venue(args: argparse.Namespace) -> int:
         "so serve it over local HTTP:\n\n"
         "    python3 -m http.server 8000\n"
         "    then open http://localhost:8000\n\n"
-        f"Built by scripts/videos.py venue for {TALK.name}.\n",
+        f"Built by `slidev-videos venue` for {TALK.name}.\n",
         encoding="utf-8",
     )
     bundle = TALK / f"{TALK.name}-venue.zip"
@@ -2034,8 +2319,21 @@ def main(argv: list[str] | None = None) -> int:
     p_pull_hq.add_argument("--include-shared", action="store_true", help="also pull deck-referenced shared HQ masters (offline/venue builds)")
     p_pull_hq.set_defaults(func=cmd_pull_hq)
 
-    p_shared = sub.add_parser("shared-check", help="sanity-check /videos/shared.toml (run from monorepo root)")
+    p_shared = sub.add_parser("shared-check", help="sanity-check the shared registry (run from the package repo)")
     p_shared.set_defaults(func=cmd_shared_check)
+
+    p_frames = sub.add_parser("frames", help="frame strips for the `dust` transition -> public/video-frames/")
+    p_frames.add_argument("--only", nargs="+", metavar="NAME", help="limit to named clip(s)")
+    p_frames.add_argument("--all", action="store_true", help="every referenced clip, not only those using the dust transition")
+    p_frames.add_argument("--force", action="store_true", help="cut again even if the strip is up to date")
+    p_frames.add_argument("--prune", action="store_true", help="drop strips of clips the deck no longer references")
+    p_frames.add_argument("--dry-run", action="store_true")
+    p_frames.add_argument("--interval", type=float, default=FRAMES_INTERVAL_S, help=f"seconds between tiles (default {FRAMES_INTERVAL_S:g}; widened for long clips)")
+    p_frames.add_argument("--max-tiles", type=int, default=FRAMES_MAX_TILES, dest="max_tiles", help=f"tiles per strip at most (default {FRAMES_MAX_TILES})")
+    p_frames.add_argument("--tile-width", type=int, default=FRAMES_TILE_W, dest="tile_width", help=f"tile width in px (default {FRAMES_TILE_W})")
+    p_frames.add_argument("--quality", type=int, default=5, help="JPEG quality, ffmpeg -q:v 2 (best) .. 31 (default 5)")
+    p_frames.add_argument("--jobs", type=int, default=3, help="clips cut at once (default 3)")
+    p_frames.set_defaults(func=cmd_frames)
 
     p_clean = sub.add_parser("clean", help="delete local video files that are verified recoverable (dry-run by default)")
     p_clean.add_argument("--yes", action="store_true", help="actually delete (default is a dry run)")

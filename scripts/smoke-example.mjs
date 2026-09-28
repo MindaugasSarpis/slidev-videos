@@ -7,23 +7,42 @@
 //   4. `+` / `-` step the volume (clamped), show the badge, persist to
 //      localStorage, and the level carries over to the next clip;
 //   5. `p` toggles play/pause (a paused clip with no media still flips
-//      `paused` back and forth via play()/pause()).
+//      `paused` back and forth via play()/pause());
+//   6. the `dust` transition: the one real clip (scripts/make-example-clip.mjs)
+//      is held back while its particle sheet assembles, is handed the screen,
+//      fades its sound in, and leaves as particles; a clip that never loads
+//      gives the sheet up and shows the error. Skipped, with a note, when the
+//      clip was not generated (no ffmpeg).
 // Media requests are aborted so the missing clips never stall the run.
 // No fixed sleeps: every assertion polls for the state it expects (`until`),
 // so a slow CI runner only makes the run slower, not flaky.
 import { createServer } from 'node:http'
-import { readFile } from 'node:fs/promises'
+import { readFile, mkdir } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import { chromium } from 'playwright-chromium'
 
 const ROOT = new URL('../example/dist', import.meta.url).pathname  // slidev resolves --out against the entry dir
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.ico': 'image/x-icon' }
+const REAL_CLIP = 'clip_dust.webm'
+const HAVE_CLIP = existsSync(join(ROOT, 'videos', REAL_CLIP))
+const SHOTS = process.env.SMOKE_SHOTS || ''     // a directory: keep screenshots of the transition
+const MIME = { '.webm': 'video/webm', '.jpg': 'image/jpeg', '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.ico': 'image/x-icon' }
 const server = createServer(async (req, res) => {
   let p = decodeURIComponent(new URL(req.url, 'http://x').pathname)
   if (p.endsWith('/')) p += 'index.html'
   try {
     const body = await readFile(join(ROOT, p))
-    res.writeHead(200, { 'content-type': MIME[extname(p)] || 'application/octet-stream' })
+    const type = MIME[extname(p)] || 'application/octet-stream'
+    // media elements ask for byte ranges; answer them, or Chromium will not seek
+    const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '')
+    if (m) {
+      const start = m[1] ? Number(m[1]) : 0
+      const end = m[2] ? Math.min(Number(m[2]), body.length - 1) : body.length - 1
+      res.writeHead(206, { 'content-type': type, 'accept-ranges': 'bytes', 'content-range': `bytes ${start}-${end}/${body.length}`, 'content-length': end - start + 1 })
+      res.end(body.subarray(start, end + 1))
+      return
+    }
+    res.writeHead(200, { 'content-type': type, 'accept-ranges': 'bytes', 'content-length': body.length })
     res.end(body)
   } catch {
     res.writeHead(404); res.end('not found')
@@ -40,11 +59,14 @@ const check = (name, ok, detail = '') => {
 }
 const near = (a, b) => Math.abs(a - b) < 1e-6
 
-const browser = await chromium.launch()
-const page = await browser.newPage()
+// SwiftShader gives the headless browser a WebGL2 context for the dust overlay.
+const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] })
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+const isMedia = (r) => r.resourceType() === 'media' || /\.(mp4|webm|mov)(\?|$)/i.test(r.url())
+// the one real clip is served from the local tier; every other media request is aborted
+const isRealClip = (r) => new URL(r.url()).pathname === `/videos/${REAL_CLIP}`
 await page.route('**/*', (route) =>
-  route.request().resourceType() === 'media' || /\.(mp4|webm|mov)(\?|$)/i.test(route.request().url())
-    ? route.abort() : route.continue())
+  isMedia(route.request()) && !isRealClip(route.request()) ? route.abort() : route.continue())
 
 const state = (n) => page.evaluate((n) => {
   const pg = document.querySelector(`.slidev-page[data-slidev-no="${n}"]`)
@@ -159,6 +181,83 @@ await press('ArrowLeft')
 await page.waitForFunction(() => location.hash === '#/2', null, { timeout: 5000 }).catch(() => {})
 const hash = await page.evaluate(() => location.hash)
 check('arrow navigation still works', hash === '#/2', `hash=${hash}`)
+
+// --- the dust transition ----------------------------------------------------
+const dust = (n) => page.evaluate((n) => {
+  const pg = document.querySelector(`.slidev-page[data-slidev-no="${n}"]`)
+  const wrap = pg?.querySelector('.video-player')
+  const v = pg?.querySelector('video')
+  const c = document.querySelector('canvas.video-dust')
+  return {
+    overlay: !!c, sheets: c?.dataset.dust ?? null, source: c?.dataset.dustSource ?? null, count: Number(c?.dataset.dustCount || 0),
+    shownCanvas: c ? getComputedStyle(c).display !== 'none' : false,
+    mode: wrap ? [...wrap.classList].find((k) => /^video-(cut|fade|dust)$/.test(k)) : null,
+    phase: wrap?.dataset.videoPhase ?? null,
+    opacity: v ? Number(getComputedStyle(v).opacity) : null,
+    paused: v?.paused, muted: v?.muted, volume: v?.volume, time: v?.currentTime, ready: v?.readyState,
+    error: !!pg?.querySelector('.video-error'),
+  }
+}, n)
+const untilDust = async (n, pred, timeout = 15000) => {
+  const deadline = Date.now() + timeout
+  let s = await dust(n)
+  while (!pred(s) && Date.now() < deadline) {
+    await page.waitForTimeout(25)
+    s = await dust(n)
+  }
+  return s
+}
+const shot = async (name) => {
+  if (!SHOTS) return
+  await mkdir(SHOTS, { recursive: true })
+  await page.screenshot({ path: join(SHOTS, `${name}.png`) })
+}
+
+let d = await dust(2)
+check('addon global layer mounted the dust overlay', d.overlay, JSON.stringify(d))
+check('overlay is off screen while no clip asks for it', d.overlay && !d.shownCanvas && d.sheets === 'idle', `display shown=${d.shownCanvas} sheets=${d.sheets}`)
+check('default transition is cut', d.mode === 'video-cut', `mode=${d.mode}`)
+
+if (!HAVE_CLIP) {
+  console.log(`note dust playback checks skipped — example/dist/videos/${REAL_CLIP} is missing (run scripts/make-example-clip.mjs, needs ffmpeg)`)
+} else {
+  await goto(4)
+  d = await untilDust(4, (s) => (s.sheets || '').includes('enter'))
+  check('dust: a sheet assembles on arrival', (d.sheets || '').includes('enter') && d.shownCanvas, JSON.stringify(d))
+  check('dust: the picture is held back under the sheet', d.phase === 'held' && d.opacity === 0, `phase=${d.phase} opacity=${d.opacity}`)
+  await page.waitForTimeout(700)
+  await shot('dust-enter-mid')
+  d = await untilDust(4, (s) => s.phase === 'shown' && s.opacity === 1 && s.sheets === 'idle')
+  check('dust: the clip is handed the screen and the sheet goes', d.phase === 'shown' && d.opacity === 1 && d.sheets === 'idle' && !d.shownCanvas, JSON.stringify(d))
+  check('dust: the clip plays from its first frame', d.paused === false && d.time < 3, `paused=${d.paused} time=${d.time}`)
+  d = await untilDust(4, (s) => near(s.volume, 0.7) && s.muted === false)
+  check('dust: the sound fades in to the session level', near(d.volume, 0.7) && d.muted === false, `volume=${d.volume} muted=${d.muted}`)
+  await shot('dust-playing')
+
+  const before4 = d.count
+  await goto(5)
+  d = await untilDust(4, (s) => (s.sheets || '').includes('leave'))
+  check('dust: the picture leaves as a sheet', (d.sheets || '').includes('leave') && d.count === before4 + 1, JSON.stringify(d))
+  check('dust: leaving reads the frame on screen (same-origin clip)', d.source === 'live', `source=${d.source}`)
+  check('dust: the <video> is gone at once under the sheet', d.phase === 'held' && d.opacity === 0, `phase=${d.phase} opacity=${d.opacity}`)
+  await page.waitForTimeout(350)
+  await shot('dust-leave-mid')
+  d = await untilDust(4, (s) => s.sheets === 'idle' && s.paused === true)
+  check('dust: the sheet scatters and the clip rests', d.sheets === 'idle' && d.paused === true && d.muted === true && d.time === 0, JSON.stringify(d))
+
+  // back onto the clip while it is resting: it arrives again
+  await goto(4)
+  d = await untilDust(4, (s) => s.phase === 'shown' && s.paused === false && s.sheets === 'idle')
+  check('dust: a second arrival plays again', d.phase === 'shown' && d.paused === false, JSON.stringify(d))
+  await goto(5)
+  await untilDust(4, (s) => s.sheets === 'idle' && s.paused === true)
+}
+
+// A `fade` clip that never loads: nothing is held, the error shows.
+await goto(5)
+d = await untilDust(5, (s) => s.error)
+check('fade: a clip that cannot load shows the error', d.error && d.mode === 'video-fade', JSON.stringify(d))
+check('fade: no sheet is raised', d.sheets === 'idle', `sheets=${d.sheets}`)
 
 await browser.close()
 server.close()
