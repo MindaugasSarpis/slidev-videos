@@ -1,6 +1,21 @@
 {
   "version": 1,
   "clips": {
+    "clip_dark.webm": {
+      "file": "clip_dark.webm.jpg",
+      "tile": [
+        320,
+        180
+      ],
+      "cols": 3,
+      "count": 3,
+      "interval": 4,
+      "size": [
+        640,
+        360
+      ],
+      "duration": 12
+    },
     "clip_dust.webm": {
       "file": "clip_dust.webm.jpg",
       "tile": [

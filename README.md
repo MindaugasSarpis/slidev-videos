@@ -82,7 +82,10 @@ With a transition the player has no black ground: what is under the slide
 shows until the picture is up. The grains are drawn by an overlay the addon
 mounts itself (its `global-top.vue`; plain WebGL2, created on first use), so
 the deck must load the package as an addon, not symlink its `components/`.
-While a clip is slow to arrive the assembled sheet holds its first frame.
+While a clip is slow to arrive the assembled sheet holds its first frame. A
+clip that opens on black gives the grains nothing to gather into, so its
+sheet is made of the first lit frame of its opening twelve seconds and the
+clip plays from that moment (`videos.dustFrom: start` keeps the opening).
 The sheet is seen through a camera like the stage's (the same field of view),
 so over the stage it belongs to that world. `videos.dustMs: [1900, 1700]`
 sets the two durations.

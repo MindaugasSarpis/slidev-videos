@@ -94,6 +94,36 @@ export function liveFrame(video) {
   } catch { return null; }
 }
 
+// How lit a frame is: the mean of each pixel's brightest channel, 0..1 (0 if
+// it cannot be read).
+export function brightness(image) {
+  try {
+    const c = document.createElement('canvas');
+    c.width = 16; c.height = 9;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(image, 0, 0, 16, 9);
+    const d = g.getImageData(0, 0, 16, 9).data;
+    let sum = 0;
+    for (let i = 0; i < d.length; i += 4) sum += Math.max(d[i], d[i + 1], d[i + 2]);
+    return sum / (d.length / 4) / 255;
+  } catch { return 0; }
+}
+export const DARK = 0.07;   // below this a frame is black to the eye: a clip still fading in
+
+// The first lit tile of a clip's strip within its first `within` seconds, with
+// the time it stands for; null when the strip has none (or there is no strip).
+// A clip that opens on black gives the grains nothing to gather into.
+export async function firstLitFrame(src, within = 12) {
+  const entry = (await loadFrameIndex())?.[src];
+  if (!entry) return null;
+  const last = Math.min(entry.count - 1, Math.floor(within / entry.interval));
+  for (let i = 0; i <= last; i++) {
+    const f = await stripFrame(src, i * entry.interval);
+    if (f && brightness(f.image) >= DARK) return { ...f, time: i * entry.interval };
+  }
+  return null;
+}
+
 // The mean colour of a frame, as [r, g, b] in 0..1 (null if it cannot be
 // read). Weighted toward the lit and the coloured parts, so a picture that is
 // mostly black sky with one blue planet says blue, not black.

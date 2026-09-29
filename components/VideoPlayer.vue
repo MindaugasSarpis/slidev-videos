@@ -27,7 +27,7 @@ function setSessionVolume(v) {
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useIsSlideActive, useNav, useSlideContext, configs } from '@slidev/client'
-import { getOverlay, announce, warmStrip, stripFrame, liveFrame, fitPicture, meanColor } from './video-dust/bus.js'
+import { getOverlay, announce, warmStrip, stripFrame, liveFrame, fitPicture, meanColor, brightness, firstLitFrame, DARK } from './video-dust/bus.js'
 
 // Config resolution (headmatter beats env beats built-ins):
 //   videos:                       VITE_VIDEO_REPO
@@ -39,6 +39,7 @@ import { getOverlay, announce, warmStrip, stripFrame, liveFrame, fitPicture, mea
 //     volume: 1                   (0..1, default level before `+`/`-` are used)
 //     transition: cut             (cut | fade | dust — how a clip arrives and leaves)
 //     dust: '#7dd3fc'             (the colour of the grains in flight, `dust` only)
+//     dustFrom: lit               (lit | start — a clip that opens on black arrives as its first lit frame and plays from there)
 const CFG = (configs && configs.videos) || {}
 const ENV = import.meta.env
 const REPO    = CFG.repo    || ENV.VITE_VIDEO_REPO    || ''
@@ -220,12 +221,42 @@ watch(status, (s) => { if (s === 'ready' || s === 'error') settle?.() })
 // Put a sheet of particles over the picture. The colours come from the frame
 // on screen when the page may read it, else from the clip's strip.
 let sheetColor = null        // the mean colour of the frame the last sheet was made of
+let startAt = 0              // where the clip plays from: 0, or the time of its first lit frame
+const FROM_LIT = String(CFG.dustFrom || 'lit').toLowerCase() !== 'start'
+
+// The frame a sheet is made of. Leaving: the one on screen. Arriving: the
+// clip's first frame, unless that is black (a clip fading in) — grains cannot
+// gather into a black picture, so the sheet is made of the first lit frame
+// within the opening seconds and the clip plays from there (`dustFrom:
+// start` keeps the opening as it is).
+async function sheetFrame(kind, time) {
+  const live = liveFrame(videoRef.value)
+  if (kind !== 'enter') return live || await stripFrame(props.src, time)
+  startAt = 0
+  if (live && (!FROM_LIT || brightness(live.image) >= DARK)) return live
+  if (FROM_LIT) {
+    const lit = await firstLitFrame(props.src)
+    if (lit) { startAt = lit.time; return lit }
+  }
+  return live || await stripFrame(props.src, 0)
+}
+// resolves when the <video> has finished seeking, or after a second and a half
+function seekTo(video, t) {
+  return new Promise((resolve) => {
+    let done = false
+    const end = () => { if (done) return; done = true; video.removeEventListener('seeked', end); clearTimeout(timer); resolve() }
+    const timer = setTimeout(end, 1500)
+    video.addEventListener('seeked', end)
+    try { video.currentTime = t } catch { end() }
+  })
+}
+
 async function raiseSheet(kind, time) {
   const overlay = getOverlay()
   const wrap = wrapRef.value
   sheetColor = null
   if (!overlay || !wrap) return null
-  const frame = liveFrame(videoRef.value) || await stripFrame(props.src, time)
+  const frame = await sheetFrame(kind, time)
   if (!frame) return null
   sheetColor = meanColor(frame.image)
   let box = wrap.getBoundingClientRect()
@@ -242,6 +273,7 @@ async function raiseSheet(kind, time) {
 async function enter() {
   const id = ++run
   phase = 'entering'
+  startAt = 0
   const mode = effTransition.value
   const video = videoRef.value
   cancelRamp()
@@ -268,6 +300,11 @@ async function enter() {
   // The sheet holds the first frame for as long as the clip needs to arrive.
   await whenSettled()
   if (id !== run) return
+  // the sheet is the clip's first lit frame: the clip takes over from that moment
+  if (sheet && startAt > 0 && videoRef.value && status.value === 'ready') {
+    await seekTo(videoRef.value, startAt)
+    if (id !== run) return
+  }
   phase = 'shown'
   const v = videoRef.value
   sheet?.release(status.value === 'error' ? 300 : FADE_MS)
