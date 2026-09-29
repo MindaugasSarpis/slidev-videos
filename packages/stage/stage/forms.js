@@ -201,7 +201,7 @@ export function buildGalaxy(o, ctx) {
 }
 
 // ---- collider -------------------------------------------------------------------
-//   { type: collider, pos, radius, lap?: 9, tracks?: 14, grains?: 26000,
+//   { type: collider, pos, radius, lap?: 9, tracks?: 18, grains?: 26000, life?: 1.9,
 //     tilt?, yaw?, roll?, beam?: '#…', bunch?: '#…', spray?: ['#…', …] }
 // A ring of grains streaming both ways round. Two bunches, dense and bright,
 // run against each other once round every `lap` seconds and meet twice a lap,
@@ -241,9 +241,11 @@ void main() {
     float t = max(since, 0.0);
     // out from the point, slowing, and bending about the beam line (z at both points)
     vec3 bend = vec3(-d.y, d.x, 0.0) * (aSeed > 0.5 ? 1.0 : -1.0);
-    home = ip + d * (2.6 * t - 0.5 * t * t / uLife) * uRadius * 0.16 + bend * t * t * uRadius * 0.045;
-    fade = (since < 0.0 || u > 1.0) ? 0.0 : (1.0 - u) * (1.0 - u) * smoothstep(0.0, 0.04, u);
-    boost = 1.0 + 1.4 * (1.0 - clamp(u, 0.0, 1.0));
+    // fast out of the point and slowing to a stop within a third of the ring's radius
+    float reach = 1.0 - (1.0 - clamp(u, 0.0, 1.0)) * (1.0 - clamp(u, 0.0, 1.0));
+    home = ip + d * reach * uRadius * 0.34 + bend * reach * reach * uRadius * 0.10;
+    fade = (since < 0.0 || u > 1.0) ? 0.0 : (1.0 - u) * smoothstep(0.0, 0.03, u);
+    boost = 1.0 + 1.8 * (1.0 - clamp(u, 0.0, 1.0));
   }
   place(mix(adrift(), home, f), f, boost);
   vAlpha *= fade * (aKind > 1.5 ? f : 1.0);   // no spray from a ring that has not gathered
@@ -252,9 +254,9 @@ void main() {
 export function buildCollider(o, ctx) {
   const R = o.radius || 7;
   const N = Math.max(2000, Math.min(120000, Math.round(o.grains || 26000)));
-  const nTracks = Math.max(3, Math.min(40, Math.round(o.tracks || 14)));
-  const PER_TRACK = 90, BUNCH = 900;
-  const life = o.life ?? 2.6;
+  const nTracks = Math.max(3, Math.min(40, Math.round(o.tracks || 18)));
+  const PER_TRACK = 150, BUNCH = 900;
+  const life = o.life ?? 1.9;
   const beam = rgb(o.beam || ctx.palette.dust);
   const bright = rgb(o.bunch || ctx.palette.dustBright);
   const accent = rgb(ctx.palette.accent);
@@ -289,7 +291,7 @@ export function buildCollider(o, ctx) {
     const color = spray[k % spray.length];
     const reachOut = 0.55 + 0.7 * Math.random();
     for (let j = 0; j < PER_TRACK; j++) {
-      const lag = (j / PER_TRACK) * 0.5;
+      const lag = (j / PER_TRACK) * 0.32;   // a track is its grains leaving one after another: close enough to read as a line
       G.put({
         home: [kind === 2 ? R : -R, 0, 0], color: mixRgb(color, [1, 1, 1], 0.5 * (1 - j / PER_TRACK)),
         size: (1.9 - 1.2 * j / PER_TRACK) * (0.8 + 0.4 * Math.random()), alpha: 0.75 * (1 - 0.6 * j / PER_TRACK), reach: R * 0.5,

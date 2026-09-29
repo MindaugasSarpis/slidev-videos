@@ -218,7 +218,8 @@ registerBuilder('bar', (o, ctx) => {
 // the whole body is never seen before its fly-in. (Startertalk's pentaquark.)
 //
 //   { type: constellation, pos, radius, nodeRadius?, label?,
-//     nodes: [{ pos, color?, core? }, …], strings?: ring | none, haze?: '#…' }
+//     nodes: [{ pos, color?, core? }, …], strings?: ring | none, haze?: '#…',
+//     coreSize?: 15, coreAlpha?: 0.9 }
 const GRAIN_VERT = /* glsl */ `
 attribute float aSize, aAlpha, aSeed, aKind; attribute vec3 aColor;
 uniform float uPixelRatio, uTime, uReveal, uTrail;   // aKind 0: node grain, 1: string/haze (fades in with the assembly), 2: trail (only while assembling)
@@ -264,7 +265,7 @@ export function buildConstellation(o, ctx) {
       const far = off.length() / rQ;
       items.push({ idx: put(grain, 1.0 + 1.0 * Math.random(), 0.3 + 0.55 * Math.exp(-far * 1.6)), off, w: 0.25 + 0.5 * Math.random(), ph: Math.random() * 6.28 });
     }
-    const coreIdx = put(core, 15, 0.9);
+    const coreIdx = put(core, o.coreSize ?? 15, o.coreAlpha ?? 0.9);
     return { items, coreIdx };
   });
   // trails: a short tail of grains behind each node while it flies in
