@@ -97,6 +97,13 @@ test('the example deck passes', () => {
   assert.ok(r.poses >= 5 && r.stops === 2);
 });
 
+test('the forms of grains are core types', () => {
+  assert.deepEqual(CORE_TYPES.galaxy, ['pos', 'radius']);
+  assert.deepEqual(CORE_TYPES.collider, ['pos', 'radius']);
+  const space = { stations: [{ id: 's', pos: [0, 0, 0], look: { dist: 9 }, objects: [{ type: 'galaxy', pos: [0, 0, 0] }, { type: 'collider', pos: [0, 0, 0], radius: 7 }] }] };
+  assert.deepEqual(checkStage({ space }).problems, ['s/galaxy: missing radius']);
+});
+
 test('headmatter stage block is read', () => {
   assert.deepEqual(readStageConfig(exampleDeck), { space: 'data/space.json', records: 'data/records.json', palette: 'blue', sound: 'true' });
   const cfg = readStageConfig('---\ntitle: x\nstage:\n  space: "data/s.json"   # the world\n  plugins: [hadron, other]\n  humAt:\n    - hero\n    - close\nvideos:\n  repo: a/b\n---\n');

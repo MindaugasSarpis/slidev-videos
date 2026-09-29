@@ -94,6 +94,27 @@ export function liveFrame(video) {
   } catch { return null; }
 }
 
+// The mean colour of a frame, as [r, g, b] in 0..1 (null if it cannot be
+// read). Weighted toward the lit and the coloured parts, so a picture that is
+// mostly black sky with one blue planet says blue, not black.
+export function meanColor(image) {
+  try {
+    const c = document.createElement('canvas');
+    c.width = 16; c.height = 9;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(image, 0, 0, 16, 9);
+    const d = g.getImageData(0, 0, 16, 9).data;
+    let r = 0, gr = 0, b = 0, w = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const R = d[i] / 255, G = d[i + 1] / 255, B = d[i + 2] / 255;
+      const hi = Math.max(R, G, B), lo = Math.min(R, G, B);
+      const k = 0.05 + hi * (0.4 + 1.6 * (hi - lo));
+      r += R * k; gr += G * k; b += B * k; w += k;
+    }
+    return w > 0 ? [r / w, gr / w, b / w] : null;
+  } catch { return null; }
+}
+
 // Where the picture sits inside the player, and which part of the frame shows.
 // box: the player's rect (screen px); size: the frame's [w, h]; fit: cover | contain.
 // → { rect: {left, top, width, height}, uv: [u0, v0, du, dv] }

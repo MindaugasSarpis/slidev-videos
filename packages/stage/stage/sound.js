@@ -189,3 +189,96 @@ export function humProbe() {
     return { playing: true, error: String(e) };
   }
 }
+
+// ---- movement -----------------------------------------------------------------
+// Two short voices for things that move, both quiet enough to sit under a
+// speaker's voice (peaks near -24 dBFS):
+//
+//   the whoosh   a flight. Noise through a band-pass that opens and closes
+//                with the flight, low in pitch: air, not a swoosh effect.
+//   the rise     a clip condensing out of the dust. Two sines a fifth apart
+//                gliding up a fourth, with a breath of noise, swelling to the
+//                moment the picture is whole and gone just after.
+//
+// Both return quietly when Web Audio is missing or still locked.
+const last = { whoosh: 0, rise: 0 };
+let longNoise = null;
+function getLongNoise(ac) {
+  if (longNoise && longNoise.sampleRate === ac.sampleRate) return longNoise;
+  const n = Math.ceil(ac.sampleRate * 2);
+  const buf = ac.createBuffer(1, n, ac.sampleRate);
+  const d = buf.getChannelData(0);
+  // pink-ish: a one-pole low-pass over white, so it is breath rather than hiss
+  let y = 0;
+  for (let i = 0; i < n; i++) { y = 0.93 * y + 0.07 * (Math.random() * 2 - 1); d[i] = y * 3.2; }
+  longNoise = buf;
+  return longNoise;
+}
+function running() {
+  const ac = getContext();
+  return ac && ac.state === 'running' ? ac : null;
+}
+
+export function playWhoosh(seconds = 2, { level = 1 } = {}) {
+  const ac = running();
+  if (!ac) return { played: false, reason: 'locked' };
+  if (ac.currentTime - last.whoosh < 0.25) return { played: false, reason: 'too-soon' };
+  try {
+    const t0 = ac.currentTime, dur = Math.min(6, Math.max(0.6, seconds));
+    last.whoosh = t0;
+    const src = ac.createBufferSource(); src.buffer = getLongNoise(ac); src.loop = true;
+    const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.7;
+    bp.frequency.setValueAtTime(140, t0);
+    bp.frequency.exponentialRampToValueAtTime(520, t0 + dur * 0.5);
+    bp.frequency.exponentialRampToValueAtTime(160, t0 + dur);
+    const g = ac.createGain();
+    const peak = 0.06 * Math.min(1.5, Math.max(0, level));
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(peak, t0 + dur * 0.45);
+    g.gain.linearRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(bp).connect(g).connect(ac.destination);
+    src.start(t0); src.stop(t0 + dur + 0.05);
+    src.onended = () => { try { for (const n of [src, bp, g]) n.disconnect(); } catch { /* noop */ } };
+    return { played: true, seconds: dur };
+  } catch (e) {
+    return { played: false, reason: String((e && e.message) || e) };
+  }
+}
+
+export function playRise(seconds = 1.8, { level = 1 } = {}) {
+  const ac = running();
+  if (!ac) return { played: false, reason: 'locked' };
+  if (ac.currentTime - last.rise < 0.25) return { played: false, reason: 'too-soon' };
+  try {
+    const t0 = ac.currentTime, dur = Math.min(5, Math.max(0.6, seconds));
+    last.rise = t0;
+    const peak = 0.05 * Math.min(1.5, Math.max(0, level));
+    const out = ac.createGain();
+    out.gain.setValueAtTime(0.0001, t0);
+    out.gain.linearRampToValueAtTime(peak, t0 + dur * 0.85);
+    out.gain.linearRampToValueAtTime(0.0001, t0 + dur + 0.45);
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.8;
+    lp.frequency.setValueAtTime(300, t0);
+    lp.frequency.exponentialRampToValueAtTime(1800, t0 + dur);
+    const nodes = [out, lp];
+    for (const [f, gain] of [[110, 1], [165, 0.6]]) {
+      const o = ac.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(f, t0);
+      o.frequency.exponentialRampToValueAtTime(f * 4 / 3, t0 + dur);
+      const g = ac.createGain(); g.gain.value = gain;
+      o.connect(g).connect(lp);
+      o.start(t0); o.stop(t0 + dur + 0.5);
+      nodes.push(o, g);
+    }
+    const src = ac.createBufferSource(); src.buffer = getLongNoise(ac); src.loop = true;
+    const ng = ac.createGain(); ng.gain.value = 0.35;
+    src.connect(ng).connect(lp);
+    src.start(t0); src.stop(t0 + dur + 0.5);
+    nodes.push(src, ng);
+    lp.connect(out).connect(ac.destination);
+    src.onended = () => { try { for (const n of nodes) n.disconnect(); } catch { /* noop */ } };
+    return { played: true, seconds: dur };
+  } catch (e) {
+    return { played: false, reason: String((e && e.message) || e) };
+  }
+}

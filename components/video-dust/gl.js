@@ -1,9 +1,17 @@
-// The dust overlay's renderer: plain WebGL2, one draw call per sheet, no
-// dependencies. A *sheet* is a grid of points over a clip's picture; every
-// point has a home (its cell of the picture) and a scattered place out in the
-// frame. `progress` blends the two, so 0 → 1 condenses the picture out of the
-// dust (enter) and 1 → 0 breaks it back into dust (leave). Points carry the
-// dust colour while they fly and take their pixel's colour as they land.
+// The dust overlay's renderer: plain WebGL2, two draw calls per sheet, no
+// dependencies. A *sheet* is a grid of grains, one for each cell of a clip's
+// picture, and it lives in a small world of its own seen through a camera
+// like the stage's (the same 50° field of view), so that over the stage it
+// reads as part of that world and not as a layer on the slide.
+//
+//   arriving   grains adrift in depth gather onto a plane that stands some
+//              way off, turned aside; as the picture comes whole the plane
+//              swings square and flies to the camera until it fills the
+//              frame, exactly where the <video> is. Grains carry the dust's
+//              colour adrift and take their pixel's colour as they land.
+//   leaving    the picture stands back a little and breaks up from its edges
+//              in, its grains thrown toward and past the camera, so the
+//              viewer goes through them. They keep the picture's colours.
 //
 // Several sheets can run at once: stepping from one clip straight to the next
 // scatters the first while the second assembles.
@@ -17,51 +25,84 @@ uniform vec4 uRect;     // the picture in canvas px: x, y (top-left), w, h
 uniform vec4 uUv;       // the part of the frame that is visible: offset.xy, scale.xy
 uniform vec2 uCanvas;   // canvas size in px
 uniform float uCellPx;  // one cell's width in px
-uniform float uProgress, uFade, uTime, uLeave;
+uniform float uU;       // 0..1 through the arrival or the leaving
+uniform float uFade, uTime, uLeave;
 uniform float uGlow;    // 1: the glow pass — the same grains again, wide and faint, added over
 uniform vec3 uDust;
 out vec4 vColor;
 out float vLanded;
 
+const float F = 2.1445;   // 1 / tan(25°): a plane at depth F with half-height 1 fills the frame
+
 float ease(float x) { return x * x * x * (x * (x * 6.0 - 15.0) + 10.0); }
+vec3 turnY(vec3 v, float a) { float c = cos(a), s = sin(a); return vec3(c * v.x + s * v.z, v.y, -s * v.x + c * v.z); }
+vec3 turnX(vec3 v, float a) { float c = cos(a), s = sin(a); return vec3(v.x, c * v.y - s * v.z, s * v.y + c * v.z); }
 
 void main() {
-  vec2 home = uRect.xy + aCell * uRect.zw;
-  vec2 centre = uRect.xy + 0.5 * uRect.zw;
-  // Stagger: a point starts late by its own random and by its distance from
-  // the picture's centre, so the image condenses from the middle outward (and
-  // on the way out breaks up from the edges in).
+  float A = uCanvas.x / uCanvas.y;
+  // the grain's cell and the picture's centre, in the units of the plane at depth F
+  vec2 homePx = uRect.xy + aCell * uRect.zw, midPx = uRect.xy + 0.5 * uRect.zw;
+  vec3 home = vec3((homePx.x / uCanvas.x * 2.0 - 1.0) * A, 1.0 - homePx.y / uCanvas.y * 2.0, 0.0);
+  vec3 mid = vec3((midPx.x / uCanvas.x * 2.0 - 1.0) * A, 1.0 - midPx.y / uCanvas.y * 2.0, 0.0);
+
+  // A grain sets out late by its own random and by its distance from the
+  // picture's centre: the image condenses from the middle outward, and
+  // breaks up from the edges in.
   float ring = clamp(length((aCell - 0.5) * vec2(1.0, uRect.w / max(uRect.z, 1.0))) / 0.6, 0.0, 1.0);
   float late = 0.55 * aSeed.x + 0.45 * ring;
-  float p = ease(clamp((uProgress * 1.6 - late * 0.6), 0.0, 1.0));
+
+  float p;        // how far the grain is home: 0 adrift … 1 in its cell
+  float away;     // how far the plane stands from the frame: 1 out in the world … 0 filling the frame
+  if (uLeave < 0.5) {
+    p = ease(clamp(uU / 0.64 * 1.6 - late * 0.6, 0.0, 1.0));           // gathered by 0.64
+    away = 1.0 - ease(clamp((uU - 0.36) / 0.64, 0.0, 1.0));            // then the flight to the frame
+  } else {
+    p = 1.0 - ease(clamp(uU * 1.7 - (1.0 - late) * 0.7, 0.0, 1.0));
+    away = 0.42 * ease(clamp(uU / 0.7, 0.0, 1.0));                     // it only steps back
+  }
   float fly = 1.0 - p;
 
-  // The scattered place: out along a random bearing, swirled about the
-  // centre, and spread in depth so the cloud has a near and a far side.
-  float a = aSeed.y * 6.2831853;
-  float reach = (0.30 + 0.85 * aSeed.z) * max(uCanvas.x, uCanvas.y);
-  vec2 out2 = vec2(cos(a), sin(a)) * reach;
-  // leaving: bias the bearing away from the centre, so the picture bursts outward
-  out2 = mix(out2, normalize(home - centre + vec2(0.001)) * reach, 0.55 * uLeave);
-  float turn = (0.9 + 1.4 * aSeed.w) * fly * fly * (aSeed.x > 0.5 ? 1.0 : -1.0);
-  float c = cos(turn), s = sin(turn);
-  vec2 rel = home - centre + out2 * fly;
-  rel = vec2(rel.x * c - rel.y * s, rel.x * s + rel.y * c);
-  // a slow drift while flying, so a held cloud is never still
-  rel += fly * 14.0 * vec2(sin(uTime * 0.9 + aSeed.w * 40.0), cos(uTime * 0.7 + aSeed.z * 40.0));
-  float depth = (aSeed.w * 2.0 - 1.0) * fly;            // -1 far .. +1 near
-  float persp = 1.0 / (1.0 - 0.45 * depth);
-  vec2 pos = centre + rel * persp;
+  // where the plane stands: off to the right and turned aside when arriving, to the left when leaving
+  float side = uLeave < 0.5 ? 1.0 : -1.0;
+  vec3 onPlane = turnX(turnY(home - mid, side * 0.62 * away), -0.10 * away);
+  vec3 P = mid + onPlane + vec3(side * 0.62 * A * away, 0.10 * away, -F - 3.4 * away);
 
-  gl_Position = vec4(pos.x / uCanvas.x * 2.0 - 1.0, 1.0 - pos.y / uCanvas.y * 2.0, 0.0, 1.0);
-  // landed: a touch wider than the cell, so the sheet closes into one picture
-  float flying = mix(0.34, 0.7, aSeed.z) * persp;
-  gl_PointSize = max(uCellPx * mix(flying, 1.3, smoothstep(0.55, 1.0, p)), 1.5);
+  // adrift: out along a random bearing, swirled about the view axis, deep
+  // behind the plane when arriving, thrown at the camera when leaving
+  float a = aSeed.y * 6.2831853, b = aSeed.w * 2.0 - 1.0;
+  vec3 out3 = vec3(cos(a) * sqrt(1.0 - b * b), sin(a) * sqrt(1.0 - b * b), b) * (1.3 + 2.9 * aSeed.z);
+  out3.z = uLeave < 0.5 ? -abs(out3.z) * 1.2 - 0.4 : abs(out3.z) * 1.5 + 2.2;
+  float turn = (0.7 + 1.2 * aSeed.w) * fly * fly * (aSeed.x > 0.5 ? 1.0 : -1.0);
+  float c = cos(turn), s = sin(turn);
+  vec3 drift = out3 * fly;
+  drift.xy = vec2(drift.x * c - drift.y * s, drift.x * s + drift.y * c);
+  // never still while adrift
+  drift += fly * 0.05 * vec3(sin(uTime * 0.9 + aSeed.w * 40.0), cos(uTime * 0.7 + aSeed.z * 40.0), sin(uTime * 0.6 + aSeed.x * 40.0));
+  P += drift;
+
+  // through the camera
+  float depth = -P.z;
+  if (depth < 0.14) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vColor = vec4(0.0); vLanded = 0.0; return; }
+  float persp = F / depth;
+  gl_Position = vec4(P.x * persp / A, P.y * persp, 0.0, 1.0);
+
+  // in its cell a grain is a touch wider than the cell, so the sheet closes
+  // into one picture; adrift it is a mote. Close to the camera it is large
+  // and out of focus: wide and faint.
+  float flying = mix(0.34, 0.7, aSeed.z);
+  float size = uCellPx * persp * mix(flying, 1.3, smoothstep(0.55, 1.0, p));
+  float blur = smoothstep(1.5, 5.0, persp) * fly;
+  gl_PointSize = clamp(size * (1.0 + 1.6 * blur), 1.5, 96.0);
 
   vec3 pix = texture(uTex, uUv.xy + aCell * uUv.zw).rgb;
   vec3 dust = uDust * (0.55 + 0.9 * aSeed.x);
-  vec3 col = mix(dust, pix, smoothstep(0.30, 0.92, p));
-  float alpha = uFade * smoothstep(0.0, 0.12, uProgress) * mix(0.5 + 0.4 * aSeed.y, 1.0, smoothstep(0.4, 1.0, p));
+  // arriving, a grain takes its pixel's colour as it lands; leaving, it
+  // keeps it (lifted a little, so a dark frame still leaves lit grains)
+  vec3 col = uLeave < 0.5
+    ? mix(dust, pix, smoothstep(0.30, 0.92, p))
+    : mix(pix, pix * 0.7 + dust * 0.3 + 0.05, smoothstep(0.0, 0.8, fly));
+  float alpha = uFade * mix(0.5 + 0.4 * aSeed.y, 1.0, smoothstep(0.4, 1.0, p)) * (1.0 - 0.72 * blur);
+  if (uLeave < 0.5) alpha *= smoothstep(0.0, 0.10, uU);
   vColor = vec4(col, alpha);
   vLanded = smoothstep(0.94, 1.0, p);   // square only on the last step home: a square in flight reads as confetti
   if (uGlow > 0.5) {
@@ -69,8 +110,8 @@ void main() {
     // the time it lands, so the settled picture is the picture and nothing more.
     float on = step(0.75, fract(aSeed.x * 7.0 + aSeed.y * 3.0));
     float airborne = smoothstep(0.0, 0.25, fly) * (1.0 - smoothstep(0.85, 1.0, fly) * 0.5);
-    gl_PointSize = min(uCellPx * (3.2 + 3.0 * aSeed.z) * persp, 64.0) * on;
-    vColor = vec4(mix(col, dust, 0.35), alpha * 0.14 * airborne * on);   // over a dark world 0.22 outshone the picture forming under it
+    gl_PointSize = min(uCellPx * (3.2 + 3.0 * aSeed.z) * persp, 72.0) * on;
+    vColor = vec4(mix(col, dust, 0.35), alpha * 0.14 * airborne * on);
     vLanded = 0.0;
   }
 }`;
@@ -132,7 +173,7 @@ export function createDust(canvas) {
     console.warn('[slidev-addon-videos]', e.message || e);
     return null;
   }
-  loc = Object.fromEntries(['uTex', 'uRect', 'uUv', 'uCanvas', 'uCellPx', 'uProgress', 'uFade', 'uTime', 'uLeave', 'uGlow', 'uDust']
+  loc = Object.fromEntries(['uTex', 'uRect', 'uUv', 'uCanvas', 'uCellPx', 'uU', 'uFade', 'uTime', 'uLeave', 'uGlow', 'uDust']
     .map((n) => [n, gl.getUniformLocation(prog, n)]));
 
   // One grid serves every sheet: cells are in picture fractions, so the same
@@ -215,7 +256,7 @@ export function createDust(canvas) {
         }
       } else {
         s.progress = 1 - u;
-        s.fade = 1 - smooth(Math.max(0, (u - 0.55) / 0.45));
+        s.fade = 1 - smooth(Math.max(0, (u - 0.6) / 0.4));
         if (u >= 1) { drop(s); continue; }
       }
       // the picture's rect, from screen px to buffer px relative to the canvas
@@ -223,7 +264,7 @@ export function createDust(canvas) {
       gl.uniform4f(loc.uRect, (r.left - box.left) * k, (r.top - box.top) * k, r.width * k, r.height * k);
       gl.uniform4f(loc.uUv, s.uv[0], s.uv[1], s.uv[2], s.uv[3]);
       gl.uniform1f(loc.uCellPx, (r.width * k) / grid.cols);
-      gl.uniform1f(loc.uProgress, s.progress);
+      gl.uniform1f(loc.uU, u);
       gl.uniform1f(loc.uFade, s.fade);
       gl.uniform1f(loc.uLeave, s.mode === 'leave' ? 1 : 0);
       gl.uniform3f(loc.uDust, s.dust[0], s.dust[1], s.dust[2]);
@@ -232,7 +273,7 @@ export function createDust(canvas) {
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       gl.drawArrays(gl.POINTS, 0, grid.count);
       // the glow, added over; nothing to add once the whole sheet has landed
-      if (s.progress < 0.98) {
+      if (s.mode === 'leave' || u < 0.98) {
         gl.uniform1f(loc.uGlow, 1);
         gl.blendFunc(gl.ONE, gl.ONE);
         gl.drawArrays(gl.POINTS, 0, grid.count);
@@ -272,7 +313,7 @@ export function createDust(canvas) {
     //   release(ms) fades the sheet out over ms — call it as the <video> fades in
     //   cancel()    drops the sheet now
     enter(opts) {
-      const sheet = add('enter', { duration: 1400, ...opts });
+      const sheet = add('enter', { duration: 1900, ...opts });
       if (!sheet) return null;
       let done;
       const assembled = new Promise((res) => { done = res; });
@@ -286,7 +327,7 @@ export function createDust(canvas) {
     },
     // Break the picture into dust. `done` resolves when the last grain is gone.
     leave(opts) {
-      const sheet = add('leave', { duration: 1000, ...opts });
+      const sheet = add('leave', { duration: 1700, ...opts });
       if (!sheet) return null;
       let done;
       const gone = new Promise((res) => { done = res; });

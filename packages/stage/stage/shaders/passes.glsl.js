@@ -84,8 +84,13 @@ uniform sampler2D uPos, uVel;
 uniform float uSize, uPixelRatio, uGain;   // uGain: overall brightness (1.0 in the hero; the hadron space raises it)
 uniform float uFocus;                      // camera-to-target distance for a fake depth of field (0 = off, the hero)
 uniform vec3 uDustLo, uDustHi;             // a grain at rest, and at speed (the palette; unset = the classic dim cyan → white)
+uniform mat4 uPrevViewProj;                // last frame's projection * view: where this grain stood on screen a frame ago
+uniform float uStreak;                     // 0: grains are points. > 0: a grain is drawn out along its path across the screen
+uniform vec2 uViewport;                    // drawing buffer, px
+uniform vec4 uTint;                        // rgb, and how far the dust has taken it (0 = not at all)
 varying float vAlpha;
 varying vec3 vColor;
+varying vec3 vStreak;                      // xy: the streak's direction in the sprite; z: its length in sprite widths (0 = a point)
 void main() {
   vec2 ref = position.xy;
   vec4 pos = texture2D(uPos, ref);
@@ -96,23 +101,51 @@ void main() {
   float depth = length(mv.xyz);
   // out of focus: grains far from the focus distance draw bigger and fainter
   float defocus = uFocus > 0.0 ? clamp(abs(depth - uFocus) / (uFocus + 4.0), 0.0, 1.0) : 0.0;
-  gl_PointSize = uSize * uPixelRatio * mix(0.5, 1.6, fract(seed * 7.31)) * (12.0 / max(-mv.z, 0.1)) * (1.0 + 1.1 * defocus);
+  float pointSize = uSize * uPixelRatio * mix(0.5, 1.6, fract(seed * 7.31)) * (12.0 / max(-mv.z, 0.1)) * (1.0 + 1.1 * defocus);
+  // The streak: how far the grain moved on screen since the last frame (the
+  // camera's doing, mostly), drawn as the sprite's long axis. The sprite grows
+  // to hold it and gives up brightness as it lengthens, so a streak carries a
+  // point's light spread thin.
+  vStreak = vec3(1.0, 0.0, 0.0);
+  float stretch = 0.0;
+  if (uStreak > 0.0) {
+    vec4 was = uPrevViewProj * modelMatrix * vec4(pos.xyz, 1.0);
+    if (was.w > 0.05 && gl_Position.w > 0.05) {
+      vec2 moved = (gl_Position.xy / gl_Position.w - was.xy / was.w) * 0.5 * uViewport;   // px
+      float len = length(moved) * uStreak;
+      if (len > 0.75) {
+        stretch = min(len / max(pointSize, 1.0), 14.0);
+        vStreak = vec3(moved / max(length(moved), 1e-4), stretch);
+      }
+    }
+  }
+  gl_PointSize = pointSize * (1.0 + stretch);
   float sp = clamp(length(vel) * 0.9, 0.0, 1.0);
   // an unset uniform reads as zero: keep the classic colours then, so a caller
   // that knows nothing of palettes (the hero) draws as it always did
   vec3 lo = dot(uDustLo, vec3(1.0)) > 0.0 ? uDustLo : vec3(0.30, 0.55, 0.72);
   vec3 hi = dot(uDustHi, vec3(1.0)) > 0.0 ? uDustHi : vec3(0.98, 0.99, 1.0);
   vColor = mix(lo, hi, sp);  // by speed
+  // the tint: what the dust has taken up (the colours of a clip that broke into it), grain by grain a little differently
+  vColor = mix(vColor, uTint.rgb * (0.75 + 0.5 * fract(seed * 5.13)), clamp(uTint.a, 0.0, 1.0) * (0.55 + 0.45 * fract(seed * 9.7)));
   float fog = exp(-0.04 * max(depth - 6.0, 0.0));
   vAlpha = mix(0.25, 0.9, sp) * mix(0.4, 1.0, fract(seed * 3.17)) * fog * uGain * (1.0 - 0.6 * defocus);
+  vAlpha *= 1.0 / (1.0 + 0.55 * stretch);
 }`;
 
 export const RENDER_FRAG = /* glsl */ `
-uniform float uLinearOut;   // 1: the frame is sRGB-encoded downstream (the hadron space), so emit linear light
+uniform float uLinearOut;   // 1: the frame is sRGB-encoded downstream (the stage), so emit linear light
 varying float vAlpha;
 varying vec3 vColor;
+varying vec3 vStreak;
 void main() {
-  float d = length(gl_PointCoord - 0.5);
+  // a point is round; a streak is the same grain measured in its own frame,
+  // long axis along the path (gl_PointCoord's y runs down the screen)
+  vec2 q = gl_PointCoord - 0.5;
+  q.y = -q.y;
+  float along = dot(q, vStreak.xy), across = dot(q, vec2(-vStreak.y, vStreak.x));
+  // the sprite was enlarged by (1 + length): across the path the grain keeps its own width
+  float d = vStreak.z > 0.0 ? length(vec2(along, across * (1.0 + vStreak.z))) : length(q);
   float a = smoothstep(0.5, 0.05, d) * vAlpha;
   vec3 c = vColor * a;
   gl_FragColor = uLinearOut > 0.5 ? vec4(pow(c, vec3(2.2)), 1.0) : vec4(c, a);

@@ -12,6 +12,8 @@ export const CORE_TYPES = {
   grid: ['pos', 'from', 'to', 'step'],
   bar: ['pos', 'length', 'label'],
   constellation: ['pos', 'radius', 'nodes'],
+  galaxy: ['pos', 'radius'],
+  collider: ['pos', 'radius'],
 };
 
 // Shipped plugins' types (stage/plugins/*.js export the same table as `types`).

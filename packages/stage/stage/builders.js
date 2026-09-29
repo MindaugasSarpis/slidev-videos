@@ -4,6 +4,7 @@ import {
 } from 'three';
 import { makeLabel, makeText } from './labels.js';
 import { marble, shell, ball } from './materials.js';
+import { buildGalaxy, buildCollider } from './forms.js';
 
 // What a station is made of. A station (space.json) lists `objects`, each
 // with a `type`; the type names a *builder* registered here. A builder is
@@ -393,6 +394,10 @@ export function buildConstellation(o, ctx) {
   } };
 }
 registerBuilder('constellation', buildConstellation, { fields: ['pos', 'radius', 'nodes'] });
+
+// ---- forms of grains (forms.js): they gather on arrival, as the constellation does -----------------
+registerBuilder('galaxy', buildGalaxy, { fields: ['pos', 'radius'] });
+registerBuilder('collider', buildCollider, { fields: ['pos', 'radius'] });
 
 // ---- a station -----------------------------------------------------------------------------------------
 export function buildStation(station, ctx) {

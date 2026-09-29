@@ -27,7 +27,7 @@ function setSessionVolume(v) {
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useIsSlideActive, useNav, useSlideContext, configs } from '@slidev/client'
-import { getOverlay, announce, warmStrip, stripFrame, liveFrame, fitPicture } from './video-dust/bus.js'
+import { getOverlay, announce, warmStrip, stripFrame, liveFrame, fitPicture, meanColor } from './video-dust/bus.js'
 
 // Config resolution (headmatter beats env beats built-ins):
 //   videos:                       VITE_VIDEO_REPO
@@ -179,8 +179,10 @@ function onError() {
 // departure: each step after an await checks it, so a presenter stepping
 // through quickly never has a stale step start a clip on a slide already left.
 const FADE_MS = 450          // picture dissolve, and the sheet's hand-over to the <video>
-const DUST_ENTER_MS = 1400
-const DUST_LEAVE_MS = 1000
+// `videos.dustMs: [arrive, leave]` sets the two; the arrival is a gathering and then a flight to the frame
+const DUST_MS = Array.isArray(CFG.dustMs) ? CFG.dustMs.map(Number) : []
+const DUST_ENTER_MS = DUST_MS[0] > 0 ? DUST_MS[0] : 1900
+const DUST_LEAVE_MS = DUST_MS[1] > 0 ? DUST_MS[1] : 1700
 const AUDIO_IN_MS = 600
 const AUDIO_OUT_MS = 400
 const revealed = ref(effTransition.value === 'cut')
@@ -217,12 +219,15 @@ watch(status, (s) => { if (s === 'ready' || s === 'error') settle?.() })
 
 // Put a sheet of particles over the picture. The colours come from the frame
 // on screen when the page may read it, else from the clip's strip.
+let sheetColor = null        // the mean colour of the frame the last sheet was made of
 async function raiseSheet(kind, time) {
   const overlay = getOverlay()
   const wrap = wrapRef.value
+  sheetColor = null
   if (!overlay || !wrap) return null
   const frame = liveFrame(videoRef.value) || await stripFrame(props.src, time)
   if (!frame) return null
+  sheetColor = meanColor(frame.image)
   let box = wrap.getBoundingClientRect()
   // A full-bleed player is the slide: use the slide's own box, which holds
   // still while a sliding page transition carries the player across.
@@ -294,12 +299,13 @@ async function exit() {
   const mode = effTransition.value
   const video = videoRef.value
   announce('cover', { covered: false, src: props.src, fit: effFit.value })
-  announce('transition', { phase: 'leave', mode, src: props.src, duration: mode === 'dust' ? DUST_LEAVE_MS : FADE_MS })
   let handle = null
   if (mode === 'dust' && wasShown && video) {
     handle = await raiseSheet('leave', video.currentTime || 0)
     if (id !== run) { handle?.cancel(); return }
   }
+  // `color`: what the picture was, on the whole, as it broke up — for whoever wants to carry it on
+  announce('transition', { phase: 'leave', mode, src: props.src, duration: mode === 'dust' ? DUST_LEAVE_MS : FADE_MS, color: handle ? sheetColor : null })
   instant.value = !!handle     // the sheet is the picture now; the <video> goes at once
   revealed.value = false
   const rest = () => {
