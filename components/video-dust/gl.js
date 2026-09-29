@@ -103,6 +103,12 @@ void main() {
     ? mix(dust, pix, smoothstep(0.30, 0.92, p))
     : mix(pix, pix * 0.7 + dust * 0.3 + 0.05, smoothstep(0.0, 0.8, fly));
   float alpha = uFade * mix(0.5 + 0.4 * aSeed.y, 1.0, smoothstep(0.4, 1.0, p)) * (1.0 - 0.72 * blur);
+  // Standing off in the world the picture is made of light: its dark parts
+  // are see-through, or a night sky arrives as a black slab in front of the
+  // dust. As the plane comes to the frame they fill in, and what lands is the
+  // whole picture.
+  float lum = max(pix.r, max(pix.g, pix.b));
+  alpha *= mix(1.0, 0.12 + 0.88 * smoothstep(0.03, 0.42, lum), smoothstep(0.0, 0.55, away));
   // Arriving, the grains come up out of nothing. Leaving, the sheet comes up
   // over the picture as the <video> under it goes (0.2 s): the sheet is the
   // picture at a strip's resolution, and put up all at once over a sharp
