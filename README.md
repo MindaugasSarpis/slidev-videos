@@ -17,9 +17,9 @@ renderer under a clip that covers the slide. Either works alone.
 
 ## Install (per consumer repo)
 
-    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.4.0"
-    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.4.0
-    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.4.0&path:/packages/stage"   # the stage, if wanted
+    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.5.0"
+    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.5.0
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.5.0&path:/packages/stage"   # the stage, if wanted
 
 ## The player (`slidev-addon-videos`)
 
@@ -76,13 +76,19 @@ is what froze a 32-clip reel from its 9th clip on (v0.3.3).
 | --- | --- | --- |
 | `cut` | on when ready (the default, as before v0.4) | off at once |
 | `fade` | the picture dissolves in over 0.45 s, the sound over 0.6 s | both fade out; the clip plays on unseen for the 0.4 s its sound takes to go |
-| `dust` | about a hundred thousand grains fly in and settle into the clip's first frame, each taking its pixel's colour as it lands (1.4 s); the clip dissolves in over them and starts | the frame on screen breaks into grains that scatter outward (1.0 s) while the next slide shows through |
+| `dust` | grains adrift in depth gather onto a plane standing some way off, turned aside, each taking its pixel's colour as it lands; the plane swings square and flies to the camera until it fills the frame (1.9 s); the clip dissolves in over it and starts | the picture stands back and breaks up from its edges in, its grains thrown toward and past the camera (1.7 s), keeping the picture's colours, while the next slide shows through |
 
 With a transition the player has no black ground: what is under the slide
 shows until the picture is up. The grains are drawn by an overlay the addon
 mounts itself (its `global-top.vue`; plain WebGL2, created on first use), so
 the deck must load the package as an addon, not symlink its `components/`.
-While a clip is slow to arrive the assembled sheet holds its first frame.
+While a clip is slow to arrive the assembled sheet holds its first frame. A
+clip that opens on black gives the grains nothing to gather into, so its
+sheet is made of the first lit frame of its opening twelve seconds and the
+clip plays from that moment (`videos.dustFrom: start` keeps the opening).
+The sheet is seen through a camera like the stage's (the same field of view),
+so over the stage it belongs to that world. `videos.dustMs: [1900, 1700]`
+sets the two durations.
 
 The grains need the picture's pixels. Release assets are served without CORS
 headers, so a deployed deck can play a clip but not read it; **`slidev-videos
@@ -98,8 +104,10 @@ ffmpeg cannot read HTTPS (the static Linux builds crash on it) the clip is
 downloaded, cut and removed.
 
 Other addons can follow along on `window`: `slidev-videos:transition`
-`{ phase: 'enter' | 'leave', mode, src, duration }` and `slidev-videos:cover`
-`{ covered, src, fit }`.
+`{ phase: 'enter' | 'leave', mode, src, duration, color }` and
+`slidev-videos:cover` `{ covered, src, fit }`. `color` is the mean colour of
+the frame a leaving `dust` clip broke up from (`[r, g, b]`, weighted toward
+its lit and coloured parts); the stage tints its dust with it.
 
 **Overview and previews.** In Slidev's overview grid (`o`) and the presenter's
 next-slide preview the player renders a static placeholder, not a `<video>`:

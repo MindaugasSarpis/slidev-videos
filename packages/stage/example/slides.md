@@ -23,17 +23,22 @@ space:
 
 # One world, every slide
 
-## A camera that flies from slide to slide · press c to build the body again
+## A camera that flies from slide to slide · press c to build what stands here again
 
 <div class="mt-md">The example deck</div>
 
 ---
-space: { at: path, dim: 0.2 }
+layout: section
+space: { at: [11.5, -2.6, 0], dist: 17, yaw: -20, pitch: 40, dim: 0.08 }
 ---
 
-# Stations stand in the dust
+# A form of grains
 
-<div class="world-caption caption">A station is a list of objects in <code>space.json</code>. This one is <code>tracks</code>: lines, lit tubes, a pulse running down them.</div>
+It gathers as the camera arrives
+
+<!-- `galaxy`: no surfaces, no labels. It is born scattered and condenses on
+     arrival; the pose stands within `reach` of the station, so it counts as
+     being at it. -->
 
 ---
 space:
@@ -62,12 +67,11 @@ space: { at: far }
 
 A named pose
 
-<!-- `far` is a pose named in space.json's `poses` -->
-
-
+<!-- `far` is a pose named in space.json's `poses`; the ring streams, and its
+     two bunches meet twice a lap -->
 
 ---
-space: { at: grid, dim: 0.7 }
+space: { at: ring, dist: 22, yaw: 10, pitch: 30, dim: 0.7 }
 ---
 
 # Content keeps its contrast

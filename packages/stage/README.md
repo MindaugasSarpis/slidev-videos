@@ -13,7 +13,7 @@ quarks, clusters, particle names — is a plugin.
 
 ## Install
 
-    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.4.0&path:/packages/stage"
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.5.0&path:/packages/stage"
 
 ## Use
 
@@ -66,13 +66,13 @@ distance and ease in and out.
 | `palette` | `classic` | a name, or an object over a `base` |
 | `plugins` | `[]` | shipped plugins to load: `hadron` |
 | `hero` | `space.hero`, else `hero` | the station the deck opens and closes on; what builds itself there does so on arrival |
-| `sound` | `true` | a low hum while the camera is at `humAt` (starts after the first key or click, never in the presenter window) |
+| `sound` | `true` | `false` is silent; `{ hum, flight, clip, level }` picks the voices: a low hum while the camera is at `humAt`, a soft whoosh for each flight of any length, a rising tone as a clip condenses. All start after the first key or click, none in the presenter window |
 | `humAt` | `[hero]` | |
-| `videos` | `true` | follow `slidev-addon-videos`: a clip arriving as dust draws the world's dust with it, and the renderer rests under a clip that covers the slide |
+| `videos` | `true` | follow `slidev-addon-videos`: a clip arriving as dust draws the world's dust with it, one leaving shoves it out and leaves its colours in it for a few seconds (`tint: 0.8`, 0 for none), and the renderer rests under a clip that covers the slide |
 | `halo` | `true` | the dust borders; `haloOn: '.card, .halo'` picks what gets one |
 | `dim` | `0.6` | the content-slide scrim; `layoutDim: { cover: 0.15, … }` per layout |
 | `hud` | — | `{ kicker, fields: [...] }` for the default stop panel |
-| `options` | — | engine numbers: `nebula` (far clouds in the palette's colours, 0–1), `bloom`, `vignette`, `grain`, `aberration`, `exposure`, `density`, `dustSize`, `dustGain`, `gather`, `fov`, `flight: [min, max]`, `maxBufferWidth` |
+| `options` | — | engine numbers: `nebula` (far clouds in the palette's colours, 0–1), `streak` (grains drawn out along their path while the camera flies, 0–2, default 1), `reach` (a pose within this of a station is *at* it, default 12), `bloom`, `vignette`, `grain`, `aberration`, `exposure`, `density`, `dustSize`, `dustGain`, `gather`, `fov`, `flight: [min, max]`, `maxBufferWidth` |
 | `auto` | `true` | `false`: the deck mounts `<Stage>` itself from its `global-bottom.vue`, to fill the `#hud` slot |
 
 ### Palettes and looks
@@ -117,8 +117,21 @@ larger than the pose target's x.
 
 ### Object types
 
+Draw with grains. The forms made of points of light (`constellation`,
+`galaxy`, `collider`) are of a piece with the dust round them; solid shapes
+with labels (`orbs`, `ring`, `bar`) read as a diagram standing in the scene,
+and are for when a diagram is what is wanted.
+
+Whatever builds itself (`constellation`, `galaxy`, `collider`) is born
+scattered and gathers when the camera arrives *at* its station: a pose whose
+target is within `reach` of the station. A pose out in the open dust leaves it
+be, and a second pose at the same station finds it whole. `c` builds again
+what stands where the camera is.
+
 | type | fields | |
 | --- | --- | --- |
+| `galaxy` | `pos radius` `arms winding grains tilt yaw roll spin core arm rim knots assemble` | a spiral of grains: a warm bulge, arms wound as log spirals, a faint disc between, turning as a pattern |
+| `collider` | `pos radius` `lap tracks grains life tilt yaw roll beam bunch spray assemble` | a ring of grains streaming both ways; two bunches meet twice a lap, and a spray of bending tracks leaves each meeting |
 | `constellation` | `pos radius nodes[{pos,color?,core?}]` `nodeRadius label strings haze assemble` | grains round bright cores on tilted orbits, joined by strings of flowing grains; born scattered, builds itself on arrival (`c` replays it) |
 | `orbs` | `pos items[{id?,pos,color?,size?,label?,faint?}]` | marked places; an item with an `id` is an anchor for poses and stops |
 | `tracks` | `pos tracks[{points,label?,labelAt?,color?,dashed?,fade?,width?}]` `nodes pulse` | lines and lit tubes, a pulse running down the solid ones |

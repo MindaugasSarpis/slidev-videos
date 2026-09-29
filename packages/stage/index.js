@@ -13,11 +13,12 @@
 // deck's space.json.
 
 import { registerBuilder, hasBuilder, builderTypes, builderFields, buildStation, buildConstellation, helpers } from './stage/builders.js';
+import { buildGalaxy, buildCollider } from './stage/forms.js';
 import { setLabelSegmenter, setLabelFont, makeLabel, makeText } from './stage/labels.js';
 import { orb, marble, shell, ball, setOrb } from './stage/materials.js';
 import { PALETTES, DEFAULT_PALETTE, LOOKS, definePalette, resolvePalette, resolveLook, paletteVars } from './stage/palette.js';
 import { createSpace } from './stage/space.js';
-import { warmAudio, playCollision, startHum, stopHum, humProbe } from './stage/sound.js';
+import { warmAudio, playCollision, playWhoosh, playRise, startHum, stopHum, humProbe } from './stage/sound.js';
 
 // Plugins shipped with the package, loaded on demand by name
 // (`stage.plugins: [hadron]`), so a deck that does not want one never
@@ -48,9 +49,9 @@ export const shippedPlugins = () => Object.keys(SHIPPED);
 
 export {
   createSpace,
-  registerBuilder, hasBuilder, builderTypes, builderFields, buildStation, buildConstellation, helpers,
+  registerBuilder, hasBuilder, builderTypes, builderFields, buildStation, buildConstellation, buildGalaxy, buildCollider, helpers,
   setLabelSegmenter, setLabelFont, makeLabel, makeText,
   orb, marble, shell, ball, setOrb,
   PALETTES, DEFAULT_PALETTE, LOOKS, definePalette, resolvePalette, resolveLook, paletteVars,
-  warmAudio, playCollision, startHum, stopHum, humProbe,
+  warmAudio, playCollision, playWhoosh, playRise, startHum, stopHum, humProbe,
 };

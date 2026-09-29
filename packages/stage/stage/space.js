@@ -2,7 +2,7 @@ import {
   WebGLRenderer, Scene, PerspectiveCamera, OrthographicCamera, Mesh, Points, Group,
   PlaneGeometry, BufferGeometry, BufferAttribute, ShaderMaterial, DataTexture,
   WebGLRenderTarget, RGBAFormat, FloatType, HalfFloatType, NearestFilter,
-  AdditiveBlending, Vector2, Vector3, Vector4, Color, Matrix3,
+  AdditiveBlending, Vector2, Vector3, Vector4, Color, Matrix3, Matrix4,
   HemisphereLight, DirectionalLight, PointLight, PMREMGenerator, ACESFilmicToneMapping,
 } from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -50,6 +50,8 @@ const DEFAULTS = {
   dustGain: 2.0,
   density: 1,            // scales the grain count (0.5 … 1.5)
   nebula: 0,             // clouds of the palette's colour far behind the dust, 0 (none) … 1
+  streak: 1,             // grains are drawn out along their path while the camera flies, 0 (never) … 2
+  reach: 12,             // a pose within this of a station is *at* it: what stands there gathers on arrival
   flight: [1.4, 4.5],    // shortest and longest flight, seconds
 };
 
@@ -230,6 +232,8 @@ export function createSpace(canvas, container, { space, records = [], palette, o
       uPos: { value: null }, uVel: { value: null }, uSize: { value: num(opt.dustSize, 1.9) }, uPixelRatio: { value: baseDpr },
       uGain: { value: num(opt.dustGain, 2.0) }, uFocus: { value: 0 }, uLinearOut: { value: 1 },
       uDustLo: { value: raw(pal.dust) }, uDustHi: { value: raw(pal.dustBright) },
+      uPrevViewProj: { value: new Matrix4() }, uStreak: { value: 0 }, uViewport: { value: new Vector2(1, 1) },
+      uTint: { value: new Vector4(0, 0, 0, 0) },
     },
   });
   const field = new Points(fieldGeo, fieldMat); field.frustumCulled = false;
@@ -252,6 +256,8 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   let flightT0 = -1, flightDur = 1.6, arrived = true;
   const smoother = (u) => u * u * u * (u * (u * 6 - 15) + 10);
   let firstFrame = true, currentTarget = 'wide', activeStation = firstStation;
+  let atStation = null;      // the station the pose stands at, or null out in the open dust
+  let flightU = 0;           // 0..1 through the current flight, 0 when parked
 
   const nearestStation = (t) => {
     let best = firstStation, bd = Infinity;
@@ -279,6 +285,10 @@ export function createSpace(canvas, container, { space, records = [], palette, o
       out.target.copy(stations.get(firstStation).pos); out.station = firstStation;
     }
     out.dist ??= opt.pose.dist; out.yaw ??= opt.pose.yaw; out.pitch ??= opt.pose.pitch;
+    // at a station, or only in its part of the dust? What stands at a station
+    // gathers when a pose arrives *at* it; a pose out in the open leaves it be.
+    const near = stations.get(out.station);
+    out.at = near && out.target.distanceTo(near.pos) <= num(opt.reach, 12) ? out.station : null;
     return out;
   };
   const applyPose = (p, elapsed) => {
@@ -290,6 +300,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     goalLook.copy(r.target);
     goalPos.set(r.target.x + dist * Math.sin(yaw) * Math.cos(pitch), r.target.y + dist * Math.sin(pitch), r.target.z + dist * Math.cos(yaw) * Math.cos(pitch));
     activeStation = r.station;
+    atStation = r.at;
   };
 
   // --- post-processing: bloom, anti-aliasing, tone mapping, the finish ------------
@@ -306,8 +317,12 @@ export function createSpace(canvas, container, { space, records = [], palette, o
 
   // what builds itself at each station, on arrival
   const selfBuilders = (id) => stations.get(id)?.built.apis.filter((a) => a.assemble) || [];
-  const heroApi = heroId != null ? (selfBuilders(heroId)[0] || null) : null;
   let assembledOnce = false;
+  const prevViewProj = new Matrix4(), viewProj = new Matrix4();
+  let havePrev = false;
+  // the tint the dust has taken: set by tint(), let go over its seconds
+  const tint = fieldMat.uniforms.uTint.value;
+  let tintT0 = -1, tintDur = 0, tintPeak = 0;
 
   let viewW = 1, viewH = 1, guardScale = 1;
   const maxW = num(opt.maxBufferWidth, 2560);
@@ -327,6 +342,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     composer.setSize(w, h);
     camera.aspect = w / h; camera.updateProjectionMatrix();
     bgMat.uniforms.uAspect.value = w / h;
+    havePrev = false;   // the projection changed: last frame's places mean nothing now
   }
   resize();
 
@@ -338,19 +354,27 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   const burst = velMat.uniforms.uBurst.value;
   const kick = num(opt.pulseKick, 26);
   let nextPulse = 3;
+  let armedFor = null;       // the station whose forms were scattered for the flight now under way
   // a passing pull toward the point the camera looks at (see stir)
   let drawT0 = -1, drawDur = 0, drawStrength = 0;
   const fillOffset = new Vector3(0, 3.5, 2.5);
 
-  function startAssembly() {
-    if (!heroApi) return;
-    onEvent?.('assembling');
-    heroApi.assemble(elapsed, () => {
-      // the last node lands: the dust takes the station's pulse from the body
-      const st = stations.get(heroId);
-      if (st) { gather.copy(st.pos).sub(field.position); burst.set(gather.x, gather.y, gather.z, kick * 1.6); nextPulse = elapsed + (st.def.pulse || 6); }
-      onEvent?.('assembled');
+  // Everything at the station that builds itself does so now. The first to
+  // finish gives the dust the station's pulse; `assembling` / `assembled` are
+  // announced for every station (the cover's title waits on them).
+  function startAssembly(id = atStation) {
+    const apis = id != null ? selfBuilders(id) : [];
+    if (!apis.length) return false;
+    onEvent?.('assembling', { station: id });
+    let done = false;
+    for (const api of apis) api.assemble(elapsed, () => {
+      if (done) return;
+      done = true;
+      const st = stations.get(id);
+      if (st) { gather.copy(st.pos).sub(field.position); burst.set(gather.x, gather.y, gather.z, kick * (id === heroId ? 1.6 : 0.9)); nextPulse = elapsed + (st.def.pulse || 6); }
+      onEvent?.('assembled', { station: id });
     });
+    return true;
   }
 
   function frame() {
@@ -364,19 +388,33 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     if (flightT0 >= 0) {
       const u = Math.min((elapsed - flightT0) / flightDur, 1);
       const e = smoother(u);
+      flightU = u;
       curPos.lerpVectors(fromPos, goalPos, e); curLook.lerpVectors(fromLook, goalLook, e);
-      if (u >= 1) { flightT0 = -1; arrived = true; onArrive?.(currentTarget); if (heroId != null && activeStation === heroId) startAssembly(); }
+      if (u >= 1) { flightT0 = -1; flightU = 0; arrived = true; onArrive?.(currentTarget); if (armedFor != null && armedFor === atStation) startAssembly(armedFor); armedFor = null; }
     } else {
       const k = 1 - Math.exp(-3.0 * dt);   // parked: follow the idle drift
       curPos.lerp(goalPos, k); curLook.lerp(goalLook, k);
     }
     camera.position.copy(curPos); camera.lookAt(curLook); camera.updateMatrixWorld();
+    // streaks: only while flying, swelling and dying with the flight, and only
+    // once there is a last frame to measure from
+    camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+    viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    fieldMat.uniforms.uPrevViewProj.value.copy(havePrev ? prevViewProj : viewProj);
+    fieldMat.uniforms.uStreak.value = flightT0 >= 0 ? num(opt.streak, 1) * Math.sin(Math.PI * flightU) : 0;
+    fieldMat.uniforms.uViewport.value.set(viewW * renderer.getPixelRatio(), viewH * renderer.getPixelRatio());
+    prevViewProj.copy(viewProj); havePrev = true;
+    if (tintT0 >= 0) {
+      const u = (elapsed - tintT0) / tintDur;
+      if (u >= 1) { tintT0 = -1; tint.w = 0; }
+      else tint.w = tintPeak * Math.min(1, u / 0.12) * (1 - u) * (1 - u);   // taken up quickly, let go slowly
+    }
     bgMat.uniforms.uCamRot.value.setFromMatrix4(camera.matrixWorld);
     bgMat.uniforms.uTime.value = elapsed;
     fill.position.copy(curLook).add(fillOffset);   // above and a little toward the camera, off the objects' faces
     fieldMat.uniforms.uFocus.value = curPos.distanceTo(curLook);
     finish.uniforms.uTime.value = elapsed;
-    if (!assembledOnce && elapsed > 0.6) { assembledOnce = true; if (heroId != null && activeStation === heroId && heroApi) startAssembly(); else onEvent?.('assembled'); }
+    if (!assembledOnce && elapsed > 0.6) { assembledOnce = true; if (!startAssembly(atStation)) onEvent?.('assembled', { station: null }); }
 
     // ambient field: tile the wrap box so dust surrounds the camera anywhere,
     // and pull it gently toward the active station (in the field's own frame)
@@ -433,10 +471,13 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     get arrived() { return arrived; },
     get activeStation() { return activeStation; },
     get hero() { return heroId; },
+    get atStation() { return atStation; },
+    get flying() { return flightT0 >= 0; },
     get paused() { return paused; },
     get stationIds() { return [...stations.keys()]; },
     has(at) { return Array.isArray(at) || stations.has(at) || anchors.has(String(at)) || !!NAMED[at]; },
-    assemble() { startAssembly(); },
+    // build again what stands at the station the pose is at (the `c` key)
+    assemble() { return startAssembly(atStation); },
     record(id) { return byId.get(String(id)) || null; },
     state(id) { return byId.get(String(id)) || null; },   // Startertalk's name for record()
     // pose: { at: <station id | record id | named pose | [x,y,z]>, dist?, yaw?, pitch?, sway? }
@@ -444,17 +485,24 @@ export function createSpace(canvas, container, { space, records = [], palette, o
       pose = { at: 'wide', ...(p || {}) };
       currentTarget = Array.isArray(pose.at) ? pose.at.join(',') : String(pose.at);
       container.dataset.spaceAt = currentTarget;
-      const wasStation = activeStation;
+      const wasAt = atStation;
       applyPose(pose, elapsed);   // resolve now, so activeStation is current when setPose returns (the hum follows it)
       container.dataset.spaceStation = activeStation ?? '';
-      if (immediate || firstFrame) { firstFrame = true; flightT0 = -1; arrived = true; return; }
+      container.dataset.spaceAtStation = atStation ?? '';
+      if (immediate || firstFrame) { firstFrame = true; flightT0 = -1; flightU = 0; arrived = true; armedFor = null; return; }
       fromPos.copy(curPos); fromLook.copy(curLook);
-      // a flight toward the hero: scatter its nodes now, so they fly in on arrival
-      if (heroId != null && activeStation === heroId && wasStation !== heroId) heroApi?.arm();
+      // a flight to a station from elsewhere: scatter what builds itself there now, so it gathers on arrival
+      armedFor = null;
+      if (atStation != null && atStation !== wasAt) {
+        const apis = selfBuilders(atStation);
+        for (const api of apis) api.arm();
+        if (apis.length) armedFor = atStation;
+      }
       const d = fromPos.distanceTo(goalPos) + 0.5 * fromLook.distanceTo(goalLook);
       const [lo, hi2] = opt.flight;
       flightDur = Math.min(hi2, Math.max(lo, 1.1 + d / 12));
-      flightT0 = elapsed; arrived = false;
+      flightT0 = elapsed; flightU = 0; arrived = false;
+      onEvent?.('flight', { seconds: flightDur, distance: d, to: currentTarget });
     },
     setStop(id) {
       if (hiMesh) { hi.remove(hiMesh); hiMesh.geometry.dispose(); hiMesh.material.dispose(); hiMesh = null; }
@@ -475,10 +523,20 @@ export function createSpace(canvas, container, { space, records = [], palette, o
       gather.copy(curLook).sub(field.position);
       burst.set(gather.x, gather.y, gather.z, kick * 1.2 * strength);
     },
+    // Let the dust take a colour for a while: `rgb` as [r, g, b] in 0..1. A
+    // clip that breaks into the dust leaves its colours in it.
+    tint(rgb, { seconds = 4.5, strength = 0.8 } = {}) {
+      if (!Array.isArray(rgb) || rgb.length < 3) return;
+      // a dark frame still has a hue: lift it, so the tint is a colour and not a dimming
+      const peak = Math.max(rgb[0], rgb[1], rgb[2], 1e-3), lift = Math.min(1 / peak, 6) * 0.85;
+      tint.set(rgb[0] * lift, rgb[1] * lift, rgb[2] * lift, 0);
+      tintT0 = elapsed; tintDur = Math.max(0.5, seconds); tintPeak = Math.min(1, Math.max(0, strength));
+    },
     setPaused(p) {
       if (disposed || p === paused) return;
       paused = p;
       container.dataset.spacePaused = p ? '1' : '0';
+      havePrev = false;   // no streak across the gap
       if (p) cancelAnimationFrame(raf); else { getDelta(); frame(); }
     },
     dispose() {

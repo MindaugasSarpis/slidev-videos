@@ -4,7 +4,7 @@ import '@fontsource/space-grotesk/500.css'
 import '@fontsource/space-grotesk/700.css'
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useNav, configs } from '@slidev/client'
-import { createSpace, usePlugin, resolvePalette, resolveLook, paletteVars, warmAudio, startHum, stopHum, humProbe } from '../index.js'
+import { createSpace, usePlugin, resolvePalette, resolveLook, paletteVars, warmAudio, startHum, stopHum, humProbe, playWhoosh, playRise } from '../index.js'
 import StagePanel from './StagePanel.vue'
 
 // The persistent 3D world under a whole deck. The addon mounts it from its
@@ -17,8 +17,8 @@ import StagePanel from './StagePanel.vue'
 //     palette: blue              # a name, or { base, accent, dust, … }
 //     plugins: [hadron]          # shipped plugins to load
 //     hero: hero                 # the station the deck opens and closes on
-//     sound: true                # the hum while the camera is at `humAt`
-//     humAt: [hero]
+//     sound: true                # false: silent. Or pick: { hum: true, flight: true, clip: true, level: 1 }
+//     humAt: [hero]              # the hum plays while the camera is at these stations
 //     videos: true               # stir the dust with slidev-addon-videos' transitions, rest under a covering clip
 //     options: { bloom: 0.55, density: 1, nebula: 0.8, … }   # see stage/space.js DEFAULTS
 //     auto: true                 # false: the deck mounts <Stage> itself (for the #hud slot)
@@ -53,6 +53,8 @@ const spaceSrc = computed(() => props.space || CFG.space || 'data/space.json')
 const recordsSrc = computed(() => props.records || (CFG.records === false ? '' : CFG.records) || '')
 const palette = resolvePalette(props.palette ?? CFG.palette)
 const soundOn = computed(() => (props.sound ?? CFG.sound ?? true) !== false)
+// which voices: the hum at a station, the whoosh of a flight, the rise of a clip condensing
+const VOICES = { hum: true, flight: true, clip: true, level: 1, ...(CFG.sound && typeof CFG.sound === 'object' ? CFG.sound : {}) }
 const withVideos = CFG.videos !== false
 const LAYOUT_DIM = { cover: 0.15, section: 0.15, statement: 0.15, fact: 0.15, quote: 0.15, ...(CFG.layoutDim || {}) }
 const CONTENT_DIM = Number.isFinite(Number(CFG.dim)) ? Number(CFG.dim) : 0.6
@@ -110,7 +112,7 @@ let audioUnlocked = false
 let covered = false
 function updateHum() {
   if (!soundOn.value) return
-  const on = audioUnlocked && !!space && !document.hidden && !covered && !nav.isPresenter?.value && humAt.has(space.activeStation)
+  const on = VOICES.hum !== false && audioUnlocked && !!space && !document.hidden && !covered && !nav.isPresenter?.value && humAt.has(space.atStation)
   if (on) startHum()
   else stopHum()
   if (root.value) root.value.dataset.hum = on ? 'on' : 'off'
@@ -192,9 +194,12 @@ async function boot() {
       onArrive: () => { arrived.value = true },
       // what builds itself at the hero does so on arrival; the cover's title
       // waits for it (the CSS kit keys on html[data-space-assembled])
-      onEvent: (e) => {
-        if (e === 'assembling') assembled(false)
-        else if (e === 'assembled') assembled(true)
+      onEvent: (e, detail) => {
+        if (e === 'assembling') {
+          assembled(false)
+          if (root.value) root.value.dataset.assemblies = String(Number(root.value.dataset.assemblies || 0) + 1)   // for the probes
+        } else if (e === 'assembled') assembled(true)
+        else if (e === 'flight') onFlight(detail)
       },
     })
   } catch (e) {
@@ -214,12 +219,22 @@ function assembled(on) {
   if (on) document.documentElement.dataset.spaceAssembled = '1'
   else delete document.documentElement.dataset.spaceAssembled
 }
-// `c` replays the assembly while the hero pose is current
+// A flight is heard as well as seen: never in the presenter window (two
+// windows would sound twice), never under a clip, and not for the short hops
+// between two poses at one station, which would make every click a whoosh.
+const audible = () => soundOn.value && audioUnlocked && !document.hidden && !nav.isPresenter?.value
+function onFlight(d) {
+  if (root.value) root.value.dataset.flights = String(Number(root.value.dataset.flights || 0) + 1)
+  if (!audible() || VOICES.flight === false || covered) return
+  if (!d || d.distance < 6) return
+  playWhoosh(d.seconds, { level: VOICES.level * Math.min(1.2, 0.5 + d.distance / 60) })
+}
+// `c` builds again what stands at the station the pose is at
 const onKey = (e) => {
   if (e.key !== 'c' || e.metaKey || e.ctrlKey || e.altKey) return
   const t = e.target
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
-  if (space && space.hero != null && space.activeStation === space.hero) space.assemble()
+  space?.assemble()
 }
 // the first key press or pointer down unlocks audio (autoplay policy); the hum starts then
 const onGesture = () => {
@@ -239,8 +254,14 @@ let coverTimer = 0
 const onVideoTransition = (e) => {
   const d = e.detail || {}
   if (!space || d.mode === 'cut') return
-  if (d.phase === 'enter') space.stir('gather', { seconds: (d.duration || 1400) / 1000 })
-  else if (d.phase === 'leave') space.stir('burst', { strength: 0.8 })
+  if (d.phase === 'enter') {
+    space.stir('gather', { seconds: (d.duration || 1400) / 1000 })
+    if (d.mode === 'dust' && audible() && VOICES.clip !== false) playRise((d.duration || 1400) / 1000, { level: VOICES.level })
+  } else if (d.phase === 'leave') {
+    space.stir('burst', { strength: 0.8 })
+    // the clip's colours stay in the dust it broke into, for a few seconds
+    if (d.mode === 'dust' && Array.isArray(d.color)) space.tint(d.color, { seconds: 5, strength: CFG.tint ?? 0.8 })
+  }
 }
 const onVideoCover = (e) => {
   const d = e.detail || {}

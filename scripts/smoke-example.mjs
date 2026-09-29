@@ -24,7 +24,8 @@ import { chromium } from 'playwright-chromium'
 
 const ROOT = new URL('../example/dist', import.meta.url).pathname  // slidev resolves --out against the entry dir
 const REAL_CLIP = 'clip_dust.webm'
-const HAVE_CLIP = existsSync(join(ROOT, 'videos', REAL_CLIP))
+const DARK_CLIP = 'clip_dark.webm'
+const HAVE_CLIP = existsSync(join(ROOT, 'videos', REAL_CLIP)) && existsSync(join(ROOT, 'videos', DARK_CLIP))
 const SHOTS = process.env.SMOKE_SHOTS || ''     // a directory: keep screenshots of the transition
 const MIME = { '.webm': 'video/webm', '.jpg': 'image/jpeg', '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.ico': 'image/x-icon' }
 const server = createServer(async (req, res) => {
@@ -64,7 +65,7 @@ const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=sw
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
 const isMedia = (r) => r.resourceType() === 'media' || /\.(mp4|webm|mov)(\?|$)/i.test(r.url())
 // the one real clip is served from the local tier; every other media request is aborted
-const isRealClip = (r) => new URL(r.url()).pathname === `/videos/${REAL_CLIP}`
+const isRealClip = (r) => [`/videos/${REAL_CLIP}`, `/videos/${DARK_CLIP}`].includes(new URL(r.url()).pathname)
 await page.route('**/*', (route) =>
   isMedia(route.request()) && !isRealClip(route.request()) ? route.abort() : route.continue())
 
@@ -239,7 +240,10 @@ if (!HAVE_CLIP) {
   d = await untilDust(4, (s) => (s.sheets || '').includes('leave'))
   check('dust: the picture leaves as a sheet', (d.sheets || '').includes('leave') && d.count === before4 + 1, JSON.stringify(d))
   check('dust: leaving reads the frame on screen (same-origin clip)', d.source === 'live', `source=${d.source}`)
-  check('dust: the <video> is gone at once under the sheet', d.phase === 'held' && d.opacity === 0, `phase=${d.phase} opacity=${d.opacity}`)
+  // it goes in 0.2 s as the sheet comes up over it, not at once (a sheet put up whole over a sharp frame showed as a drop in quality)
+  check('dust: the picture is handed to the sheet', d.phase === 'held', `phase=${d.phase}`)
+  d = await untilDust(4, (s) => s.opacity === 0, 3000)
+  check('dust: the <video> is gone under the sheet', d.opacity === 0 && (d.sheets || '').includes('leave'), `opacity=${d.opacity} sheets=${d.sheets}`)
   await page.waitForTimeout(350)
   await shot('dust-leave-mid')
   d = await untilDust(4, (s) => s.sheets === 'idle' && s.paused === true)
@@ -258,6 +262,20 @@ await goto(5)
 d = await untilDust(5, (s) => s.error)
 check('fade: a clip that cannot load shows the error', d.error && d.mode === 'video-fade', JSON.stringify(d))
 check('fade: no sheet is raised', d.sheets === 'idle', `sheets=${d.sheets}`)
+
+// --- a clip that opens on black ----------------------------------------------------
+if (HAVE_CLIP) {
+  await goto(6)
+  d = await untilDust(6, (s) => s.phase === 'shown' && s.paused === false && s.opacity === 1, 20000)
+  check('dust: a clip that opens on black arrives lit', d.phase === 'shown' && d.source === 'strip', JSON.stringify(d))
+  check('dust: and plays from its first lit frame', d.time >= 8 && d.time < 11, `time=${d.time}`)
+  // leaving and coming back, it arrives the same way
+  await goto(5)
+  await untilDust(6, (s) => s.sheets === 'idle' && s.paused === true)
+  await goto(6)
+  d = await untilDust(6, (s) => s.phase === 'shown' && s.paused === false && s.opacity === 1, 20000)
+  check('dust: and does so again on a second arrival', d.time >= 8 && d.time < 11, `time=${d.time}`)
+}
 
 await browser.close()
 server.close()

@@ -7,6 +7,8 @@ dist/
 node_modules/
 __pycache__/
 *.egg-info/
+# agent worktrees are checkouts of this repo, not part of it
+.claude/worktrees/
 # stray masters safety net
 *.mp4
 *.mov

@@ -58,3 +58,12 @@ hideInToc: true
 
 <!-- nonexistent again: a `fade` clip that never loads shows the error, not a
      held picture -->
+
+---
+hideInToc: true
+---
+
+<VideoPlayer src="clip_dark.webm" transition="dust" muted />
+
+<!-- five seconds of black, then picture: its sheet is made of the first lit
+     frame (the tile at 8 s) and the clip plays from there -->
