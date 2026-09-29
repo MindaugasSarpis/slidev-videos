@@ -14,3 +14,5 @@ __pycache__/
 *.webm
 *.m4v
 *.avi
+# claude code worktrees — separate checkouts, never committed
+.claude/worktrees/
