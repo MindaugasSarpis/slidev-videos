@@ -186,7 +186,7 @@ const DUST_LEAVE_MS = DUST_MS[1] > 0 ? DUST_MS[1] : 1700
 const AUDIO_IN_MS = 600
 const AUDIO_OUT_MS = 400
 const revealed = ref(effTransition.value === 'cut')
-const instant = ref(false)   // hide without the dissolve: the sheet is already over the picture
+const instant = ref(false)   // hide quickly, without the long dissolve: a sheet of grains is coming up over the picture
 let phase = 'idle'           // idle | entering | shown | leaving
 let run = 0
 let sheet = null             // the arriving sheet, while it is up
@@ -600,8 +600,10 @@ watch(attached, (yes) => {
 .video-player.video-dust video {
   transition: opacity 0.45s ease;
 }
+/* under a sheet of grains the picture goes quickly, not at once: the sheet
+   comes up over it in the same 0.2 s */
 .video-player.video-instant video {
-  transition: none;
+  transition: opacity 0.2s linear;
 }
 .video-status {
   position: absolute;

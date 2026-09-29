@@ -57,8 +57,9 @@ void main() {
     p = ease(clamp(uU / 0.64 * 1.6 - late * 0.6, 0.0, 1.0));           // gathered by 0.64
     away = 1.0 - ease(clamp((uU - 0.36) / 0.64, 0.0, 1.0));            // then the flight to the frame
   } else {
-    p = 1.0 - ease(clamp(uU * 1.7 - (1.0 - late) * 0.7, 0.0, 1.0));
-    away = 0.42 * ease(clamp(uU / 0.7, 0.0, 1.0));                     // it only steps back
+    float v = max(uU - 0.08, 0.0) / 0.92;                              // the sheet comes up first
+    p = 1.0 - ease(clamp(v * 1.7 - (1.0 - late) * 0.7, 0.0, 1.0));
+    away = 0.42 * ease(clamp(v / 0.7, 0.0, 1.0));                      // it only steps back
   }
   float fly = 1.0 - p;
 
@@ -102,7 +103,11 @@ void main() {
     ? mix(dust, pix, smoothstep(0.30, 0.92, p))
     : mix(pix, pix * 0.7 + dust * 0.3 + 0.05, smoothstep(0.0, 0.8, fly));
   float alpha = uFade * mix(0.5 + 0.4 * aSeed.y, 1.0, smoothstep(0.4, 1.0, p)) * (1.0 - 0.72 * blur);
-  if (uLeave < 0.5) alpha *= smoothstep(0.0, 0.10, uU);
+  // Arriving, the grains come up out of nothing. Leaving, the sheet comes up
+  // over the picture as the <video> under it goes (0.2 s): the sheet is the
+  // picture at a strip's resolution, and put up all at once over a sharp
+  // frame it showed as a drop in quality before anything had moved.
+  alpha *= smoothstep(0.0, uLeave < 0.5 ? 0.10 : 0.12, uU);
   vColor = vec4(col, alpha);
   vLanded = smoothstep(0.94, 1.0, p);   // square only on the last step home: a square in flight reads as confetti
   if (uGlow > 0.5) {
