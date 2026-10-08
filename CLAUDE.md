@@ -43,7 +43,7 @@ talks. The CLI on this machine is an editable install of the main checkout
 Re-pinning a hash and reinstalling cost about 7 minutes per tweak. Instead,
 link the addons to your checkout in a /tmp copy of outreach_talks. Tested on
 2026-10-08 with the workspace layout (root `pnpm-workspace.yaml` over
-`talks/*`), pnpm 10.33 and 9.15.9, on the OpenData talk:
+`talks/*`), pnpm 10.33 and 9.15.9, on OpenData and Innoday:
 
     export PATH=~/micromamba/envs/outreach_talks/bin:$PATH
     W=/tmp/build/<label>; SV=~/slidev-videos/.claude/worktrees/<slug>
