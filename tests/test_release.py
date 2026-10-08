@@ -78,11 +78,16 @@ def test_install_lines_change_and_nothing_else():
     assert out.count("v0.6.0") == 2 and "(v0.3.3)" in out and "before v0.4 " in out
 
 
+def test_released_lists_the_version_sections_only():
+    out = release.move_unreleased(CHANGELOG, "0.6.0", "2026-10-20")
+    assert release.released(out + "## v0.3.3 — 2026-09-09\n\nas in v0.3.2\n") == ["0.6.0", "0.5.0", "0.3.3"]
+
+
 # --- whole runs ----------------------------------------------------------------
 
 @pytest.fixture
 def repo(tmp_path):
-    """A throwaway repo with the release-relevant files, on main, a fake pnpm on PATH."""
+    """A throwaway repo with the release-relevant files, on main and tagged v0.5.0, a fake pnpm on PATH."""
     root = tmp_path / "sv"
     for rel, text in FILES.items():
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -102,6 +107,7 @@ def repo(tmp_path):
     git("init", "-q", "-b", "main")
     git("add", "-A")
     git("commit", "-q", "-m", "init")
+    git("tag", "-a", "v0.5.0", "-m", "v0.5.0")
     run = lambda *a: subprocess.run([sys.executable, str(root / "scripts" / "release.py"), *a],
                                     env=env, capture_output=True, text=True)
     return root, git, run
@@ -118,15 +124,38 @@ def test_refuses_off_main_and_changes_nothing(repo):
 
 def test_refuses_a_version_not_above_the_last_tag(repo):
     root, git, run = repo
-    git("tag", "-a", "v0.5.0", "-m", "v0.5.0")
     r = run("0.5.0", "--dry-run")
     assert r.returncode == 2 and "FAIL  0.5.0 is above the last tag (v0.5.0)" in r.stdout
     assert run("0.4.9", "--dry-run").returncode == 2
 
 
+def test_refuses_a_version_the_changelog_already_has(repo):
+    # v0.5.0 written up in CHANGELOG.md but not tagged yet, v0.4.0 the last
+    # tag: a second v0.5.0 section, with Unreleased's entries, would follow.
+    root, git, run = repo
+    git("tag", "-d", "v0.5.0")
+    git("tag", "-a", "v0.4.0", "-m", "v0.4.0")
+    r = run("0.5.0", "--dry-run")
+    assert r.returncode == 2
+    assert "FAIL  CHANGELOG.md has no v0.5.0 section yet" in r.stdout
+    assert git("status", "--porcelain") == ""
+
+
+def test_refuses_while_a_changelog_version_is_untagged(repo):
+    root, git, run = repo
+    git("tag", "-d", "v0.5.0")
+    git("tag", "-a", "v0.4.0", "-m", "v0.4.0")
+    r = run("0.6.0", "--dry-run")
+    assert r.returncode == 2
+    assert "FAIL  every version in CHANGELOG.md is tagged (no tag: v0.5.0" in r.stdout
+    git("tag", "-a", "v0.5.0", "-m", "v0.5.0")
+    r = run("0.6.0", "--dry-run")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "ok    every version in CHANGELOG.md is tagged" in r.stdout
+
+
 def test_accepts_a_version_a_branch_already_set(repo):
     root, git, run = repo
-    git("tag", "-a", "v0.5.0", "-m", "v0.5.0")
     for rel in ("pyproject.toml", "package.json", "src/slidev_videos/__init__.py"):
         (root / rel).write_text((root / rel).read_text().replace("0.5.0", "0.6.0"))
     git("commit", "-q", "-am", "feat: v0.6.0 by hand")
@@ -142,7 +171,7 @@ def test_dry_run_on_main_prints_the_diff(repo):
     for line in ('-version = "0.5.0"', '+version = "0.6.0"', '+__version__ = "0.6.0"',
                  '+  "version": "0.3.0",', "+## v0.6.0 — ", "slidev-videos#v0.6.0&path:/packages/stage"):
         assert line in r.stdout, line
-    assert git("status", "--porcelain") == "" and git("tag") == ""
+    assert git("status", "--porcelain") == "" and git("tag").split() == ["v0.5.0"]
 
 
 def test_release_commits_and_tags_without_pushing(repo):
@@ -151,7 +180,7 @@ def test_release_commits_and_tags_without_pushing(repo):
     assert r.returncode == 0, r.stdout + r.stderr
     assert "not pushed" in r.stdout and "git push --atomic origin main refs/tags/v0.6.0" in r.stdout
     assert git("log", "-1", "--format=%s").strip() == "chore: v0.6.0"
-    assert git("tag").split() == ["v0.6.0"]
+    assert git("tag").split() == ["v0.5.0", "v0.6.0"]
     assert git("status", "--porcelain", "--untracked-files=no") == ""
     assert '"version": "0.2.0"' in (root / "packages/stage/package.json").read_text()   # no --stage
     assert "## v0.6.0 — " in (root / "CHANGELOG.md").read_text()

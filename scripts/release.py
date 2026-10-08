@@ -5,8 +5,10 @@ Run from a clean `main` after the owner has merged what goes in. In order:
 
 1. checks: on main, no tracked changes, the tag is free, main is not behind
    origin/main (as of the last fetch), CHANGELOG.md has entries under
-   `## Unreleased`, the new version is above the last tag and not below the
-   files' version (a merged branch may have set it already);
+   `## Unreleased` and no section for the new version yet, every version
+   CHANGELOG.md has a section for is tagged, the new version is above the
+   last tag and not below the files' version (a merged branch may have set
+   it already);
 2. tests: `python3 -m pytest tests -q` (against this tree's src/) and
    `pnpm test:all`;
 3. one commit `chore: vX.Y.Z` that sets the version in pyproject.toml,
@@ -55,6 +57,7 @@ INSTALL_DOCS = ("README.md", "packages/stage/README.md")
 
 UNRELEASED = re.compile(r"^## Unreleased[ \t]*\n", re.M)
 NEXT_HEADING = re.compile(r"^## ", re.M)
+RELEASE_HEADING = re.compile(r"^## v(\d+\.\d+\.\d+)\b", re.M)
 COMMENT = re.compile(r"<!--.*?-->\n?", re.S)
 
 
@@ -103,6 +106,11 @@ def move_unreleased(changelog: str, version: str, date: str, stage: str | None =
     heading = f"## v{version} — {date}" + (f" (stage {stage})" if stage else "")
     return (changelog[:head] + f"## Unreleased\n\n{heading}\n\n{body}\n"
             + (f"\n{rest}" if rest else ""))
+
+
+def released(changelog: str) -> list[str]:
+    """The versions CHANGELOG.md has a `## vX.Y.Z` section for, in file order."""
+    return RELEASE_HEADING.findall(changelog)
 
 
 def release_notes(changelog: str, version: str) -> str:
@@ -155,13 +163,20 @@ def checks(version: str, stage: str | None, cur: dict[str, str]) -> list[tuple[b
     if git("rev-parse", "-q", "--verify", "refs/remotes/origin/main", check=False).returncode == 0:
         behind = int(git("rev-list", "--count", "HEAD..origin/main").stdout.strip())
         out.append((behind == 0, f"not behind origin/main as of the last fetch ({behind} behind)"))
-    try:
-        has = bool(unreleased_body((ROOT / "CHANGELOG.md").read_text(encoding="utf-8")))
-        out.append((has, "CHANGELOG.md has entries under Unreleased"))
-    except (OSError, ValueError) as e:
-        out.append((False, f"CHANGELOG.md: {e}"))
     tags = [l[1:] for l in git("tag", "-l", "v[0-9]*").stdout.split() if SEMVER.match(l[1:])]
     last_tag = max(tags, key=vtuple, default=None)
+    try:
+        changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        out.append((bool(unreleased_body(changelog)), "CHANGELOG.md has entries under Unreleased"))
+        logged = released(changelog)
+        out.append((version not in logged, f"CHANGELOG.md has no v{version} section yet"))
+        # A version written up but not tagged (v0.5.0 is tagged by hand, on
+        # PR #2's merge): releasing past it would leave it untagged for good.
+        untagged = [f"v{v}" for v in logged if v not in tags]
+        out.append((not untagged, "every version in CHANGELOG.md is tagged"
+                    + (f" (no tag: {', '.join(untagged)}; tag it or `git fetch --tags`)" if untagged else "")))
+    except (OSError, ValueError) as e:
+        out.append((False, f"CHANGELOG.md: {e}"))
     # A merged branch may have set the version in the files already.
     out.append((vtuple(version) >= vtuple(now) and (not last_tag or vtuple(version) > vtuple(last_tag)),
                 f"{version} is above the last tag (v{last_tag}) and not below the files ({now})"))
