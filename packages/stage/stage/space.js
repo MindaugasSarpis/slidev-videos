@@ -315,7 +315,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   finish.uniforms.uVignette.value = num(opt.vignette, 0.3);
   finish.uniforms.uGrain.value = num(opt.grain, 0.035);
   finish.uniforms.uCA.value = num(opt.aberration, 0.0004);
-  canvas.__space = { scene, composer, bloom, finish, field, renderer, get guardStage() { return guardStage; }, holdQuality() { guardStage = 2; }, get elapsed() { return elapsed; }, get dpr() { return renderer.getPixelRatio(); }, get frames() { return frames; } };   // a handle for the headless probes
+  canvas.__space = { scene, composer, bloom, finish, field, renderer, get guardStage() { return guardStage; }, holdQuality() { guardStage = 2; }, get elapsed() { return elapsed; }, get dpr() { return renderer.getPixelRatio(); }, get frames() { return frames; }, get options() { return { ...opt }; } };   // a handle for the headless probes (options: as resolved, defaults filled in)
 
   // what builds itself at each station, on arrival
   const selfBuilders = (id) => stations.get(id)?.built.apis.filter((a) => a.assemble) || [];
