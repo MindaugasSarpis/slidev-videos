@@ -96,6 +96,20 @@ Cards have no drawn edge. A fine dust stands along their outline.
 <div class="src">slidev-addon-stage · packages/stage/example</div>
 
 ---
+layout: fact
+space: { at: tally, dim: 0.1 }
+---
+
+# <StageCount for="grains" :to="400" />
+
+grains, counted as they land
+
+<!-- `tally` is the example deck's own builder (setup/main.ts registers
+     setup/tally.js). Its `api.value()` says how many grains have landed, and
+     `StageCount for="grains"` shows that while the slide is up, so the count
+     moves with the form. -->
+
+---
 layout: statement
 space: { at: [-26.5, -3.4, 0], dist: 15.5, yaw: 15, pitch: 2, sway: 9 }
 ---

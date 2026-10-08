@@ -11,7 +11,9 @@
 //   6. a form of grains gathers when the camera arrives at its station, and
 //      not for a pose out in the open dust; grains streak during a flight
 //      and only then; the dust takes a leaving clip's colour and lets it go;
-//   7. nothing on the page threw.
+//   7. the deck's own builder (example/setup/) stands in the world, and a
+//      <StageCount for> follows the number its form shows as it builds;
+//   8. nothing on the page threw.
 // Every assertion polls for the state it expects, so a slow runner is only slow.
 import { chromium } from 'playwright-chromium'
 import { serve, GL_ARGS } from '../bin/shots.mjs'
@@ -173,6 +175,29 @@ await page.evaluate(() => {
 })
 s = await until((s) => s.frames > f1 + 3)
 check('a video transition stirs the dust', s.frames > f1 + 3, `frames ${f1} → ${s.frames}`)
+
+// --- the deck's own builder, and a count that moves with it ----------------------------
+await goto(6)
+const counts = new Set()
+const tally = () => page.evaluate(() => ({
+  at: document.querySelector('.stage')?.dataset.spaceAt ?? null,
+  flying: !!document.querySelector('.stage')?.__space?.flying,
+  built: !!document.querySelector('.stage canvas.field')?.__space?.scene.getObjectByName('tally'),
+  value: document.querySelector('.stage')?.__space?.value('grains') ?? null,
+  count: document.querySelector('.slidev-page[data-slidev-no="6"] .stage-count')?.textContent ?? null,
+}))
+let t = await tally()
+const until6 = Date.now() + 120000
+while (!(t.at === 'tally' && !t.flying && t.value === 400 && t.count === '400') && Date.now() < until6) {
+  if (t.count != null) counts.add(t.count)
+  await page.waitForTimeout(50)
+  t = await tally()
+}
+counts.add(t.count)
+check('the deck\'s own builder stands in the world', t.built, `built=${t.built}`)
+check('its form reports what it shows', t.value === 400, `value=${t.value}`)
+const between = [...counts].filter((c) => Number(c) > 0 && Number(c) < 400)
+check('the count moves with the form and lands with it', t.count === '400' && between.length > 0, `counts seen: ${[...counts].slice(0, 12).join(', ')}`)
 
 check('nothing on the page threw', errors.length === 0, errors.join(' | '))
 

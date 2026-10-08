@@ -15,7 +15,8 @@
     "stage:test": "pnpm --filter slidev-addon-stage test",
     "stage:build": "pnpm --filter slidev-addon-stage build:example",
     "stage:smoke": "pnpm --filter slidev-addon-stage smoke",
-    "test:all": "pnpm make:clip && pnpm build:example && pnpm smoke && pnpm stage:test && pnpm stage:build && pnpm stage:smoke"
+    "stage:smoke:dev": "pnpm --filter slidev-addon-stage smoke:dev",
+    "test:all": "pnpm make:clip && pnpm build:example && pnpm smoke && pnpm stage:test && pnpm stage:build && pnpm stage:smoke && pnpm stage:smoke:dev"
   },
   "devDependencies": {
     "@slidev/cli": "^52.1.0",

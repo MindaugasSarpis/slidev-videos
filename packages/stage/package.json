@@ -26,7 +26,8 @@
     "build:example": "slidev build example/slides.md --out dist --base /",
     "check:example": "node bin/check.mjs example",
     "test": "node --test \"test/*.test.mjs\"",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:dev": "node scripts/smoke-dev.mjs"
   },
   "dependencies": {
     "@fontsource/space-grotesk": "^5.2.10",

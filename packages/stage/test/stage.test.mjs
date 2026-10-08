@@ -139,13 +139,17 @@ test('colour helpers', () => {
 });
 
 // ---- the validator -----------------------------------------------------------------
+const exampleOwn = deckTypes(readFileSync(here('../example/setup/main.ts'), 'utf8'));
 test('the example deck passes', () => {
-  const r = checkStage({ space: exampleSpace, records: exampleRecords, deck: exampleDeck });
+  assert.deepEqual(exampleOwn.types, { tally: ['pos', 'name'] });
+  const r = checkStage({ space: exampleSpace, records: exampleRecords, deck: exampleDeck, deckOwn: exampleOwn.types });
   assert.deepEqual(r.problems, []);
   assert.deepEqual(r.warnings, []);
-  assert.equal(r.stations, 4);
-  assert.equal(r.slides, 6);
-  assert.ok(r.poses >= 5 && r.stops === 2);
+  assert.equal(r.stations, 5);
+  assert.equal(r.slides, 7);
+  assert.ok(r.poses >= 6 && r.stops === 2);
+  // without the deck's own types the tally is unknown
+  assert.ok(checkStage({ space: exampleSpace, deck: exampleDeck }).issues.some((p) => p.code === 'unknown-type' && p.station === 'tally'));
 });
 
 test('the forms of grains are core types', () => {

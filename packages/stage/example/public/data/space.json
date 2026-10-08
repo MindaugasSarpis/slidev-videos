@@ -60,6 +60,14 @@
       "objects": [
         { "type": "collider", "pos": [0, 0, 0], "radius": 7, "lap": 8 }
       ]
+    },
+    {
+      "id": "tally",
+      "pos": [128, 0, 0],
+      "look": { "dist": 13, "yaw": -18, "pitch": 32 },
+      "objects": [
+        { "type": "tally", "name": "grains", "pos": [0, 0, 0], "count": 400 }
+      ]
     }
   ]
 }
