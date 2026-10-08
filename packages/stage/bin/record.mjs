@@ -33,6 +33,8 @@
 //
 // Needs playwright-chromium and ffmpeg. Software WebGL: llvmpipe where the
 // browser reaches it, SwiftShader otherwise (see lib/record-browser.mjs).
+// Exit 0 when a slide was recorded or named for cutting in, 1 on a failure
+// or when the deck has none of the slides asked for, 2 on a usage error.
 import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -130,6 +132,11 @@ async function goTo(page, n, clicks = 0) {
   // wait until Slidev has taken it in (clicks included): the clock does not move before
   return page.waitForFunction(([n, c]) => { const s = window.__rec.state(n); return s.slide === n && s.shown && (!s.stage || s.clicks === c); }, [n, clicks], { polling: 20, timeout: 10000 }).then(() => true, () => false);
 }
+
+// Slide n is on screen: its page mounted and displayed. The hash says
+// nothing at the deck's end, where Slidev may leave #/98 standing over a
+// deck of six.
+const shown = (page, n) => page.waitForFunction((n) => window.__rec.state(n).shown, n, { polling: 20, timeout: 5000 }).then(() => true, () => false);
 
 // Run the world forward until slide n stands still (flown, built, type risen),
 // at 12 frames a second and without a picture. A slide under a clip counts
@@ -249,8 +256,8 @@ export async function record(o, log = console.log) {
       const deck = await openDeck(browser, o, url, from, errors);
       try {
         if (n > 1) {
+          if (!(await shown(deck.page, from))) { log(`slide ${n} not found: the deck ends before slide ${from}`); break; }
           const before = await look(deck.page, from);
-          if (before.slide !== from) { log(`slide ${from} not found: the deck ends there`); break; }
           if (before.clicksTotal) await goTo(deck.page, from, before.clicksTotal);
           await settle(deck.page, from);
           if (!(await goTo(deck.page, n))) { log(`slide ${n} not found: the deck ends at ${from}`); break; }
@@ -305,6 +312,8 @@ export async function main(argv = process.argv.slice(2)) {
   if (r.missing.length) console.log(`\nnot in the dist: ${r.missing.join(', ')}`);
   const done = r.segments.filter((s) => !s.skipped);
   console.log(`\n${done.length} file(s), ${r.segments.length - done.length} skipped, ${r.secondsPerFrame ?? '-'} s a frame, in ${o.out} (index.json)`);
+  // nothing recorded and nothing to cut in: none of the slides asked for is in the deck
+  if (!r.segments.length) { console.error('no slide recorded: the deck has none of --slides'); return 1; }
   return 0;
 }
 

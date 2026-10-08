@@ -294,7 +294,9 @@ clip from another origin (a release URL) cannot be, so its slide is skipped
 and the edit list names the clip, for the editor to cut in from the source.
 `--flash` runs a rough check for bursts over a quarter of the frame more
 than three times a second (the broadcast rule); run the finished programme
-through a real analyser (EA's IRIS is free) as well.
+through a real analyser (EA's IRIS is free) as well. Exit 0 when a slide was
+recorded or named for cutting in, 1 on a failure or when the deck has none
+of the slides asked for, 2 on a wrong or unknown option.
 
 The renderer is software WebGL. Mesa's llvmpipe is about three times faster
 than SwiftShader, but headless Chromium 151 and later no longer reach it in WSL:
