@@ -196,6 +196,16 @@ Names changed when the outreach decks moved onto the library (2026-09-08):
 Run from anywhere inside a project (`videos.toml` is found by walking up), or
 pass `--project <dir>`.
 
+`--prune` (on `publish`, `publish-hq`, `pull`, `pull-hq`) deletes what the
+whole manifest no longer lists: release assets for the publish commands, local
+files for the pull commands. It cannot be combined with `--only`, and it
+deletes only with `--yes`; `--dry-run` lists what it would delete and changes
+nothing (a dry run does not create a missing release either):
+
+    slidev-videos publish --prune --dry-run
+    slidev-videos publish --prune --yes
+    pnpm videos:publish -- --prune --yes   # through a talk's pnpm script
+
 ## New course, three steps
 
 1. `videos.toml` at the repo root (see above) + an empty `videos/manifest.toml`.

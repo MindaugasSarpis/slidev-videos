@@ -784,6 +784,7 @@ def _publish_tier(
     dry_run: bool,
     prune: bool = False,
     protected: set[str] | None = None,
+    keep: set[str] | None = None,
 ) -> int:
     """Upload encoded files to a GH Release.
 
@@ -791,24 +792,31 @@ def _publish_tier(
     Used when a talk's release tag coincides with the shared release tag —
     pruning by talk-manifest membership alone would erase shared assets that
     other talks depend on.
+
+    `keep` is every name the whole manifest publishes to this release; --prune
+    deletes only assets outside it. `videos` may be an --only subset, so it
+    must never stand in for the manifest here.
     """
     protected = protected or set()
     if not shutil.which("gh"):
         print("error: gh CLI not installed. brew install gh", file=sys.stderr)
         return 2
 
-    # Ensure release exists.
+    # Ensure release exists (a dry run only says it would create it).
     existing = subprocess.run(
         ["gh", "release", "view", tag, *GH_REPO_ARGS], capture_output=True, text=True
     )
     if existing.returncode != 0:
-        print(f"Creating release {tag!r}...")
-        subprocess.run(
-            ["gh", "release", "create", tag, *GH_REPO_ARGS,
-             "--title", release_title,
-             "--notes", release_notes],
-            check=True,
-        )
+        if dry_run:
+            print(f"Would create release {tag!r} (dry run).")
+        else:
+            print(f"Creating release {tag!r}...")
+            subprocess.run(
+                ["gh", "release", "create", tag, *GH_REPO_ARGS,
+                 "--title", release_title,
+                 "--notes", release_notes],
+                check=True,
+            )
 
     # Map remote asset -> size (bytes) for skip + prune.
     remote_sizes = _remote_asset_sizes(tag) or {}
@@ -838,7 +846,7 @@ def _publish_tier(
         uploaded = len(files)
 
     if prune:
-        wanted = {v.name for v in videos}
+        wanted = keep if keep is not None else {v.name for v in videos}
         orphans = [n for n in remote_sizes if n not in wanted and n not in protected]
         protected_skipped = sorted(
             n for n in remote_sizes if n not in wanted and n in protected
@@ -869,12 +877,15 @@ def _pull_tier(
     prune: bool = False,
     protected: set[str] | None = None,
     repo: str | None = None,   # shared releases may live on another repo
+    keep: set[str] | None = None,
 ) -> int:
     """Download release files into a local dir.
 
     `protected` is a set of filenames that --prune must NEVER delete locally
     (used to keep shared-registry overlap files in place when the talk's
     public/videos/ tree was populated for a previous architecture).
+    `keep` is every name in the whole manifest; as in _publish_tier, --prune
+    deletes only files outside it, never files outside an --only subset.
     """
     protected = protected or set()
     if not shutil.which("gh"):
@@ -887,7 +898,7 @@ def _pull_tier(
         print(f"error: release {tag!r} not found", file=sys.stderr)
         return 2
 
-    wanted = {v.name for v in videos}
+    wanted = keep if keep is not None else {v.name for v in videos}
     to_fetch: list[str] = []
     for v in videos:
         if v.name not in remote_sizes:
@@ -927,6 +938,27 @@ def _pull_tier(
                 existing.unlink()
 
     return 0
+
+
+def _prune_refused(args: argparse.Namespace, deletes: str) -> int | None:
+    """Exit code when --prune must not run as asked, else None.
+
+    --prune compares against the whole manifest, so it is refused together
+    with --only: an earlier version pruned against the --only subset and
+    deleted every other asset of the talk's release. A prune that really
+    deletes (not --dry-run) also needs --yes.
+    """
+    if not getattr(args, "prune", False):
+        return None
+    if getattr(args, "only", None):
+        print("error: --prune works on the whole manifest and cannot be combined with --only; "
+              "run the --only command and the --prune command separately", file=sys.stderr)
+        return 2
+    if not args.dry_run and not getattr(args, "yes", False):
+        print(f"error: --prune deletes {deletes} that are not in the manifest; "
+              "preview with --dry-run, then re-run with --yes", file=sys.stderr)
+        return 2
+    return None
 
 
 def _filter_videos(videos: list[VideoEntry], only: list[str] | None) -> list[VideoEntry] | int:
@@ -1010,6 +1042,9 @@ def _shared_protect(tier_tag: str, *, hq: bool) -> set[str]:
 
 
 def cmd_publish(args: argparse.Namespace) -> int:
+    refused = _prune_refused(args, "release assets")
+    if refused is not None:
+        return refused
     defaults, videos = load_manifest()
     filtered = _filter_videos(videos, args.only)
     if isinstance(filtered, int):
@@ -1022,10 +1057,14 @@ def cmd_publish(args: argparse.Namespace) -> int:
         release_notes="Bulk video assets for slide decks. Managed by scripts/videos.py.",
         force=args.force, dry_run=args.dry_run, prune=args.prune,
         protected=_shared_protect(tag, hq=False),
+        keep={v.name for v in videos},
     )
 
 
 def cmd_publish_hq(args: argparse.Namespace) -> int:
+    refused = _prune_refused(args, "release assets")
+    if refused is not None:
+        return refused
     defaults, videos = load_manifest()
     filtered = _filter_videos(videos, args.only)
     if isinstance(filtered, int):
@@ -1044,10 +1083,14 @@ def cmd_publish_hq(args: argparse.Namespace) -> int:
         release_notes="Visually-lossless venue masters. Run scripts/videos.py publish-hq to update.",
         force=args.force, dry_run=args.dry_run, prune=args.prune,
         protected=_shared_protect(tag, hq=True),
+        keep={v.name for v in videos if not v.hq_from_raw},
     )
 
 
 def cmd_pull(args: argparse.Namespace) -> int:
+    refused = _prune_refused(args, "local files")
+    if refused is not None:
+        return refused
     defaults, videos = load_manifest()
     filtered = _filter_videos(videos, args.only)
     if isinstance(filtered, int):
@@ -1061,6 +1104,7 @@ def cmd_pull(args: argparse.Namespace) -> int:
             tag=tag,
             force=args.force, dry_run=args.dry_run, prune=args.prune,
             protected=_shared_names(),
+            keep={v.name for v in videos},
         )
         if rc != 0:
             return rc
@@ -1084,6 +1128,9 @@ def cmd_pull(args: argparse.Namespace) -> int:
 
 
 def cmd_pull_hq(args: argparse.Namespace) -> int:
+    refused = _prune_refused(args, "local files")
+    if refused is not None:
+        return refused
     defaults, videos = load_manifest()
     filtered = _filter_videos(videos, args.only)
     if isinstance(filtered, int):
@@ -1136,7 +1183,7 @@ def cmd_pull_hq(args: argparse.Namespace) -> int:
             return rc
 
     if args.prune:
-        wanted = {v.name for v in filtered}
+        wanted = {v.name for v in videos}   # the whole manifest, never the --only subset
         protected_names = _shared_names()
         for existing in HQ_DIR.iterdir():
             if not existing.is_file():
@@ -2319,14 +2366,16 @@ def main(argv: list[str] | None = None) -> int:
     p_pub.add_argument("--dry-run", action="store_true")
     p_pub.add_argument("--only", nargs="+", metavar="NAME", help="limit to named file(s)")
     p_pub.add_argument("--force", action="store_true", help="re-upload even if remote size matches local")
-    p_pub.add_argument("--prune", action="store_true", help="delete release assets not in manifest")
+    p_pub.add_argument("--prune", action="store_true", help="delete release assets not in manifest (needs --yes, or --dry-run)")
+    p_pub.add_argument("--yes", action="store_true", help="confirm that --prune may delete")
     p_pub.set_defaults(func=cmd_publish)
 
     p_pull = sub.add_parser("pull", help="download web files from GH Release")
     p_pull.add_argument("--dry-run", action="store_true")
     p_pull.add_argument("--only", nargs="+", metavar="NAME", help="limit to named file(s)")
     p_pull.add_argument("--force", action="store_true", help="re-download even if local size matches")
-    p_pull.add_argument("--prune", action="store_true", help="delete local files not in manifest (shared-registry names are protected)")
+    p_pull.add_argument("--prune", action="store_true", help="delete local files not in manifest (shared-registry names are protected; needs --yes, or --dry-run)")
+    p_pull.add_argument("--yes", action="store_true", help="confirm that --prune may delete")
     p_pull.add_argument("--include-shared", action="store_true", help="also pull deck-referenced shared clips (offline/portable builds)")
     p_pull.set_defaults(func=cmd_pull)
 
@@ -2342,14 +2391,16 @@ def main(argv: list[str] | None = None) -> int:
     p_phq.add_argument("--dry-run", action="store_true")
     p_phq.add_argument("--only", nargs="+", metavar="NAME", help="limit to named file(s)")
     p_phq.add_argument("--force", action="store_true", help="re-upload even if remote size matches local")
-    p_phq.add_argument("--prune", action="store_true", help="delete release assets not in manifest")
+    p_phq.add_argument("--prune", action="store_true", help="delete release assets not in manifest (needs --yes, or --dry-run)")
+    p_phq.add_argument("--yes", action="store_true", help="confirm that --prune may delete")
     p_phq.set_defaults(func=cmd_publish_hq)
 
     p_pull_hq = sub.add_parser("pull-hq", help="download HQ files from the parallel GH Release")
     p_pull_hq.add_argument("--dry-run", action="store_true")
     p_pull_hq.add_argument("--only", nargs="+", metavar="NAME", help="limit to named file(s)")
     p_pull_hq.add_argument("--force", action="store_true", help="re-download even if local size matches")
-    p_pull_hq.add_argument("--prune", action="store_true", help="delete local files not in manifest (shared-registry names are protected)")
+    p_pull_hq.add_argument("--prune", action="store_true", help="delete local files not in manifest (shared-registry names are protected; needs --yes, or --dry-run)")
+    p_pull_hq.add_argument("--yes", action="store_true", help="confirm that --prune may delete")
     p_pull_hq.add_argument("--include-shared", action="store_true", help="also pull deck-referenced shared HQ masters (offline/venue builds)")
     p_pull_hq.set_defaults(func=cmd_pull_hq)
 
@@ -2401,10 +2452,9 @@ def main(argv: list[str] | None = None) -> int:
     # pnpm >=7 forwards the `--` delimiter verbatim, so the documented
     # `pnpm videos:pull -- --include-shared` arrives as
     # ['pull', '--', '--include-shared'] and argparse rejects the rest.
-    # The delimiter always lands right after the subcommand; drop it there.
-    args_list = list(sys.argv[1:] if argv is None else argv)
-    if args_list[1:2] == ["--"]:
-        del args_list[1]
+    # No subcommand takes a positional that starts with "-", so every bare
+    # `--` is dropped, wherever it lands (`--project X pull -- --prune`).
+    args_list = [a for a in (sys.argv[1:] if argv is None else argv) if a != "--"]
     args = parser.parse_args(args_list)
     _init_paths(_config.load_project(args.project))
     return args.func(args)
