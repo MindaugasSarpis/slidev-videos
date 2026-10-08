@@ -34,6 +34,10 @@ import StagePanel from './StagePanel.vue'
 //
 // A slide without `space` keeps the previous pose. Without WebGL2 float
 // render targets, or under reduced motion, only the static gradient is drawn.
+// Printed and exported (`slidev export`, /print, the browser exporter) every
+// slide mounts its own global layers, so a world each would open a WebGL
+// context per page: there, and with `static-ground`, the stage draws its
+// static gradient and touches no WebGL at all.
 //
 // `dim` is the opacity of the scrim between the world and the slide, so body
 // copy keeps its contrast over a busy pose. Without the key: 0 while a stop
@@ -47,6 +51,7 @@ const props = defineProps({
   records: { type: String, default: '' },
   palette: { type: [String, Object], default: undefined },
   sound:   { type: Boolean, default: undefined },
+  staticGround: { type: Boolean, default: false },
 })
 
 const spaceSrc = computed(() => props.space || CFG.space || 'data/space.json')
@@ -62,6 +67,8 @@ const CONTENT_DIM = Number.isFinite(Number(CFG.dim)) ? Number(CFG.dim) : 0.6
 const root = ref(null)
 const canvas = ref(null)
 const nav = useNav()
+// `?print` is the exporter's; the browser exporter and /print opened by hand are routes
+const printing = () => !!nav.isPrintMode?.value || ['print', 'export'].includes(nav.currentRoute?.value?.name)
 const data = ref(null)
 const staticBg = ref(false)
 const ready = ref(false)
@@ -276,10 +283,13 @@ const onVideoCover = (e) => {
   }
 }
 
+let still = false
 onMounted(() => {
   const html = document.documentElement
   html.dataset.stage = '1'
   for (const [k, v] of Object.entries(paletteVars(palette))) html.style.setProperty(k, v)
+  still = props.staticGround || printing()
+  if (still) { staticBg.value = true; assembled(true); return }
   document.addEventListener('visibilitychange', onVisibility)
   window.addEventListener('keydown', onKey)
   window.addEventListener('keydown', onGesture, { once: true })
@@ -292,6 +302,7 @@ onMounted(() => {
   boot()
 })
 onUnmounted(() => {
+  if (still) return   // the printed pages share <html>: what one set, the others still need
   document.removeEventListener('visibilitychange', onVisibility)
   window.removeEventListener('keydown', onKey)
   window.removeEventListener('keydown', onGesture)
