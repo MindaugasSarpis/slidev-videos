@@ -44,6 +44,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import tomllib
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -54,6 +55,7 @@ from pathlib import Path
 # Project root and layout come from videos.toml (see config.py); main()
 # resolves them via config.load_project() and binds these before dispatch.
 from . import config as _config
+from . import tools as _tools_mod
 
 TALK: Path = None          # project root
 MANIFEST: Path = None
@@ -64,12 +66,15 @@ HQ_LINK_DIR: Path = None   # <public_dir>/videos-hq
 SLIDES_DIR: Path = None
 GH_REPO_ARGS: list[str] = []   # ["--repo", owner/repo] when configured
 _PROJECT: "_config.Project" = None
+_TOOLS: "_tools_mod.Tools | None" = None   # resolved on first use (tools.py)
+_TOOLS_LOCK = threading.Lock()
 
 
 def _init_paths(project: "_config.Project") -> None:
     global TALK, MANIFEST, RAW_DIR, WEB_DIR, HQ_DIR, HQ_LINK_DIR, SLIDES_DIR
-    global GH_REPO_ARGS, _PROJECT
+    global GH_REPO_ARGS, _PROJECT, _TOOLS
     _PROJECT = project
+    _TOOLS = None
     TALK = project.root
     MANIFEST = project.manifest
     RAW_DIR = project.raw_dir
@@ -79,6 +84,24 @@ def _init_paths(project: "_config.Project") -> None:
     SLIDES_DIR = project.slides_dir
     repo = project.defaults.get("repo")
     GH_REPO_ARGS = ["--repo", repo] if repo else []
+
+
+def _tools() -> "_tools_mod.Tools":
+    """The ffmpeg/ffprobe pair this run uses (see tools.py), resolved once."""
+    global _TOOLS
+    with _TOOLS_LOCK:
+        if _TOOLS is None:
+            defaults = _PROJECT.defaults if _PROJECT else {}
+            _TOOLS = _tools_mod.resolve(defaults.get("ffmpeg_dir"), _PROJECT.root if _PROJECT else None)
+        return _TOOLS
+
+
+def _ffmpeg() -> str:
+    return _tools().ffmpeg or "ffmpeg"
+
+
+def _ffprobe() -> str:
+    return _tools().ffprobe or "ffprobe"
 
 
 def _find_monorepo_root(start: Path) -> Path | None:
@@ -157,32 +180,27 @@ def _auto_release_tag(prefix: str) -> str:
 # HEVC that you accept won't play in Firefox).
 
 
-@functools.lru_cache(maxsize=1)
+@functools.lru_cache(maxsize=None)
+def _encodes_with(ffmpeg: str, codec: str) -> bool:
+    probe = subprocess.run(
+        [ffmpeg, "-hide_banner", "-loglevel", "error",
+         "-f", "lavfi", "-i", "testsrc2=size=256x144:rate=30:duration=1",
+         "-c:v", codec, "-f", "null", "-"],
+        capture_output=True,
+    )
+    return probe.returncode == 0
+
+
 def nvenc_available() -> bool:
     """True iff h264_nvenc actually *encodes* here (compiled-in != runtime-ok)."""
-    if not shutil.which("ffmpeg"):
-        return False
-    probe = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-loglevel", "error",
-         "-f", "lavfi", "-i", "testsrc2=size=256x144:rate=30:duration=1",
-         "-c:v", "h264_nvenc", "-f", "null", "-"],
-        capture_output=True,
-    )
-    return probe.returncode == 0
+    ffmpeg = _tools().ffmpeg
+    return bool(ffmpeg) and _encodes_with(ffmpeg, "h264_nvenc")
 
 
-@functools.lru_cache(maxsize=1)
 def videotoolbox_available() -> bool:
     """True iff hevc_videotoolbox actually *encodes* here (macOS only)."""
-    if not shutil.which("ffmpeg"):
-        return False
-    probe = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-loglevel", "error",
-         "-f", "lavfi", "-i", "testsrc2=size=256x144:rate=30:duration=1",
-         "-c:v", "hevc_videotoolbox", "-f", "null", "-"],
-        capture_output=True,
-    )
-    return probe.returncode == 0
+    ffmpeg = _tools().ffmpeg
+    return bool(ffmpeg) and _encodes_with(ffmpeg, "hevc_videotoolbox")
 
 
 def select_encoder(entry_encoder: str | None) -> str:
@@ -271,7 +289,7 @@ BROWSER_SAFE_AUDIO = frozenset({"aac", "mp3", "flac", "opus", "vorbis"})
 def _probe_audio_codec(path: Path) -> str | None:
     """First audio stream's codec name, or None when the file is silent."""
     out = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "a:0",
+        [_ffprobe(), "-v", "error", "-select_streams", "a:0",
          "-show_entries", "stream=codec_name", "-of", "csv=p=0", str(path)],
         capture_output=True, text=True,
     )
@@ -334,7 +352,7 @@ def _measure_loudness(
     linear — which is how a 90 s cut of a 3-minute clip landed at -18.7 LUFS.
     """
     out = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-nostdin", *trim_in, "-i", str(src), *trim_out,
+        [_ffmpeg(), "-hide_banner", "-nostdin", *trim_in, "-i", str(src), *trim_out,
          "-map", "0:a:0", "-af",
          f"loudnorm=I={LOUDNORM_I}:TP={LOUDNORM_TP}:LRA={LOUDNORM_LRA}:print_format=json",
          "-f", "null", "-"],
@@ -634,7 +652,7 @@ def _encode_one(entry: VideoEntry, force: bool, default_long_edge: int) -> tuple
     tmp = web.with_name(f"{web.stem}.partial{web.suffix}")
     trim_in, trim_out = _trim_args(entry)
     cmd = [
-        "ffmpeg", "-y", "-hide_banner", "-nostdin", "-loglevel", "error",
+        _ffmpeg(), "-y", "-hide_banner", "-nostdin", "-loglevel", "error",
         *trim_in,
         "-i", str(raw),
         *_profile_args(entry.profile, long_edge, encoder),
@@ -730,7 +748,7 @@ def cmd_encode(args: argparse.Namespace) -> int:
         if not videos:
             print(f"error: no manifest entries match {args.only}", file=sys.stderr)
             return 2
-    if not shutil.which("ffmpeg"):
+    if not _tools().ffmpeg:
         print("error: ffmpeg not installed. brew install ffmpeg", file=sys.stderr)
         return 2
     WEB_DIR.mkdir(parents=True, exist_ok=True)
@@ -1682,7 +1700,7 @@ PREFLIGHT_MAX_MBPS = 10.0
 
 def _probe_media(src: str) -> dict | None:
     out = subprocess.run(
-        ["ffprobe", "-v", "error",
+        [_ffprobe(), "-v", "error",
          "-show_entries", "stream=codec_type,codec_name,width,height:format=bit_rate,duration",
          "-of", "json", src],
         capture_output=True, text=True,
@@ -1966,7 +1984,7 @@ def _frames_cut(name: str, src: str, info: dict | None, out_dir: Path,
         f"tile={plan['cols']}x{plan['rows']}:color=black"
     )
     cmd = [
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        _ffmpeg(), "-hide_banner", "-loglevel", "error", "-y",
         "-i", src, "-an", "-sn", "-vf", vf, "-fps_mode", "vfr",
         "-frames:v", "1", "-q:v", str(args.quality), "-f", "image2", "-update", "1", str(tmp),
     ]
@@ -2030,8 +2048,8 @@ def cmd_frames(args: argparse.Namespace) -> int:
         print("No clips to cut: the deck has no `dust` clips "
               "(set `videos.transition: dust`, tag a clip `transition=\"dust\"`, or pass --all).")
         return 0
-    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
-        print("error: frames needs ffmpeg and ffprobe on PATH", file=sys.stderr)
+    if not _tools().ffmpeg:
+        print("error: frames needs ffmpeg and ffprobe (on PATH, or see `slidev-videos doctor`)", file=sys.stderr)
         return 2
 
     todo = [n for n in refs if args.force or not _frames_current(index.get(n), out_dir, args)]
@@ -2240,7 +2258,7 @@ def _encode_one_hq(entry: VideoEntry, force: bool, default_long_edge: int) -> tu
 
     tmp = hq.with_name(f"{hq.stem}.partial{hq.suffix}")
     cmd = [
-        "ffmpeg", "-y", "-hide_banner", "-nostdin", "-loglevel", "error",
+        _ffmpeg(), "-y", "-hide_banner", "-nostdin", "-loglevel", "error",
         "-i", str(raw),
         *ff_args,
         str(tmp),
@@ -2269,7 +2287,7 @@ def _encode_one_hq(entry: VideoEntry, force: bool, default_long_edge: int) -> tu
                 retry_args.append(ff_args[i])
                 i += 1
         cmd_retry = [
-            "ffmpeg", "-y", "-hide_banner", "-nostdin", "-loglevel", "error",
+            _ffmpeg(), "-y", "-hide_banner", "-nostdin", "-loglevel", "error",
             "-i", str(raw),
             *retry_args,
             str(tmp),
@@ -2292,7 +2310,7 @@ def cmd_encode_hq(args: argparse.Namespace) -> int:
         if not videos:
             print(f"error: no manifest entries match {args.only}", file=sys.stderr)
             return 2
-    if not shutil.which("ffmpeg"):
+    if not _tools().ffmpeg:
         print("error: ffmpeg not installed. brew install ffmpeg", file=sys.stderr)
         return 2
     HQ_DIR.mkdir(parents=True, exist_ok=True)

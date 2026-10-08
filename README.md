@@ -146,6 +146,18 @@ the stage's tests.
     release_tag   = "videos-web"
     source_remote = "gdrive:your/raws"  # for `sync`
     # web_long_edge_px = 1920, max_size_mb = 200, loudnorm = true, ...
+    # ffmpeg_dir = "~/micromamba/envs/talks/bin"   # optional, see below
+
+**Which ffmpeg.** `$SLIDEV_VIDEOS_FFMPEG_DIR`, then `[defaults].ffmpeg_dir`,
+name the directory holding the ffmpeg and ffprobe to use. After those the CLI
+looks in `$CONDA_PREFIX/bin`, `~/micromamba/envs/*/bin` (also miniforge3,
+mambaforge, miniconda3) and every PATH entry. It skips a build that crashes
+on an offline HTTPS probe, as the static Linux builds do, and among the builds
+it finds on its own it prefers one with NVENC. Each build is probed once; the
+result is cached in `~/.cache/slidev-videos/tools.json` until the binary
+changes. Choosing a binary does not change how it encodes: `encode` still
+test-encodes `h264_nvenc` on the chosen ffmpeg to decide between NVENC and
+libx264.
 
 Manifest (`videos/manifest.toml`) entries:
 
