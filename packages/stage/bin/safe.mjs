@@ -133,10 +133,12 @@ export async function check(o) {
       let total = 0;
       for (let k = 0; k <= total; k++) {
         await page.evaluate(([n, k]) => { location.hash = k ? `#/${n}?clicks=${k}` : `#/${n}`; }, [n, k]);
-        const there = await page.waitForFunction((n) => {
+        const there = await page.waitForFunction(([n, k]) => {
           const pg = document.querySelector(`.slidev-page[data-slidev-no="${n}"]`);
-          return Number((/^#\/(\d+)/.exec(location.hash) || [])[1]) === n && pg && getComputedStyle(pg).display !== 'none';
-        }, n, { polling: 20, timeout: 5000 }).then(() => true, () => false);
+          const st = document.querySelector('.stage');
+          return Number((/^#\/(\d+)/.exec(location.hash) || [])[1]) === n && pg && getComputedStyle(pg).display !== 'none'
+            && (!st || Number(st.dataset.clicks || 0) === k);
+        }, [n, k], { polling: 20, timeout: 5000 }).then(() => true, () => false);
         if (!there) { if (k === 0) return report; break; }   // past the last slide
         // every rise-in and fade at its end state, then a frame for Vue to tidy up
         await page.evaluate(async () => {

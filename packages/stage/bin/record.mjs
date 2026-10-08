@@ -107,7 +107,8 @@ async function openDeck(browser, o, url, n, errors) {
 // Slidev's own navigation, by the URL: the slide, and how many of its clicks.
 async function goTo(page, n, clicks = 0) {
   await page.evaluate(([n, c]) => { location.hash = c ? `#/${n}?clicks=${c}` : `#/${n}`; }, [n, clicks]);
-  return page.waitForFunction((n) => { const s = window.__rec.state(n); return s.slide === n && s.shown; }, n, { polling: 20, timeout: 10000 }).then(() => true, () => false);
+  // wait until Slidev has taken it in (clicks included): the clock does not move before
+  return page.waitForFunction(([n, c]) => { const s = window.__rec.state(n); return s.slide === n && s.shown && (!s.stage || s.clicks === c); }, [n, clicks], { polling: 20, timeout: 10000 }).then(() => true, () => false);
 }
 
 // Run the world forward until slide n stands still (flown, built, type risen),
