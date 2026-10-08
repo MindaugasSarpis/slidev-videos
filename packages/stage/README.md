@@ -64,6 +64,7 @@ distance and ease in and out.
 | `space` | `data/space.json` | the stations |
 | `records` | — | `{ records: [{ id, label, rows?, … }], figures: { id: { src, caption, see } } }` |
 | `palette` | `classic` | a name, or an object over a `base` |
+| `look` | — | a named look over the palette: `broadcast` (see [Broadcast and recording](#broadcast-and-recording)) |
 | `plugins` | `[]` | shipped plugins to load: `hadron` |
 | `hero` | `space.hero`, else `hero` | the station the deck opens and closes on; what builds itself there does so on arrival |
 | `sound` | `true` | `false` is silent; `{ hum, flight, clip, level }` picks the voices: a low hum while the camera is at `humAt`, a soft whoosh for each flight of any length, a rising tone as a clip condenses. All start after the first key or click, none in the presenter window |
@@ -72,7 +73,7 @@ distance and ease in and out.
 | `halo` | `true` | the dust borders; `haloOn: '.card, .halo'` picks what gets one |
 | `dim` | `0.6` | the content-slide scrim; `layoutDim: { cover: 0.15, … }` per layout |
 | `hud` | — | `{ kicker, fields: [...] }` for the default stop panel |
-| `options` | — | engine numbers: `nebula` (far clouds in the palette's colours, 0–1), `streak` (grains drawn out along their path while the camera flies, 0–2, default 1), `reach` (a pose within this of a station is *at* it, default 12), `bloom`, `vignette`, `grain`, `aberration`, `exposure`, `density`, `dustSize`, `dustGain`, `gather`, `fov`, `flight: [min, max]`, `maxBufferWidth` |
+| `options` | — | engine numbers: `nebula` (far clouds in the palette's colours, 0–1), `streak` (grains drawn out along their path while the camera flies, 0–2, default 1), `reach` (a pose within this of a station is *at* it, default 12), `bloom`, `vignette`, `grain`, `aberration`, `exposure`, `density`, `dustSize`, `dustGain`, `gather`, `fov`, `flight: [min, max]`, `maxBufferWidth`, `twinkle` (how far a form's grains swell as they shine, 0–1), `guard` (`false`: no frame-rate guard), `lift` (the ground mixed this far toward the accent, 0–1) |
 | `auto` | `true` | `false`: the deck mounts `<Stage>` itself from its `global-bottom.vue`, to fill the `#hud` slot |
 
 ### Palettes and looks
@@ -87,6 +88,8 @@ A palette is fourteen colours (`stage/palette.js`); a *look* is the engine
 options that come with its name. The nebula is painted on a sphere round the
 camera, so it turns as the camera turns and stands still as it travels.
 `options` in the headmatter win over the look: `options: { nebula: 0 }`.
+A look can also be named on its own, over any palette (`look: broadcast`),
+and `definePalette(name, colours, look)` brings one with a deck's palette.
 
 Display type rises in as its slide arrives (section, statement, fact,
 `.world-caption`, `.quote-hero`, a content slide's title and cards); none of
@@ -188,6 +191,8 @@ deck's own `styles/index.css`.
 
     slidev-stage-check [deck-dir] [--plugins hadron] [--types beacon]
     slidev-stage-shots <dist> <out-dir> [--slides 1-12] [--clicks '{"9":3}'] [--wait 4200]
+    slidev-stage-record <dist> <out-dir> [--fps 50] [--slides 2-5] [--plate] [--hold 8]
+    slidev-stage-safe <dist> [--broadcast] [--json]
 
 `check` validates the space file and that every `space.at` and stop in the
 deck resolves; run it after editing either. `shots` photographs a built deck
@@ -195,12 +200,132 @@ slide by slide in a headless browser (WebGL on SwiftShader) and reports
 content running off a slide, where the camera stood, and page errors. It
 needs `playwright-chromium` in the deck (`pnpm add -D playwright-chromium`,
 then `pnpm exec playwright install chromium`); nothing else in the addon does.
+`record` and `safe` are for a deck that goes to video or to air; see below.
+
+## Broadcast and recording
+
+A deck that is filmed, recorded or streamed meets three things a hall does
+not: an encoder at a few Mbit/s (2–3 for a 1080p web stream), a vision mixer
+that may squeeze the picture back to two thirds of the frame, and a
+channel's logo, name supers and clock in the corners.
+
+### The look
+
+    stage:
+      palette: blue
+      look: broadcast
+
+| | default | broadcast |
+| --- | --- | --- |
+| `grain`, `aberration` | 0.035, 0.0004 | 0, 0: film grain and colour fringes are noise an encoder spends its bits on |
+| `density`, `dustSize` | 1, 1.9 | 0.6, 2.85: fewer, larger grains, which survive 720p and a phone |
+| `streak`, `bloom` | 1, 0.55 | 0.4, 0.45 |
+| `nebula` | the palette's | at most 0.3: faint clouds over near-black band at a low bit rate |
+| `flight` | 1.4–4.5 s | 2.5–5 s |
+| `twinkle` | 1 | 0.35 |
+| `guard` | on | off: a slow moment never drops the resolution mid-take |
+| `lift` | 0 | 0.07: the ground is mixed toward the accent, off near-black (blue's `#03050d` becomes `#090f1e`); the scrim and the cards take their dark from it too |
+| halo, paper texture | on | off (`halo: true` brings the halo back) |
+| CSS kit | | no line under 16 canvas px (about 31 px in a 1080p frame), the source line included; edge-placed pieces 5% in from the edges |
+
+Measured on the example's second slide (a flight, then a galaxy forming),
+recorded at 1080p50 and encoded with x264 at 3 Mbit/s: SSIM 0.962 (luma)
+under the default look, 0.995 under broadcast. At constant quality (CRF 20)
+the same slide needs 6.3 Mbit/s under the default look and 3.4 under
+broadcast.
+
+The lift was measured on the example's content slide (the scrim at 0.7
+over the ring), recorded and then encoded with x264 at 2.5 Mbit/s: of the
+16 × 16 blocks that hold a smooth gradient, 8% came out flattened into
+bands with no lift, 4.5% at 0.07 and 2% at 0.12, which greys the ground.
+
+`options` in the headmatter still win: `look: broadcast` with
+`options: { nebula: 0.5 }` keeps the clouds. `html[data-stage-look]` names
+the look for a deck's own CSS.
+
+The floor is a floor. Text meant to be read on TV wants much more: at two
+thirds of a 1080p frame one canvas px is about 1.3 screen px, so body text
+wants 37 canvas px or more (49 is better), headlines 72–92, kickers 24 or
+more, and no more than two lines of about 28 characters. Every size of the
+kit follows one variable, so a deck grows it all at once:
+
+    :root { --stage-type-scale: 1.85; }   /* the kit's 20 px card text → 37 px */
+
+### The safe check
+
+    slidev-stage-safe <dist> [--broadcast] [--json] [--slides 1-12] [--size 1920x1080] [--base auto]
+
+Walks every slide and click of a built deck with WebGL off and every rise-in
+finished, measures each visible line in canvas px, and reports the smallest.
+By default it flags lines under 11 px and text off the slide. `--broadcast`
+flags lines under 16 px, text outside the safe box (x 98–882, y 55–408 of
+the 980 × 551 canvas: room for a squeeze-back and a lower third) and text in
+the logo corner (top right), the name super (bottom left) or the clock
+(bottom right); ask the broadcaster where theirs actually sit. Exit 0 clean,
+1 problems, 2 the deck could not be checked. The stop HUD needs the world
+and is not measured.
+
+### Recording: slidev-stage-record
+
+    slidev-stage-record <dist> <out-dir> [--fps 50] [--size 1920x1080] [--slides 2-5]
+                        [--plate] [--hold 8] [--max 40] [--clicks all|none|'{"3":1}']
+                        [--base auto] [--seed 1] [--flash] [--gl auto|gl|swiftshader]
+                        [--chromium path] [--encoder auto|nvenc|x264]
+
+One file per slide, as the audience sees it arrive: the flight in, the forms
+building, the type rising, then `--hold` seconds (8 by default; a clip slide
+holds for the rest of its clip). Frames are stepped on a fake clock, not
+filmed: each moves the page exactly 1/fps, however long the frame takes to
+render, with `Math.random` seeded, CSS animations held to the same clock and
+clips seeked to it. Two runs on the same renderer give the same frames.
+
+| file | |
+| --- | --- |
+| `NN.mp4` | slide NN arriving (1080p50 by default, H.264, BT.709) |
+| `NN-cK.mp4` | the same slide after its K-th click (a stop), for slides with clicks |
+| `NN-plate.mp4` | with `--plate`: the same frames without the slide's text, the halo or the stop HUD, for an editor's own type. The scrim stays, so a plate and its slide cut together |
+| `index.json` | the edit list: each file's length, when it settled, where the camera stood, its frame hashes, the renderer, flash warnings, and the clips it could not record |
+
+Build the deck for it as for shots (`--base /`, or let `--base auto` read
+the base), and with `VITE_VIDEOS_LOCAL_FIRST=1` and the clips in
+`public/videos/`: a clip served from the deck is stepped frame by frame; a
+clip from another origin (a release URL) cannot be, so its slide is skipped
+and the edit list names the clip, for the editor to cut in from the source.
+`--flash` runs a rough check for bursts over a quarter of the frame more
+than three times a second (the broadcast rule); run the finished programme
+through a real analyser (EA's IRIS is free) as well.
+
+The renderer is software WebGL. Mesa's llvmpipe is about three times faster
+than SwiftShader, but headless Chromium 151 and later no longer reach it in WSL:
+the recorder then tries the older headless shells in the Playwright cache
+(`npx playwright@1.59 install chromium-headless-shell` puts one there), or
+takes `--chromium` / `$SLIDEV_STAGE_CHROMIUM`, before falling back to
+SwiftShader. On llvmpipe a 1080p frame of the example deck took 0.13 s under
+the broadcast look and 0.18 s under the default one (SwiftShader: about
+0.55 s), and about 0.4 s with `--plate`, which shoots every frame twice. So a
+15-slide deck at 10 s a slide and 50 fps (7,500 frames) takes 20–30 minutes
+with the start of each slide, or about an hour with plates. ffmpeg comes
+from `$SLIDEV_VIDEOS_FFMPEG_DIR`, the active conda env, `~/micromamba/envs`
+or PATH; NVENC at QP 16 when it works, else x264 at CRF 14.
+
+### By hand, with OBS
+
+When there is a GPU and half an hour: serve the built deck from WSL
+(`python3 -m http.server 8080 -d dist`), open it in Windows Chrome so WebGL
+runs on the GPU, in a 1920 × 1080 window at a device pixel ratio of 1
+(Windows display scaling at 100%, or Chrome started with
+`--force-device-scale-factor=1`), with the display at 50 Hz so the browser's
+frames match a 50 Hz broadcast chain, and the deck muted (`sound: false`).
+Record with OBS at 1080p50, NVENC at CQP 16, holding each slide about 8 s,
+and cut it per slide afterwards. A take that goes wrong has to be redone;
+the recorder's files do not.
 
 ## Develop
 
     pnpm install
     pnpm --filter slidev-addon-stage test            # node --test
     pnpm --filter slidev-addon-stage build:example
+    pnpm --filter slidev-addon-stage build:broadcast # the example under look: broadcast, in example/dist/broadcast
     pnpm --filter slidev-addon-stage smoke           # Playwright, headless
 
 Without WebGL2 float render targets, or under `prefers-reduced-motion`, the
