@@ -176,7 +176,11 @@ in a station.
 What the deck registers reaches the world in `slidev dev` too: the addon
 ships its own `vite.config.js` (Slidev merges one from every addon), which
 keeps the package and three.js out of Vite's pre-bundle, and its registries
-are one per page however many copies of the package load. A deck needs no
+are one per page however many copies of the package load. When the deck has
+a `three` of its own (its builders import it), that config resolves three
+from the deck for the engine as well (`resolve.dedupe`), so an addon
+installed elsewhere, or a checkout linked in, does not bring a second copy
+('Multiple instances of Three.js being imported'). A deck needs no
 `vite.config.ts` for this.
 
 A plugin is a module exporting `name` and `install({ registerBuilder,

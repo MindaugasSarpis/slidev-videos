@@ -9,6 +9,7 @@ import { resolvePalette, PALETTES, DEFAULT_PALETTE, LOOKS, hexToRgb, rgbTriplet,
 import { checkStage, readStageConfig, deckPoses, deckSlides, deckTypes, readYaml, main as checkMain } from '../bin/check.mjs';
 import { formatCount } from '../stage/count.js';
 import { parseSlides } from '../bin/shots.mjs';
+import { deckHasThree } from '../vite.config.js';
 
 const here = (p) => new URL(p, import.meta.url);
 const exampleSpace = JSON.parse(readFileSync(here('../example/public/data/space.json'), 'utf8'));
@@ -306,6 +307,17 @@ test('--json reports every problem with its slide and code', () => {
     assert.deepEqual(r.problems.map((p) => ({ slide: p.slide, code: p.code })), [{ slide: undefined, code: 'missing-field' }, { slide: 2, code: 'unknown-station' }]);
     assert.equal(r.problems[0].station, 'store');
     assert.deepEqual(r.stats.deckTypes, ['lineup']);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('three resolves from the deck when the deck has its own', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'stage-three-'));
+  try {
+    mkdirSync(join(dir, 'talks/a'), { recursive: true });
+    assert.equal(deckHasThree(join(dir, 'talks/a')), deckHasThree(tmpdir()));   // nothing of its own: what lies above tmp decides
+    mkdirSync(join(dir, 'node_modules/three'), { recursive: true });
+    writeFileSync(join(dir, 'node_modules/three/package.json'), '{"name":"three"}\n');
+    assert.equal(deckHasThree(join(dir, 'talks/a')), true);   // a workspace's, above the deck
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
