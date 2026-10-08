@@ -192,8 +192,9 @@ deck's own `styles/index.css`.
 `check` validates the space file and that every `space.at` and stop in the
 deck resolves; run it after editing either. `shots` photographs a deck frame
 by frame in a headless browser; see [Headless review](#headless-review). It
-needs `playwright-chromium` (`pnpm add -D playwright-chromium`, then
-`pnpm exec playwright install chromium`); nothing else in the addon does.
+needs `playwright-chromium` 1.59 (`pnpm add -D playwright-chromium@~1.59.1`,
+then `pnpm exec playwright install chromium`; see [Renderer](#renderer) for
+why that version); nothing else in the addon does.
 
 ## Headless review
 
@@ -239,22 +240,91 @@ and with `--no-halo`: the halo draws from `Math.random` as cards appear.
 
 ### Renderer
 
-`--gl auto` (the default) starts the browser with ANGLE on GL, keeps it when
-that reaches a real driver (Mesa's llvmpipe is about three times faster than
-SwiftShader), and otherwise starts again on SwiftShader. Which one you get
-depends on the browser build: in WSL, Chromium 147 (playwright-chromium 1.59)
-reaches llvmpipe and Chromium 151 (1.62) does not. The renderer string is in
-every report line. playwright-chromium is an optional peer, looked for next
-to the tool, then in the working directory; `SLIDEV_STAGE_PLAYWRIGHT=<dir>`
-points at another install.
+Every stage tool starts its browser through one launcher,
+`bin/lib/chromium.mjs`, so they all get the same browser, flags and WebGL
+backend: the fastest the machine reaches, tried best first.
+
+| backend | what draws | auto tries it when |
+|---|---|---|
+| `gpu-nvidia` | a native NVIDIA driver, ANGLE over EGL | `nvidia-smi` is on PATH and this is not WSL |
+| `d3d12` | WSL's GPU, through Mesa's d3d12 driver; ANGLE over GL on WSLg's X server | `/dev/dxg` is there, and a Mesa prefix with the driver (below) |
+| `llvmpipe` | the system's GL through ANGLE; in WSL, Mesa's llvmpipe on the CPU | there is an X display |
+| `swiftshader` | Chromium's own software GL | always, last |
+
+A backend counts only when the page's renderer string says it got there
+(`D3D12 (…)` for d3d12, anything but SwiftShader for llvmpipe, no software
+renderer for gpu-nvidia); otherwise the launcher tries the next one. Every
+report line carries `renderer` and `backend`. Compare runs only on the same
+renderer.
+
+The browser build matters. In WSL, Chromium 147's headless shell
+(playwright-chromium 1.59, which this package pins) reaches GL; the headless
+shells of Chromium 151 and 153 (1.62 on) fell back to SwiftShader under every
+flag tried (the full Chromium 151 was not tried with ANGLE on GL). So the
+launcher tries
+`$SLIDEV_STAGE_CHROMIUM` or Playwright's own browser first, then the other
+headless shells in the Playwright cache, newest first;
+`npx playwright@1.59.1 install chromium-headless-shell` puts a 147 there.
+
+llvmpipe and d3d12 both draw through GLX on WSLg's X server, and fall back to
+SwiftShader without it. A shell under tmux or cron, or an agent's, often has
+no `DISPLAY`: the launcher then sets `DISPLAY=:0` for the browser when
+`/tmp/.X11-unix/X0` exists. llvmpipe also gets `LP_NUM_THREADS=8` unless it is
+set: with the default `--jobs 2` that used about a quarter less CPU than
+llvmpipe's own thread count, at the same wall time.
+
+AlmaLinux's Mesa 25.0 has no d3d12 driver, so that backend needs a Mesa built
+with it in a private prefix: `<prefix>/root/usr/lib64` with
+`dri/d3d12_dri.so`, and `<prefix>/egl_mesa.json`, the EGL vendor file naming
+its `libEGL_mesa.so.0`. Fedora 43's Mesa 25.3.6 packages unpacked there work.
+The prefix is `~/.local/share/mesa-d3d12` unless `SLIDEV_STAGE_MESA_D3D12`
+says otherwise. For the browser the launcher sets `LD_LIBRARY_PATH` (the
+prefix, then `/usr/lib/wsl/lib`), `LIBGL_DRIVERS_PATH`,
+`GALLIUM_DRIVER=d3d12`, `__EGL_VENDOR_LIBRARY_FILENAMES` and, where
+`nvidia-smi` exists, `MESA_D3D12_DEFAULT_ADAPTER_NAME=NVIDIA` (without it Mesa
+can take an integrated GPU, about 15 times slower in a test shader). Do not set
+`VK_ICD_FILENAMES` for these tools: it hides Chromium's SwiftShader, and the
+last fallback with it.
+
+On a 16-core WSL2 machine with an RTX 5080, four slides of a talk deck at
+1600x900 with the default `--jobs 2` (CPU: every process of the run, browser
+included):
+
+| backend | wall | CPU |
+|---|---|---|
+| d3d12 | 7.3 s | 6.1 s |
+| llvmpipe | 6.8 s | 26.2 s |
+| swiftshader | 10.8 s | 113.0 s |
+
+Wall time hardly moves, because a frame's settle runs the world undrawn; the
+GPU saves CPU, for other sessions and for recording, where every frame is
+drawn. On SwiftShader the tool prints a `WARNING` line on stderr, with why
+each better backend was passed over, and every report line carries it as
+`warning`.
+
+The `gpu-nvidia` flags (`--use-angle=gl-egl`) have not been tried on a machine
+with a native NVIDIA driver. If they do not reach the GPU there, auto goes on
+to llvmpipe, and `SLIDEV_STAGE_CHROMIUM_ARGS` can try others: Chromium takes
+the last of a repeated flag.
+
+| variable | |
+|---|---|
+| `SLIDEV_STAGE_GL` | `auto` (default), a backend, or `gl` (any GL backend, never SwiftShader). A tool's `--gl` other than `auto` wins over it. A forced backend that is not reached is an error. |
+| `SLIDEV_STAGE_MESA_D3D12` | the Mesa prefix for d3d12 (default `~/.local/share/mesa-d3d12`) |
+| `SLIDEV_STAGE_CHROMIUM` | a browser to try first |
+| `SLIDEV_STAGE_CHROMIUM_ARGS` | more browser flags, as shell words, after all the others |
+| `SLIDEV_STAGE_CHROMIUM_ENV` | more variables for the browser, `KEY=VAL;KEY=VAL`, over the backend's |
+| `SLIDEV_STAGE_PLAYWRIGHT` | a directory to load playwright-chromium from first; then the tool's own install, then the working directory's |
 
 ### When shots are slow
 
 Run `--probe` first. For each slide it measures, on the live page and the
 real clock, frames per second and engine-seconds per wall second, and warns
 below 0.5. Settle gets there either way, but a slow page costs on every drawn
-frame. `--draft` (device pixel ratio 0.5) draws a quarter of the pixels,
-`--slides` keeps a run small, and `--jobs N` photographs with N pages at once.
+frame. Check the `renderer` line: SwiftShader is the usual reason. `--draft`
+(device pixel ratio 0.5) draws a quarter of the pixels, `--slides` keeps a run
+small, and `--jobs N` photographs with N pages at once (default 2; four pages
+were barely faster than two).
 
 ### Options
 
@@ -273,8 +343,8 @@ frame. `--draft` (device pixel ratio 0.5) draws a quarter of the pixels,
 | `--sheet` | a labelled contact sheet, `<out-dir>/sheet.png`, drawn in the browser |
 | `--probe` | fps and engine-seconds per second per slide; no pictures |
 | `--console` | record console warnings |
-| `--jobs N` | N pages in parallel |
-| `--gl auto\|gl\|swiftshader` | the renderer |
+| `--jobs N` | N pages in parallel (default 2; 1 with `--probe`, which times the real clock) |
+| `--gl MODE` | the WebGL backend: `auto` (default: `$SLIDEV_STAGE_GL`, else the fastest the machine reaches), `gpu-nvidia`, `d3d12`, `llvmpipe`, `swiftshader`, or `gl` (any but SwiftShader); see [Renderer](#renderer) |
 | `--json FILE` | the report (default `<out-dir>/shots.ndjson`) |
 | `--dev deck.md` | start `slidev` on a free port, photograph it, stop it by its process group |
 | `--lock FILE`, `--no-lock` | the shared lock (default `/tmp/slidev-stage-shots.lock`) |
@@ -325,7 +395,8 @@ run goes (a crash keeps what was photographed):
 |---|---|
 | `slide`, `click`, `burst`, `frame`, `png` | which frame, and its picture (`07-c2.png`) |
 | `station`, `at`, `atStation` | where the camera stood |
-| `renderer` | the WebGL renderer string |
+| `renderer`, `backend` | the WebGL renderer string, and the launcher's backend (`d3d12`, `llvmpipe` …) |
+| `warning` | only on SwiftShader: the warning the run printed |
 | `settled`, `settleMs`, `engineSec`, `engineTime` | did it settle, in how long, over how many engine-seconds, at what engine time |
 | `shotMs` | finishing, measuring and photographing |
 | `flying`, `assembled`, `dpr`, `dust`, `dustTotal` | the world's state in the picture (`dust`: grains drawn, of `dustTotal`) |
@@ -337,9 +408,10 @@ run goes (a crash keeps what was photographed):
 | `unchanged` | `--changed` kept the last picture |
 | `error` | the frame failed; the run went on |
 
-`--probe` writes `{ slide, probe: true, fps, engineSecPerSec, dpr, dust, station }`
+`--probe` writes `{ slide, probe: true, renderer, backend, fps,
+engineSecPerSec, dpr, dust, station, pageErrors, consoleWarnings, httpErrors }`
 per slide instead. A run that fails, or is stopped by a signal, ends with a
-`{ "fatal": … }` line.
+`{ "fatal": …, "renderer": …, "backend": … }` line.
 
 ### The probe
 

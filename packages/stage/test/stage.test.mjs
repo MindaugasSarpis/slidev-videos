@@ -183,13 +183,19 @@ test('slide ranges', () => {
 });
 
 test('options', () => {
-  const o = parseArgs(['dist', 'out', '--slides', '2-4', '--clicks', 'all', '--settle', '4', '--wait', '9000', '--burst', '3', '--every', '0.5', '--no-halo', '--no-lock', '--draft', '--jobs', '2']);
+  const o = parseArgs(['dist', 'out', '--slides', '2-4', '--clicks', 'all', '--settle', '4', '--wait', '9000', '--burst', '3', '--every', '0.5', '--no-halo', '--no-lock', '--draft', '--jobs', '3', '--gl', 'd3d12']);
   assert.deepEqual(o.errors, []);
   assert.equal(o.dist, 'dist'); assert.equal(o.out, 'out');
   assert.equal(o.clicks, 'all'); assert.equal(o.settle, 4); assert.equal(o.wait, 9000);
   assert.equal(o.burst, 3); assert.equal(o.every, 0.5); assert.equal(o.halo, false); assert.equal(o.lock, null);
-  assert.equal(o.draft, true); assert.equal(o.jobs, 2);
+  assert.equal(o.draft, true); assert.equal(o.jobs, 3); assert.equal(o.gl, 'd3d12');
   assert.deepEqual(parseArgs(['d', 'o']).size, [1600, 900]);
+  // two pages share the machine with llvmpipe's eight threads; the backend is the launcher's to pick
+  assert.equal(parseArgs(['d', 'o']).jobs, 2);
+  // the probe times frames on the real clock: one page, unless asked for more
+  assert.equal(parseArgs(['d', 'o', '--probe']).jobs, 1);
+  assert.equal(parseArgs(['d', 'o', '--probe', '--jobs', '2']).jobs, 2);
+  assert.equal(parseArgs(['d', 'o']).gl, null);
   assert.equal(parseArgs(['d', 'o']).lock, '/tmp/slidev-stage-shots.lock');
   // the older click map and --click-wait still parse
   const old = parseArgs(['d', 'o', '--clicks', '{"9":3}', '--click-wait', '45000']);
@@ -205,7 +211,9 @@ test('bad options are errors, not positionals', () => {
   assert.match(parseArgs(['d', 'o', '--frobnicate']).errors.join(), /unknown option --frobnicate/);
   assert.match(parseArgs(['d', 'o', '--clicks', 'some']).errors.join(), /--clicks/);
   assert.match(parseArgs(['d', 'o', '--size', '1600']).errors.join(), /--size/);
-  assert.match(parseArgs(['d', 'o', '--gl', 'metal']).errors.join(), /--gl/);
+  assert.match(parseArgs(['d', 'o', '--gl', 'metal']).errors.join(), /--gl: auto, gpu-nvidia, d3d12, llvmpipe, swiftshader, gl; not metal/);
+  assert.match(parseArgs(['d', 'o', '--gl', 'none']).errors.join(), /--gl/);
+  for (const g of ['auto', 'gl', 'swiftshader', 'llvmpipe', 'gpu-nvidia']) assert.deepEqual(parseArgs(['d', 'o', '--gl', g]).errors, []);
   assert.match(parseArgs(['d']).errors.join(), /usage/);
   assert.deepEqual(parseArgs(['--help']).errors, []);
 });
@@ -348,7 +356,7 @@ for (const [sig, code] of [['SIGTERM', 143], ['SIGINT', 130]]) {
       run.kill(sig);
       assert.deepEqual(await run.exited, { code, signal: null }, run.log);
       const lines = (await readFile(join(dir, 'out', 'shots.ndjson'), 'utf8')).trim().split('\n');
-      assert.deepEqual(JSON.parse(lines.at(-1)), { fatal: `stopped by ${sig}`, renderer: null });
+      assert.deepEqual(JSON.parse(lines.at(-1)), { fatal: `stopped by ${sig}`, renderer: null, backend: null });
       assert.ok(await until(() => !alive(slidev)), 'slidev dev is left running');
       assert.ok(await until(() => lockFree(lock)), 'the lock is still held');
       assert.ok(await until(() => flocksOn(lock).length === 0), 'the flock(1) helper is left running');

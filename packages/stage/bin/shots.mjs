@@ -17,32 +17,28 @@
 // 128 + n: stopped by signal n.
 // See the README's "Headless review" for every option and the report fields.
 //
-// Needs playwright-chromium, found next to this file or in the working
-// directory. Runs queue on a shared lock (/tmp/slidev-stage-shots.lock), so
-// sessions on one machine take turns instead of thrashing the CPU.
+// Needs playwright-chromium (~1.59), found next to this file or in the working
+// directory; the browser and its WebGL backend come from lib/chromium.mjs, the
+// launcher every stage tool shares. Runs queue on a shared lock
+// (/tmp/slidev-stage-shots.lock), so sessions on one machine take turns
+// instead of thrashing the CPU.
 import { createServer } from 'node:http';
 import { readFile, stat, mkdir, writeFile, appendFile, readdir, open } from 'node:fs/promises';
 import { readFileSync, statSync, existsSync, realpathSync, writeFileSync } from 'node:fs';
 import { join, extname, resolve, dirname, relative, sep } from 'node:path';
-import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 import { constants as osConstants } from 'node:os';
 import { spawn, spawnSync } from 'node:child_process';
-import { pathToFileURL, fileURLToPath } from 'node:url';
+import { pathToFileURL } from 'node:url';
+import { launch, loadPlaywright, MODES } from './lib/chromium.mjs';
 
 const MIME = {
   '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
   '.woff2': 'font/woff2', '.woff': 'font/woff', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
   '.webp': 'image/webp', '.gif': 'image/gif', '.mp4': 'video/mp4', '.webm': 'video/webm', '.ico': 'image/x-icon', '.txt': 'text/plain',
 };
-// WebGL in software. SwiftShader is everywhere and slow; Mesa's llvmpipe
-// through ANGLE's GL backend is about three times faster where the browser
-// build can reach it (Chromium 147 in WSL can, 151 cannot).
-export const GL_ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'];
-export const GL_ARGS_LLVMPIPE = ['--use-gl=angle', '--use-angle=gl', '--ignore-gpu-blocklist', '--enable-gpu'];
 export const LOCK = '/tmp/slidev-stage-shots.lock';
 const VERSION = 2;
-const HERE = dirname(fileURLToPath(import.meta.url));
 // the headless browser's own complaints, not the deck's
 const NOISE = /Wake Lock|favicon/i;
 const STEP_MS = 100;   // a fast frame: past the engine's 1/12 s clamp, so every frame is one full engine step
@@ -138,8 +134,9 @@ export const USAGE = `usage: slidev-stage-shots <dist> <out-dir> [options]
   --sheet              a labelled contact sheet, <out-dir>/sheet.png
   --probe              measure fps and engine-seconds per second per slide; no photographs
   --console            record console warnings
-  --jobs N             N pages in parallel
-  --gl MODE            auto (default: llvmpipe if the browser reaches it, else SwiftShader) | gl | swiftshader
+  --jobs N             N pages in parallel (default 2; 1 with --probe)
+  --gl MODE            auto (default: $SLIDEV_STAGE_GL, else the fastest the machine reaches:
+                       gpu-nvidia, d3d12, llvmpipe, swiftshader) | one of those | gl (any but SwiftShader)
   --json FILE          the NDJSON report (default <out-dir>/shots.ndjson)
   --dev DECK.md        start slidev's dev server on a free port and photograph that
   --lock FILE          the shared lock (default ${LOCK}); --no-lock: none
@@ -150,8 +147,8 @@ export function parseArgs(argv) {
   const o = {
     dist: null, out: null, dev: null, slides: null, clicks: 'none', clickMap: null,
     settle: 6, wait: 30000, dust: 12, size: [1600, 900], draft: false, burst: 1, every: 1, seed: 1,
-    halo: true, base: null, changed: false, sheet: false, probe: false, console: false, jobs: 1,
-    gl: 'auto', json: null, lock: LOCK, help: false, errors: [],
+    halo: true, base: null, changed: false, sheet: false, probe: false, console: false, jobs: null,
+    gl: null, json: null, lock: LOCK, help: false, errors: [],
   };
   const rest = [];
   const num = (v, name, min = 0) => { const n = Number(v); if (!Number.isFinite(n) || n < min) o.errors.push(`${name}: not a number ≥ ${min}: ${v}`); return n; };
@@ -180,7 +177,7 @@ export function parseArgs(argv) {
     else if (a === '--probe') o.probe = true;
     else if (a === '--console') o.console = true;
     else if (a === '--jobs') o.jobs = Math.max(1, Math.round(num(val(), a, 1)));
-    else if (a === '--gl') { const g = val(); if (!['auto', 'gl', 'swiftshader'].includes(g)) o.errors.push(`--gl: auto, gl or swiftshader, not ${g}`); else o.gl = g; }
+    else if (a === '--gl') { const g = val(); if (!MODES.includes(g) || g === 'none') o.errors.push(`--gl: ${MODES.filter((m) => m !== 'none').join(', ')}; not ${g}`); else o.gl = g; }
     else if (a === '--json') o.json = val();
     else if (a === '--dev') o.dev = val();
     else if (a === '--lock') o.lock = val();
@@ -190,6 +187,8 @@ export function parseArgs(argv) {
     else rest.push(a);
   }
   if (o.dev) [o.out] = rest; else [o.dist, o.out] = rest;
+  // two pages share the machine well; the probe times the real clock, so one
+  o.jobs ??= o.probe ? 1 : 2;
   if (!o.help && !o.out) o.errors.push(o.dev ? 'usage: --dev deck.md <out-dir>' : 'usage: <dist> <out-dir>');
   return o;
 }
@@ -265,48 +264,6 @@ async function holdLock(o) {
   helper.unref(); helper.stdin.unref();
   process.env.SLIDEV_STAGE_SHOTS_LOCKED = o.lock;
   return () => { helper.stdin.end(); };
-}
-
-// ---- the browser ------------------------------------------------------------------------------
-
-// playwright-chromium is an optional peer: next to this file first (the addon's
-// own install, or this repo's), then the working directory (the deck's).
-function loadPlaywright() {
-  const dirs = [process.env.SLIDEV_STAGE_PLAYWRIGHT, HERE, process.cwd()].filter(Boolean);
-  for (const d of dirs) {
-    try { return createRequire(join(resolve(d), 'noop.js'))('playwright-chromium'); } catch { /* next */ }
-  }
-  throw new Error(`slidev-stage-shots needs playwright-chromium, found neither next to it (${HERE}) nor in ${process.cwd()}:\n  pnpm add -D playwright-chromium && pnpm exec playwright install chromium`);
-}
-
-async function rendererOf(browser) {
-  const page = await browser.newPage();
-  try {
-    return await page.evaluate(() => {
-      const gl = document.createElement('canvas').getContext('webgl2');
-      if (!gl) return null;
-      const e = gl.getExtension('WEBGL_debug_renderer_info');
-      return String(e ? gl.getParameter(e.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
-    });
-  } finally { await page.close(); }
-}
-
-// --gl auto: ANGLE on GL first, kept when it reaches a real driver (llvmpipe,
-// or a GPU), else SwiftShader.
-async function launch(chromium, gl) {
-  const extra = ['--autoplay-policy=no-user-gesture-required', '--mute-audio'];
-  const tries = gl === 'swiftshader' ? [['swiftshader', GL_ARGS]] : gl === 'gl' ? [['gl', GL_ARGS_LLVMPIPE]] : [['gl', GL_ARGS_LLVMPIPE], ['swiftshader', GL_ARGS]];
-  for (let i = 0; i < tries.length; i++) {
-    const [name, args] = tries[i];
-    const last = i === tries.length - 1;
-    let browser;
-    // signals are the run's to handle (see shoot); Playwright still kills the browser if the process exits first
-    try { browser = await chromium.launch({ args: [...args, ...extra], handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false }); } catch (e) { if (last) throw e; continue; }
-    const renderer = await rendererOf(browser);
-    if (last || (renderer && !/swiftshader/i.test(renderer))) return { browser, renderer, gl: name };
-    await browser.close();
-  }
-  throw new Error('no browser');
 }
 
 // ---- the page side ------------------------------------------------------------------------------
@@ -904,11 +861,15 @@ export async function shoot(o, logTo = console.log) {
   const report = resolve(o.json || join(o.outDir, 'shots.ndjson'));
   await writeFile(report, '');
   const records = [];
-  let renderer = null, gl = null, fatal = null, stopped = null, writing = Promise.resolve();
+  let renderer = null, backend = null, warning = null, fatal = null, stopped = null, writing = Promise.resolve();
+  const fatalLine = (f) => `${JSON.stringify({ fatal: f.slice(0, 2000), renderer, backend })}\n`;
   // in slide order, the fatal line (if any) last
-  const lines = (f) => [...records].sort(byFrame).map((r) => `${JSON.stringify(r)}\n`).join('') + (f ? `${JSON.stringify({ fatal: f.slice(0, 2000), renderer })}\n` : '');
-  const emit = (r) => {
+  const lines = (f) => [...records].sort(byFrame).map((r) => `${JSON.stringify(r)}\n`).join('') + (f ? fatalLine(f) : '');
+  // every line says which backend drew it, and carries the SwiftShader warning
+  // (a frame kept by --changed drops its own run's)
+  const emit = ({ warning: _, ...rec }) => {
     if (stopped) return writing;
+    const r = { ...rec, backend, ...(warning ? { warning } : {}) };
     records.push(r);
     return (writing = writing.then(() => appendFile(report, `${JSON.stringify(r)}\n`)).catch(() => {}));
   };
@@ -930,7 +891,7 @@ export async function shoot(o, logTo = console.log) {
   for (const s of SIGNALS) process.on(s, onSignal);
   const T0 = Date.now();
   try {
-    const { chromium } = loadPlaywright();
+    const { chromium } = loadPlaywright('slidev-stage-shots');
     // where the deck is
     let url, dist = null;
     if (o.dev) {
@@ -946,10 +907,16 @@ export async function shoot(o, logTo = console.log) {
       url = `http://localhost:${port}${base}`;
       if (base !== '/') log(`serving ${dist} under ${base}`);
     }
-    const launched = await launch(chromium, o.gl);
-    ({ renderer, gl } = launched);
+    const launched = await launch({
+      chromium, backend: o.gl, webgl: false, tool: 'slidev-stage-shots',
+      // signals are the run's to handle (see onSignal); Playwright still kills the browser if the process exits first
+      options: { handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false },
+    });
+    ({ renderer, backend, warning } = launched);
     cleanup.push(() => launched.browser.close());
-    log(`renderer: ${renderer ?? 'no WebGL2'}${gl === 'swiftshader' && o.gl === 'auto' ? '  (llvmpipe not reachable from this browser build)' : ''}`);
+    // what the backend set for the browser; a path by its name only
+    const set = Object.entries(launched.env).map(([k, v]) => (v.length > 32 ? k : `${k}=${v}`)).join(' ');
+    log(`renderer: ${renderer ?? 'no WebGL2'}  (${backend}, Chromium ${launched.version}${set ? `, ${set}` : ''})`);
 
     // the deck's length: published by the engine or Slidev, else walked
     const tb = Date.now();
@@ -1038,7 +1005,7 @@ export async function shoot(o, logTo = console.log) {
     }
   } catch (e) {
     fatal = String(e.message || e);
-    if (!stopped) await appendFile(report, `${JSON.stringify({ fatal: fatal.slice(0, 2000), renderer })}\n`).catch(() => {});
+    if (!stopped) await appendFile(report, fatalLine(fatal)).catch(() => {});
   } finally {
     await done();
   }
@@ -1048,7 +1015,7 @@ export async function shoot(o, logTo = console.log) {
   await writeFile(report, lines(fatal));
   const sorted = [...records].sort(byFrame);
   const problems = sorted.map((r) => [r.frame ?? frameName(r.slide), problemsOf(r)]).filter(([, p]) => p.length);
-  return { records: sorted, renderer, gl, report, fatal, problems, ms: Date.now() - T0, code: fatal ? 1 : problems.length ? 3 : 0 };
+  return { records: sorted, renderer, backend, warning, report, fatal, problems, ms: Date.now() - T0, code: fatal ? 1 : problems.length ? 3 : 0 };
 }
 
 const byFrame = (a, b) => (a.slide - b.slide) || ((a.click ?? 0) - (b.click ?? 0)) || ((a.burst ?? 0) - (b.burst ?? 0));

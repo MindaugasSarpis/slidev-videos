@@ -1,4 +1,6 @@
-// Serve example/dist and assert, headless (WebGL2 on SwiftShader):
+// Serve example/dist and assert, headless, on the browser and WebGL backend the
+// tools get (lib/chromium.mjs: llvmpipe or a GPU where the machine has one,
+// else SwiftShader; SLIDEV_STAGE_GL forces one):
 //   1. the addon's global layers mounted the stage and the halo from the
 //      headmatter `stage:` block alone, with the palette on <html>;
 //   2. the world draws (frames advance) and the cover's title waits for the
@@ -26,8 +28,8 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { chromium } from 'playwright-chromium'
-import { serve, GL_ARGS, shoot, parseArgs } from '../bin/shots.mjs'
+import { serve, shoot, parseArgs } from '../bin/shots.mjs'
+import { launch } from '../bin/lib/chromium.mjs'
 
 const DIST = new URL('../example/dist', import.meta.url).pathname
 const { server, port } = await serve(DIST)
@@ -38,7 +40,9 @@ const check = (name, ok, detail = '') => {
   if (!ok) failures++
 }
 
-const browser = await chromium.launch({ args: GL_ARGS })
+const launched = await launch({ tool: 'the stage smoke' })
+const { browser } = launched
+console.log(`     renderer: ${launched.renderer} (${launched.backend}, Chromium ${launched.version})`)
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
 const errors = []
 page.on('pageerror', (e) => { if (!/Wake Lock/i.test(e.message)) errors.push(e.message.slice(0, 200)) })
@@ -222,7 +226,7 @@ check('shots keeps the full pixel ratio and dust', recs.every((r) => r.dpr === 1
 check('shots settles in seconds', recs.every((r) => r.settleMs < 20000), brief)
 check('shots reads the text on screen', recs.every((r) => r.wordsOnScreen > 0 && r.textBoxes.every((b) => b.fontPx > 0 && b.lumMean != null)), brief)
 check('shots exits 0 on a clean deck', res.code === 0, JSON.stringify(res.problems))
-console.log(`     renderer: ${res.renderer}`)
+console.log(`     shots: ${res.renderer} (${res.backend})`)
 
 // a rebuild copies public/ and writes _redirects again: new times, the same bytes
 const later = new Date(Date.now() + 60000)
