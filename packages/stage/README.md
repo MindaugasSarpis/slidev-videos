@@ -297,13 +297,16 @@ and the edit list names the clip, for the editor to cut in from the source.
 than three times a second (the broadcast rule); run the finished programme
 through a real analyser (EA's IRIS is free) as well. Exit 0 when a slide was
 recorded or named for cutting in, 1 on a failure or when the deck has none
-of the slides asked for, 2 on a wrong or unknown option.
+of the slides asked for, 2 on a wrong or unknown option, or on
+`$SLIDEV_STAGE_GL` set to `none` or to a value it does not take (nothing is
+written then).
 
 The browser comes from `bin/lib/chromium.mjs`, the launcher shots and safe
 use as well: the fastest WebGL the machine reaches, tried best first (a
 native NVIDIA driver, WSL's GPU through Mesa's d3d12 driver, Mesa's
 llvmpipe, then SwiftShader), each kept only when the page's renderer string
-says it got there. `--gl` or `$SLIDEV_STAGE_GL` forces one, `--chromium` or
+says it got there. `--gl` or `$SLIDEV_STAGE_GL` forces one (not the
+launcher's `none`, no WebGL: the recorder films the world), `--chromium` or
 `$SLIDEV_STAGE_CHROMIUM` names a browser to try first, and the launcher's
 header lists the other variables (the Mesa prefix for d3d12, extra browser
 flags and environment). index.json records `renderer` and `backend`; on

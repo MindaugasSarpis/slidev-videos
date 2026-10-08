@@ -2,11 +2,11 @@
 // pure parts (the browser runs are in the README's verification).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LOOKS, PALETTES, resolveLook, resolvePalette, liftGround, definePalette, paletteVars } from '../stage/palette.js';
-import { parseArgs as recordArgs, main as recordMain } from '../bin/record.mjs';
+import { parseArgs as recordArgs, main as recordMain, glMode } from '../bin/record.mjs';
 import { parseArgs as safeArgs, main as safeMain, judge, RULES } from '../bin/safe.mjs';
 import { detectBase, normaliseBase, parseSlides, checkSlides, parseSize } from '../bin/lib/record-serve.mjs';
 import { findFlashes } from '../bin/lib/record-flash.mjs';
@@ -103,6 +103,33 @@ test('record arguments', () => {
   assert.throws(() => recordArgs(['d', 'o', '--gl', 'none']), /--gl wants/);
   assert.throws(() => recordArgs(['d', 'o', '--fps', '0']));
   assert.throws(() => recordArgs(['d', 'o', '--size', '1920']));
+});
+
+test('the recorder refuses no WebGL from the environment as well as from --gl', async () => {
+  // worked out as the launcher does: --gl, else $SLIDEV_STAGE_GL, else auto
+  assert.equal(glMode({ gl: 'auto' }, {}), 'auto');
+  assert.equal(glMode({ gl: 'auto' }, { SLIDEV_STAGE_GL: '' }), 'auto');
+  assert.equal(glMode({ gl: 'auto' }, { SLIDEV_STAGE_GL: 'd3d12' }), 'd3d12');
+  assert.equal(glMode({ gl: 'llvmpipe' }, { SLIDEV_STAGE_GL: 'none' }), 'llvmpipe');   // --gl wins
+  assert.throws(() => glMode({ gl: 'auto' }, { SLIDEV_STAGE_GL: 'none' }), /SLIDEV_STAGE_GL=none leaves nothing to record/);
+  // a value the launcher does not know: the message lists what the recorder takes, which is not none
+  assert.throws(() => glMode({ gl: 'auto' }, { SLIDEV_STAGE_GL: 'vulkan' }), (e) => /got vulkan/.test(e.message) && !/\bnone\b/.test(e.message));
+  // from the command line: exit 2, before any server, browser or out dir
+  const out = join(mkdtempSync(join(tmpdir(), 'stage-rec-')), 'rec');
+  const was = process.env.SLIDEV_STAGE_GL, quiet = console.error;
+  let said = '';
+  console.error = (s) => { said += s; };
+  try {
+    for (const v of ['none', 'vulkan']) {
+      process.env.SLIDEV_STAGE_GL = v;
+      assert.equal(await recordMain(['missing-dist', out, '--slides', '4']), 2, v);
+      assert.equal(existsSync(out), false, v);
+    }
+  } finally {
+    console.error = quiet;
+    if (was === undefined) delete process.env.SLIDEV_STAGE_GL; else process.env.SLIDEV_STAGE_GL = was;
+  }
+  assert.match(said, /unset it or pass --gl/);
 });
 
 test('a record or safe command line that cannot mean what it says is a usage error', async () => {

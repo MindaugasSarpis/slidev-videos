@@ -27,7 +27,9 @@
 //   --flash   a rough flash check of each file (see lib/record-flash.mjs)
 //   --gl      the WebGL backend: auto ($SLIDEV_STAGE_GL, else the fastest the
 //             machine reaches), gpu-nvidia, d3d12, llvmpipe, swiftshader, or
-//             gl (any but SwiftShader); see lib/chromium.mjs
+//             gl (any but SwiftShader); see lib/chromium.mjs. The launcher's
+//             none (no WebGL) is refused here, from $SLIDEV_STAGE_GL as well:
+//             it would record the deck without its world
 //
 // A clip slide is recorded when the clip is served from the deck itself
 // (build with VITE_VIDEOS_LOCAL_FIRST=1 and the clips in public/videos/): the
@@ -41,7 +43,9 @@
 // the backend sets the pace). Run it inside `flock /tmp/slidev-stage-shots.lock`
 // on a machine others render on: it does not take the lock itself.
 // Exit 0 when a slide was recorded or named for cutting in, 1 on a failure
-// or when the deck has none of the slides asked for, 2 on a usage error.
+// or when the deck has none of the slides asked for, 2 on a usage error (an
+// option, or $SLIDEV_STAGE_GL set to none or to a value it does not take);
+// on 2 nothing is written.
 import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -90,6 +94,17 @@ export function parseArgs(argv) {
   if (!(o.hold >= 0) || !(o.max > 0)) throw new Error('--hold and --max want seconds');
   if (!Number.isFinite(o.seed)) throw new Error('--seed wants a number');
   return o;
+}
+
+// The backend the launcher will look for, worked out as launch() does: --gl,
+// else $SLIDEV_STAGE_GL, else auto. The recorder films the world, so the
+// launcher's none (no WebGL) would record a deck without it; that and a value
+// the launcher does not know are usage errors.
+export function glMode(o, env = process.env) {
+  const mode = o.gl && o.gl !== 'auto' ? o.gl : env.SLIDEV_STAGE_GL || 'auto';
+  if (mode === 'none') throw new Error('slidev-stage-record: SLIDEV_STAGE_GL=none leaves nothing to record (the recorder draws every frame of the world); unset it or pass --gl');
+  if (!GL.includes(mode)) throw new Error(`slidev-stage-record: SLIDEV_STAGE_GL wants ${GL.join(', ')} (got ${mode})`);
+  return mode;
 }
 
 // 'all' | 'none' | '{"3":1}' (slide → how many of its clicks)
@@ -234,6 +249,8 @@ async function recordSegment({ page, cdp }, n, k, o, ff, enc) {
 }
 
 export async function record(o, log = console.log) {
+  // before anything is served, launched or written
+  const gl = glMode(o);
   const { chromium } = loadPlaywright('slidev-stage-record');
   const dist = resolve(o.dist);
   o.out = resolve(o.out);
@@ -242,7 +259,7 @@ export async function record(o, log = console.log) {
   const base = normaliseBase(o.base, dist);
   const { server, url, misses } = await serve(dist, { base });
   // a backend asked for and not reached is an error before anything is written
-  const launched = await launch({ chromium, backend: o.gl, executable: o.chromium || undefined, tool: 'slidev-stage-record' })
+  const launched = await launch({ chromium, backend: gl, executable: o.chromium || undefined, tool: 'slidev-stage-record' })
     .catch((e) => { server.close(); throw e; });
   const { browser, renderer, backend, warning, executablePath, version } = launched;
   await mkdir(o.out, { recursive: true });
@@ -319,6 +336,7 @@ export async function main(argv = process.argv.slice(2)) {
   let o;
   try { o = parseArgs(argv); } catch (e) { console.error(`${e.message}\n${USAGE}`); return 2; }
   if (o.help || !o.dist || !o.out) { console.log(USAGE); return o.help ? 0 : 2; }
+  try { glMode(o); } catch (e) { console.error(e.message); return 2; }
   let r;
   try { r = await record(o); } catch (e) { console.error(e.message || e); return 1; }
   if (r.errors.length) console.log(`\npage errors:\n  ${r.errors.join('\n  ')}`);
