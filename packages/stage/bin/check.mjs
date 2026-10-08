@@ -31,6 +31,8 @@
 //   unknown-option      a stage.options key the engine does not read
 //   camera-inside-form  (warning) a slide's camera stands inside an object's radius
 //   unknown-key         (warning) a key of `stage:` or of a slide's `space:` nothing reads
+//   unknown-component   (warning) a <Count> tag, and no Count the deck registers itself:
+//                       the addon's counter is <StageCount> (a talk's own Count.vue removed, a tag not renamed)
 //
 // Exit 1 on any error; warnings do not fail. --json prints
 // { ok, problems: [{ slide?, line?, station?, code, level, msg }], stats } to stdout.
@@ -233,6 +235,15 @@ export function deckTypes(sources) {
   }
   return { types, palettes };
 }
+// The components a deck registers itself: app.component('<Name>', …) in its
+// setup files, and its components/<Name>.vue.
+export function deckComponents(sources, dir = null) {
+  const names = new Set();
+  for (const src of [].concat(sources)) for (const m of String(src).matchAll(/\.component\(\s*(['"])([\w-]+)\1\s*,/g)) names.add(m[2]);
+  const own = dir && join(dir, 'components');
+  if (own && existsSync(own)) for (const f of readdirSync(own)) if (f.endsWith('.vue')) names.add(f.slice(0, -4));
+  return [...names];
+}
 export function readSetup(dir) {
   const setup = join(dir, 'setup');
   if (!existsSync(setup)) return [];
@@ -245,7 +256,7 @@ const POSE = { dist: 9, yaw: -20, pitch: 6 };   // space.js DEFAULTS.pose
 const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 const COLOUR_KEYS = Object.keys(DEFAULT_PALETTE);
 
-export function checkStage({ space, records = null, deck = '', plugins = null, extraTypes = [], deckOwn = {}, palettes = [], publicDir = null } = {}) {
+export function checkStage({ space, records = null, deck = '', plugins = null, extraTypes = [], deckOwn = {}, palettes = [], publicDir = null, components = null } = {}) {
   const issues = [];
   const add = (code, msg, where = {}, level = 'error') => issues.push({ ...where, code, level, msg });
   const types = { ...CORE_TYPES };
@@ -258,6 +269,7 @@ export function checkStage({ space, records = null, deck = '', plugins = null, e
   for (const [t, fields] of Object.entries(deckOwn)) types[t] = fields;
   for (const t of extraTypes) types[t] ??= ['pos'];
   checkConfig(cfg, palettes, add, { slide: 1, line: slides[0]?.line ?? 1 });
+  if (components) checkCount(deck, slides, components, add);
 
   const recordIds = new Set(((records && (records.records || records.states)) || []).map((r) => String(r.id)));
   if (!space || !Array.isArray(space.stations) || !space.stations.length) {
@@ -365,6 +377,19 @@ export function checkStage({ space, records = null, deck = '', plugins = null, e
   return result(issues, { stations: stations.size, objects, poses: nPoses, stops: nStops, slides: slides.length });
 }
 
+// A deck that dropped its own Count.vue for the addon's <StageCount> and kept
+// a <Count> tag: Vue resolves it to nothing, and the number is gone. (A tag
+// quoted in backticks, as in a deck's `info:`, is prose.)
+function checkCount(deck, slides, components, add) {
+  if (components.includes('Count')) return;
+  const lines = String(deck).split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (!/(^|[^`])<Count[\s/>]/.test(lines[i])) continue;
+    const s = slides.filter((x) => x.line <= i + 1).at(-1);
+    add('unknown-component', `slide ${s?.no ?? 1}: <Count> is registered nowhere in the deck (no app.component('Count', …) in setup/, no components/Count.vue); the addon's counter is <StageCount>: rename the tag`, { slide: s?.no ?? 1, line: i + 1 }, 'warning');
+  }
+}
+
 function checkConfig(cfg, palettes, add, head) {
   for (const k of Object.keys(cfg)) if (!STAGE_KEYS.includes(k)) add('unknown-key', `stage.${k} is read by nothing (stage keys: ${STAGE_KEYS.join(', ')})`, head, 'warning');
   const known = new Set([...Object.keys(PALETTES), ...palettes]);
@@ -456,8 +481,9 @@ export function main(argv = process.argv.slice(2)) {
     try { records = JSON.parse(readFileSync(join(publicDir, recordsRel), 'utf8')); } catch (e) { return fail(`cannot read ${recordsRel}: ${e.message}`); }
   }
   const plugins = args.plugins || [].concat(cfg.plugins || []).map(String);
-  const own = deckTypes(readSetup(dir));
-  const r = checkStage({ space, records, deck, plugins, extraTypes: args.types, deckOwn: own.types, palettes: own.palettes, publicDir });
+  const setup = readSetup(dir);
+  const own = deckTypes(setup);
+  const r = checkStage({ space, records, deck, plugins, extraTypes: args.types, deckOwn: own.types, palettes: own.palettes, publicDir, components: deckComponents(setup, dir) });
   const stats = { stations: r.stations, objects: r.objects, poses: r.poses, stops: r.stops, slides: r.slides, deckTypes: Object.keys(own.types) };
   if (args.json) {
     console.log(JSON.stringify({ ok: r.problems.length === 0, deck: deckFile, problems: r.issues, stats }, null, 2));

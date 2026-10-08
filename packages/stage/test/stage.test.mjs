@@ -6,10 +6,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CORE_TYPES, PLUGIN_TYPES, STAGE_KEYS, OPTION_KEYS, SPACE_KEYS, anchorIds } from '../stage/types.js';
 import { resolvePalette, PALETTES, DEFAULT_PALETTE, LOOKS, hexToRgb, rgbTriplet, paletteVars, definePalette } from '../stage/palette.js';
-import { checkStage, readStageConfig, deckPoses, deckSlides, deckTypes, readYaml, main as checkMain } from '../bin/check.mjs';
-import { formatCount } from '../stage/count.js';
-import { parseSlides } from '../bin/shots.mjs';
+import { checkStage, readStageConfig, deckPoses, deckSlides, deckTypes, deckComponents, readYaml, main as checkMain } from '../bin/check.mjs';
+import { formatCount, countRun, countAt, countSpan, COUNT_DOWN_MS } from '../stage/count.js';
 import { deckHasThree } from '../vite.config.js';
+import { parseSlides } from '../bin/shots.mjs';
 
 const here = (p) => new URL(p, import.meta.url);
 const exampleSpace = JSON.parse(readFileSync(here('../example/public/data/space.json'), 'utf8'));
@@ -310,6 +310,24 @@ test('--json reports every problem with its slide and code', () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('a <Count> tag the deck no longer registers is a warning', () => {
+  const space = { stations: [{ id: 'store', pos: [0, 0, 0], look: { dist: 8 } }] };
+  const deck = '---\ninfo: |\n  the numbers count, `<Count>` counts with them\n---\n\n# one\n\n---\n\n<div class="big"><Count name="open" :to="800" /></div>\n';
+  const warned = (components) => checkStage({ space, deck, components }).issues.filter((p) => p.code === 'unknown-component');
+  assert.deepEqual(warned([]).map((p) => [p.slide, p.line, p.level]), [[2, 10, 'warning']]);
+  assert.match(warned([])[0].msg, /<StageCount>/);
+  assert.deepEqual(warned(['Count']), []);
+  assert.deepEqual(warned(null), []);   // not asked
+  assert.equal(checkStage({ space, deck, components: [] }).problems.length, 0);   // it does not fail the check
+  assert.deepEqual(deckComponents(["import Count from './Count.vue'\nexport default ({ app }) => {\n  app.component('Count', Count)\n  app.component(\"Grains\", Grains)\n}"]), ['Count', 'Grains']);
+  const dir = mkdtempSync(join(tmpdir(), 'stage-components-'));
+  try {
+    mkdirSync(join(dir, 'components'));
+    writeFileSync(join(dir, 'components/Count.vue'), '<template><span /></template>\n');
+    assert.deepEqual(deckComponents([], dir), ['Count']);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('three resolves from the deck when the deck has its own', () => {
   const dir = mkdtempSync(join(tmpdir(), 'stage-three-'));
   try {
@@ -341,16 +359,81 @@ test('a count is written the way its language writes numbers', () => {
   assert.equal(formatCount(55000, { lang: 'lt' }), `55${nb}000`);
   assert.equal(formatCount(1844, { lang: 'lt' }), '1844');
   assert.equal(formatCount(9999, { lang: 'lt', span: 55000 }), `9${nb}999`);   // a count that ends grouped is grouped throughout
+  assert.equal(formatCount(9999.6, { lang: 'lt' }), `10${nb}000`);            // grouped on what is written, not on 9999.6
   assert.equal(formatCount(12.345, { lang: 'lt', decimals: 1 }), '12,3');
   assert.equal(formatCount(1234567.891, { lang: 'lt-LT', decimals: 2 }), `1${nb}234${nb}567,89`);
-  assert.equal(formatCount(1844, { lang: 'en' }), '1,844');
-  assert.equal(formatCount(1234567.891, { lang: 'en', decimals: 2 }), '1,234,567.89');
+  assert.equal(formatCount(1844, { lang: 'en' }), `1${nb}844`);
+  assert.equal(formatCount(600000, { lang: 'en' }), `600${nb}000`);
+  assert.equal(formatCount(999.96, { lang: 'en', decimals: 1 }), `1${nb}000.0`);
+  assert.equal(formatCount(1234567.891, { lang: 'en', decimals: 2 }), `1${nb}234${nb}567.89`);
   assert.equal(formatCount(2026, { lang: 'en', plain: true }), '2026');
   assert.equal(formatCount(20260, { lang: 'lt', plain: true }), '20260');
   assert.equal(formatCount(-0.2), '0');
   assert.equal(formatCount(-12000, { lang: 'lt' }), `-12${nb}000`);
   assert.equal(formatCount(799.6), '800');
   assert.equal(formatCount(5, { lang: 'fr' }), '5');   // what is not lt is written the English way
+});
+
+test('group: the language\'s rule, always, or never', () => {
+  const nb = '\u202f';
+  assert.equal(formatCount(1844, { lang: 'lt', group: 'auto' }), '1844');
+  assert.equal(formatCount(1844, { lang: 'lt', group: true }), `1${nb}844`);
+  assert.equal(formatCount(1844, { lang: 'lt', group: 'true' }), `1${nb}844`);
+  assert.equal(formatCount(2015, { lang: 'lt', group: false }), '2015');
+  assert.equal(formatCount(20150, { lang: 'en', group: 'false' }), '20150');
+  assert.equal(formatCount(20150, { lang: 'en', group: true, plain: true }), '20150');   // plain wins: it is group false
+  assert.equal(formatCount(999, { lang: 'lt', group: true }), '999');
+});
+
+test('a count runs the way the talks\' Count.vue ran it', () => {
+  // first arrival: wait `delay`, then a smoothstep over `ms`
+  const up = countRun({ from: 800, to: 4000 });
+  assert.deepEqual(up, { from: 800, to: 4000, delay: 1000, ms: 2900, down: false });
+  assert.equal(countAt(up, 0), 800);
+  assert.equal(countAt(up, 1000), 800);
+  assert.equal(countAt(up, 1000 + 2900 / 2), 2400);   // the smoothstep's middle
+  assert.equal(countAt(up, 1000 + 2900), 4000);
+  assert.equal(countAt(up, 99999), 4000);
+  // a name entered again starts from what it last landed on
+  assert.deepEqual(countRun({ from: 800, to: 4000, last: 4000 }), { from: 4000, to: 4000, delay: 0, ms: 0, down: false });
+  assert.equal(countAt(countRun({ from: 800, to: 4000, last: 4000 }), 0), 4000);   // an unchanged form: at once
+  // going back: down at once, over 1.1 s, easing out
+  const back = countRun({ from: 1, to: 800, last: 4000 });
+  assert.deepEqual(back, { from: 4000, to: 800, delay: 0, ms: COUNT_DOWN_MS, down: true });
+  assert.equal(COUNT_DOWN_MS, 1100);
+  assert.equal(countAt(back, 0), 4000);
+  assert.equal(countAt(back, 550), 4000 - 3200 * (1 - 0.5 ** 3));
+  assert.equal(countAt(back, 1100), 800);
+  // without a name, `from` above `to` counts down the same way
+  assert.equal(countRun({ from: 100, to: 0 }).down, true);
+  assert.equal(countRun({ from: 0, to: 13, ms: 1400 }).ms, 1400);
+});
+
+test('a count is grouped throughout while it runs, and lands as its number alone', () => {
+  const nb = '\u202f';
+  const at = (run, t) => formatCount(countAt(run, t), { lang: 'lt', span: countSpan(run, countAt(run, t)) });
+  const up = countRun({ from: 800, to: 55000 });
+  assert.match(at(up, 1000 + 2900 * 0.2), new RegExp(`^\\d${nb}\\d{3}$`));   // under 10 000, grouped: it ends grouped
+  assert.equal(at(up, 99999), `55${nb}000`);
+  // back from 55 000 to 4000 (a name entered again): grouped on the way, 4000 on landing, as Count.vue wrote it
+  const back = countRun({ from: 800, to: 4000, last: 55000 });
+  assert.equal(at(back, 0), `55${nb}000`);
+  assert.match(at(back, 900), new RegExp(`^\\d${nb}\\d{3}$`));
+  assert.equal(at(back, COUNT_DOWN_MS), '4000');
+  assert.equal(at(countRun({ to: 4000, last: 4000 }), 0), '4000');
+});
+
+test('StageCount takes every prop of the talks\' Count.vue, with the same defaults', () => {
+  const src = readFileSync(here('../components/StageCount.vue'), 'utf8');
+  const block = /defineProps\(\{([\s\S]*?)\n\}\)/.exec(src)[1];
+  const props = {};
+  for (const m of block.matchAll(/^\s*(\w+): \{ type: ([^,]+(?:, \w+\])?), (?:default: (.+?)|(required: true)) \},?$/gm)) props[m[1]] = m[4] ? 'required' : m[3];
+  // OpenData and Uzsikrauk karjerai (identical), with karjerai's group and decimals
+  const talks = { from: '0', to: 'required', ms: '2900', delay: '1000', name: "''", group: "'auto'", decimals: '0' };
+  // Innoday: plain (years); its own ms 2600 and delay 350 are not the defaults
+  Object.assign(talks, { plain: 'false' });
+  for (const [k, v] of Object.entries(talks)) assert.equal(props[k], v, k);
+  assert.deepEqual(Object.keys(props).filter((k) => !(k in talks)), ['lang', 'for']);
 });
 
 test('an empty space is a problem, not a crash', () => {
