@@ -129,3 +129,14 @@ def test_encoder_choice_still_asks_the_chosen_binary(machine, tmp_path, monkeypa
     pipeline._encodes_with.cache_clear()
     assert pipeline.select_encoder(None) == "nvenc"     # the fake exits 0 on the test encode
     assert any("-c:v h264_nvenc" in line for line in runs(log))
+
+
+def test_an_env_dir_with_only_ffmpeg_is_not_chosen(machine, tmp_path, monkeypatch, fake_build):
+    half = fake_build(tmp_path / "half", tmp_path / "log")
+    (half / "ffprobe").unlink()
+    whole = fake_build(tmp_path / "whole", tmp_path / "log")
+    monkeypatch.setenv(tools.ENV_DIR, str(half))
+    monkeypatch.setenv("PATH", str(whole))
+    t = tools.resolve()
+    assert t.ffmpeg == str(whole / "ffmpeg")
+    assert any(c.source == "env" and "no ffmpeg and ffprobe" in c.note for c in t.candidates)

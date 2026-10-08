@@ -207,7 +207,7 @@ def candidates(ffmpeg_dir: str | None = None, project_root: Path | None = None,
 
 
 def choose(cands: list[Candidate]) -> Candidate | None:
-    usable = [c for c in cands if Path(c.ffmpeg).is_file()]
+    usable = [c for c in cands if _executable(Path(c.ffmpeg)) and _executable(Path(c.ffprobe))]
     # Pairs that passed the probe first; then pairs whose probe timed out
     # (not seen to crash); then anything at all.
     for pool in ([c for c in usable if c.https], [c for c in usable if not c.crashed]):
