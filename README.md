@@ -6,9 +6,9 @@ takes the ones it wants.
 
 | tool | where | what it is |
 | --- | --- | --- |
-| **`slidev-videos`** | `src/` (Python ≥3.11, stdlib only) | manifest-driven CLI: `fetch · sync · encode · encode-hq · publish · publish-hq · pull · pull-hq · check · shared-check · frames · clean · preflight · venue · build · discover`. Web tier is 1080p H.264 with EBU R128 loudness normalisation; clips are hosted as GitHub Release assets |
-| **`slidev-addon-videos`** | repo root | the full-bleed `VideoPlayer`: a local → own-release → shared-release fallback chain, slide-driven playback, look-ahead preload, `cut` / `fade` / `dust` transitions, native auto-hide controls, keyboard volume |
-| **`slidev-addon-stage`** | [`packages/stage`](packages/stage/README.md) | one persistent 3D world under a whole deck: stations in a field of dust, a camera that flies from slide to slide, palettes, a builder registry, halo borders, a validator and a screenshot tool |
+| **`slidev-videos`** | `src/` (Python ≥3.11, stdlib only) | manifest-driven CLI: `fetch · sync · encode · encode-hq · publish · publish-hq · pull · pull-hq · check · shared-check · frames · clean · preflight · venue · build · discover · depth`. Web tier is 1080p H.264 with EBU R128 loudness normalisation; clips are hosted as GitHub Release assets |
+| **`slidev-addon-videos`** | repo root | the full-bleed `VideoPlayer`: a local → own-release → shared-release fallback chain, slide-driven playback, look-ahead preload, `cut` / `fade` / `dust` transitions, advance-on-end, native auto-hide controls, keyboard volume; and `StagePhoto`, a photograph that arrives and leaves as grains, or stands in the world as a place |
+| **`slidev-addon-stage`** | [`packages/stage`](packages/stage/README.md) | one persistent 3D world under a whole deck: stations in a field of dust, a camera that flies from slide to slide, palettes, a broadcast look, a builder registry, halo borders, photo places, a validator, a screenshot tool, a per-slide video recorder and a safe-area check |
 | **the shared clip library** | `src/slidev_videos/shared.toml` | the registry, with the encodes on this repo's `videos-shared` Release |
 
 The two addons know of each other only through window events: a clip that
@@ -20,6 +20,9 @@ renderer under a clip that covers the slide. Either works alone.
     pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.5.0"
     pnpm add -D github:MindaugasSarpis/slidev-videos#v0.5.0
     pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.5.0&path:/packages/stage"   # the stage, if wanted
+    pip install "slidev-videos[depth] @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.5.0"   # + depth maps for photo places
+
+What changed between releases: [CHANGELOG.md](CHANGELOG.md).
 
 ## The player (`slidev-addon-videos`)
 
