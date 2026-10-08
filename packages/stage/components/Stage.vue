@@ -367,19 +367,20 @@ onUnmounted(() => {
 }
 /* the paper texture is fine detail an encoder smears; a broadcast frame goes without it */
 html[data-stage-look="broadcast"] .grain { display: none; }
-/* stop HUD: record left, figure right; sizes in px against the 980-wide canvas */
-.hud { position: absolute; inset: 0; display: grid; grid-template-columns: 340px 1fr; gap: 24px; padding: 60px 44px 48px; align-items: start; pointer-events: none; }
+/* stop HUD: record left, figure right; sizes in px against the 980-wide canvas,
+   scaled and floored like the CSS kit's (--stage-type-scale, --stage-type-min) */
+.hud { position: absolute; inset: 0; display: grid; grid-template-columns: 340px 1fr; gap: 24px; padding: 60px max(44px, var(--stage-safe-x, 0px)) 48px; align-items: start; pointer-events: none; }
 .hud-card { align-self: end; }
-.hud-name { font-size: 36px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.05; margin: 2px 0 12px; }
-.hud-rows { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0; font-size: 15px; line-height: 1.4; }
-.hud-rows dt { color: var(--dim); text-transform: uppercase; letter-spacing: 0.12em; font-size: 12px; padding-top: 3px; }
+.hud-name { font-size: max(var(--stage-type-min, 0px), 36px * var(--stage-type-scale, 1)); font-weight: 700; letter-spacing: -0.01em; line-height: 1.05; margin: 2px 0 12px; }
+.hud-rows { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0; font-size: max(var(--stage-type-min, 0px), 15px * var(--stage-type-scale, 1)); line-height: 1.4; }
+.hud-rows dt { color: var(--dim); text-transform: uppercase; letter-spacing: 0.12em; font-size: max(var(--stage-type-min, 0px), 12px * var(--stage-type-scale, 1)); padding-top: 3px; }
 .hud-rows dd { margin: 0; color: var(--fg); }
 .hud-figure { justify-self: end; align-self: start; max-width: 560px; background: rgba(var(--stage-bg-rgb, 5, 5, 7), 0.78); }
 /* Figure height budget: the grid row is 551 − 60 − 48 = 443 px; kicker (20)
    + image + `see` (two lines, 50) + panel padding (38) must fit, or the row
    grows past the frame and clips both the `see` line and the record's last row. */
 .space-figure { display: block; max-width: 100%; max-height: 320px; border-radius: 6px; background: #fff; opacity: 0.94; }
-.hud-see { margin: 10px 0 0; font-size: 14px; line-height: 1.4; color: var(--fg); max-width: 100%; }
+.hud-see { margin: 10px 0 0; font-size: max(var(--stage-type-min, 0px), 14px * var(--stage-type-scale, 1)); line-height: 1.4; color: var(--fg); max-width: 100%; }
 .hud-enter-active, .hud-leave-active { transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
 .hud-enter-from, .hud-leave-to { opacity: 0; transform: translateY(8px); }
 </style>

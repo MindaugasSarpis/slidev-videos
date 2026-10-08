@@ -27,8 +27,8 @@ defineProps({
   font-family: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 .stage-kicker {
-  margin: 0 0 8px; font-size: 11px; font-weight: 500;
+  margin: 0 0 8px; font-size: max(var(--stage-type-min, 0px), 11px * var(--stage-type-scale, 1)); font-weight: 500;
   color: var(--stage-accent, #7dd3fc); text-transform: uppercase; letter-spacing: 0.14em;
 }
-.stage-kicker.plain { text-transform: none; letter-spacing: 0.04em; font-size: 12px; }
+.stage-kicker.plain { text-transform: none; letter-spacing: 0.04em; font-size: max(var(--stage-type-min, 0px), 12px * var(--stage-type-scale, 1)); }
 </style>

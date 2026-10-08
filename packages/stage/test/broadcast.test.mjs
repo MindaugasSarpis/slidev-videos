@@ -47,3 +47,11 @@ test('the ground is lifted toward the accent, in its own hue', () => {
   assert.equal(vars['--stage-dust'], PALETTES.blue.dust);
   assert.equal(vars['--stage-nebula'], PALETTES.blue.nebula);
 });
+
+test('every type size of the CSS kit follows the scale and the floor', () => {
+  const css = readFileSync(here('../styles/index.css'), 'utf8');
+  const sizes = [...css.matchAll(/font-size:\s*([^;!]+)/g)].map((m) => m[1].trim());
+  assert.ok(sizes.length > 20);
+  for (const s of sizes) assert.match(s, /^max\(var\(--stage-type-min, 0px\), [\d.]+px \* var\(--stage-type-scale, 1\)\)$/, s);
+  assert.match(css, /html\[data-stage-look="broadcast"\] \{[^}]*--stage-type-min: 16px/);
+});
