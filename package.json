@@ -20,7 +20,7 @@
   "devDependencies": {
     "@slidev/cli": "^52.1.0",
     "@slidev/theme-default": "0.25.0",
-    "playwright-chromium": "^1.49.0"
+    "playwright-chromium": "~1.59.1"
   },
   "pnpm": {
     "onlyBuiltDependencies": ["playwright-chromium"]
