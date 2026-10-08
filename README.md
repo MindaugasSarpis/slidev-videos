@@ -159,9 +159,9 @@ on an offline HTTPS probe, as the static Linux builds do, and among the builds
 it finds on its own it prefers one with NVENC. Each build is probed once; the
 result is cached in `~/.cache/slidev-videos/tools.json` until the binary
 changes. Choosing a binary does not change how it encodes: `encode` still
-test-encodes `h264_nvenc` on the chosen ffmpeg to decide between NVENC and
-libx264. `slidev-videos doctor` shows the pair in use, the ones passed over
-and why.
+test-encodes `h264_nvenc`, with the web tier's rate-control options, on the
+chosen ffmpeg to decide between NVENC and libx264. `slidev-videos doctor`
+shows the pair in use, the ones passed over and why.
 
 Manifest (`videos/manifest.toml`) entries:
 
@@ -171,6 +171,13 @@ Manifest (`videos/manifest.toml`) entries:
     used_in = ["L01"]
     trim    = ["0:20", "1:50"]    # optional; remux trims on keyframes
     notes   = "what it shows"
+
+A web profile is one quality target for both encoders. On NVENC its `-cq`
+is set to match or beat libx264 `-preset slow` at the profile's `-crf` on
+SSIM and XPSNR (see `WEB_PROFILES` in `pipeline.py` for the measurement).
+`encode` skips a clip whose web file is newer than its raw, so a change of
+profile settings reaches a clip only when it is re-encoded (a newer raw, or
+`encode --force`).
 
 ## The shared library
 

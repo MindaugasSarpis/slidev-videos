@@ -185,7 +185,9 @@ def _auto_release_tag(prefix: str) -> str:
 # Profiles are quality *targets* (constant-quality number + bitrate ceiling +
 # audio policy); the concrete ffmpeg args are built per selected encoder:
 #   nvenc  GPU hardware encode (RTX). `-rc vbr -cq N -b:v 0` = constant-quality
-#          VBR. ~1-2 orders of magnitude faster than libx26x preset slow.
+#          VBR. ~1-2 orders of magnitude faster than libx26x preset slow. NVENC
+#          needs a higher number than libx264 for the same quality, so a web
+#          profile's cq and crf differ (see WEB_PROFILES).
 #   cpu    libx264 (web) / libx265 (HQ) preset slow — the graceful fallback for
 #          machines/CI without a working NVENC.
 #
@@ -196,20 +198,24 @@ def _auto_release_tag(prefix: str) -> str:
 
 
 @functools.lru_cache(maxsize=None)
-def _encodes_with(ffmpeg: str, codec: str) -> bool:
+def _encodes_with(ffmpeg: str, codec: str, *extra: str) -> bool:
     probe = subprocess.run(
         [ffmpeg, "-hide_banner", "-loglevel", "error",
          "-f", "lavfi", "-i", "testsrc2=size=256x144:rate=30:duration=1",
-         "-c:v", codec, "-f", "null", "-"],
+         "-c:v", codec, *extra, "-f", "null", "-"],
         capture_output=True,
     )
     return probe.returncode == 0
 
 
 def nvenc_available() -> bool:
-    """True iff h264_nvenc actually *encodes* here (compiled-in != runtime-ok)."""
+    """True iff h264_nvenc actually *encodes* here (compiled-in != runtime-ok).
+
+    The test encode carries the web tier's rate-control options, so a GPU
+    that cannot run them falls back to the CPU instead of failing the encode.
+    """
     ffmpeg = _tools().ffmpeg
-    return bool(ffmpeg) and _encodes_with(ffmpeg, "h264_nvenc")
+    return bool(ffmpeg) and _encodes_with(ffmpeg, "h264_nvenc", *NVENC_WEB_TUNING)
 
 
 def videotoolbox_available() -> bool:
@@ -248,12 +254,26 @@ def select_encoder(entry_encoder: str | None) -> str:
 
 # Web H.264 quality targets: nvenc -cq / libx264 -crf, -maxrate/-bufsize
 # streaming ceiling, audio bitrate (None = -an).
+#
+# Each nvenc cq is set so that NVENC, with NVENC_WEB_TUNING, matches or beats
+# libx264 -preset slow at the same profile's crf on both SSIM and XPSNR.
+# Measured 2026-10-08 on an RTX 5080 with seven lossless cuts from the raw
+# bank (two from the LHCb reel, a noisy 60 fps clip, four animated plots): it
+# held in all 28 profile/cut pairs, and the files came out at 0.69-0.83x the
+# total size of the old values (cq 23/27/25/20 without the tuning), still
+# 1.45-1.7x libx264's. One cq step higher falls short on a plot.
 WEB_PROFILES: dict[str, dict] = {
-    "standard":       {"cq": 23, "crf": 23, "maxrate": "6M",    "bufsize": "12M", "audio": "128k"},
-    "standard-tight": {"cq": 27, "crf": 26, "maxrate": "3500k", "bufsize": "7M",  "audio": "128k"},
-    "silent-loop":    {"cq": 25, "crf": 24, "maxrate": "5M",    "bufsize": "10M", "audio": None},
-    "high-motion":    {"cq": 20, "crf": 22, "maxrate": "8M",    "bufsize": "16M", "audio": "192k"},
+    "standard":       {"cq": 27, "crf": 23, "maxrate": "6M",    "bufsize": "12M", "audio": "128k"},
+    "standard-tight": {"cq": 30, "crf": 26, "maxrate": "3500k", "bufsize": "7M",  "audio": "128k"},
+    "silent-loop":    {"cq": 28, "crf": 24, "maxrate": "5M",    "bufsize": "10M", "audio": None},
+    "high-motion":    {"cq": 25, "crf": 22, "maxrate": "8M",    "bufsize": "16M", "audio": "192k"},
 }
+# Full-resolution second pass plus 20 frames of rate-control lookahead: about
+# 8% more encoder CPU, and what keeps the plots at libx264's quality at the
+# higher cq.
+# Spatial AQ was tried and left out: 2-31% larger files, and lower SSIM and
+# XPSNR on a plot.
+NVENC_WEB_TUNING = ("-multipass", "fullres", "-rc-lookahead", "20")
 # HQ master HEVC quality target (visually lossless): nvenc -cq / libx265 -crf.
 HQ_CQ, HQ_CRF = 18, 16
 PROFILE_NAMES = {"remux", "hq-visually-lossless", *WEB_PROFILES}
@@ -266,7 +286,7 @@ def _scale(long_edge: int) -> list[str]:
 def _web_args(spec: dict, long_edge: int, encoder: str) -> list[str]:
     if encoder == "nvenc":
         v = ["-c:v", "h264_nvenc", "-preset", "p5", "-tune", "hq",
-             "-rc", "vbr", "-cq", str(spec["cq"]), "-b:v", "0",
+             "-rc", "vbr", "-cq", str(spec["cq"]), "-b:v", "0", *NVENC_WEB_TUNING,
              "-profile:v", "high", "-pix_fmt", "yuv420p"]
     else:
         v = ["-c:v", "libx264", "-preset", "slow", "-crf", str(spec["crf"]),
