@@ -13,7 +13,8 @@
 // world is drawn with its clock held, CSS animations are finished, and the
 // page is photographed. One NDJSON line per frame goes to <out-dir>/shots.ndjson
 // (--json elsewhere). Exit 0: clean; 3: overflow, page errors, failed requests,
-// failed or unsettled frames; 1: the run itself failed; 2: bad arguments.
+// failed or unsettled frames; 1: the run itself failed; 2: bad arguments;
+// 128 + n: stopped by signal n.
 // See the README's "Headless review" for every option and the report fields.
 //
 // Needs playwright-chromium, found next to this file or in the working
@@ -21,10 +22,11 @@
 // sessions on one machine take turns instead of thrashing the CPU.
 import { createServer } from 'node:http';
 import { readFile, stat, mkdir, writeFile, appendFile, readdir, open } from 'node:fs/promises';
-import { readFileSync, statSync, existsSync, realpathSync, appendFileSync } from 'node:fs';
+import { readFileSync, statSync, existsSync, realpathSync, writeFileSync } from 'node:fs';
 import { join, extname, resolve, dirname, relative, sep } from 'node:path';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
+import { constants as osConstants } from 'node:os';
 import { spawn, spawnSync } from 'node:child_process';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
@@ -142,7 +144,7 @@ export const USAGE = `usage: slidev-stage-shots <dist> <out-dir> [options]
   --dev DECK.md        start slidev's dev server on a free port and photograph that
   --lock FILE          the shared lock (default ${LOCK}); --no-lock: none
 
-exit: 0 clean · 3 overflow, page errors, failed requests, failed or unsettled frames · 1 the run failed · 2 bad arguments`;
+exit: 0 clean · 3 overflow, page errors, failed requests, failed or unsettled frames · 1 the run failed · 2 bad arguments · 128+n stopped by signal n`;
 
 export function parseArgs(argv) {
   const o = {
@@ -228,21 +230,41 @@ function lockedByAncestor(lock) {
 
 const onPath = (bin) => (process.env.PATH || '').split(':').map((d) => join(d, bin)).find((f) => existsSync(f)) || null;
 
-// Run this command again under flock(1), unless the lock is ours already.
-// → the child's exit code, or null: go ahead here.
-async function relaunchLocked(o, argv) {
-  if (!o.lock || process.env.SLIDEV_STAGE_SHOTS_LOCKED === o.lock) return null;
+export const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+export const signalCode = (sig) => 128 + (osConstants.signals[sig] ?? 0);   // 130, 143, 129
+
+// Take the lock for as long as this process lives, unless it is ours already.
+// flock(1) takes it for a helper that waits on a pipe from this process; the
+// pipe closes when this process ends, however it ends, and the helper lets
+// the lock go. The run itself stays in this process, so a signal sent to it
+// reaches the run. A signal while waiting ends the wait and the process.
+// → release(), a no-op when there was nothing to take.
+async function holdLock(o) {
+  const none = () => {};
+  if (!o.lock || process.env.SLIDEV_STAGE_SHOTS_LOCKED === o.lock) return none;
   const held = lockedByAncestor(o.lock);
-  if (held) return null;
+  if (held) return none;
   const flock = onPath('flock');
-  if (!flock || held === null) { console.error(`note: running without the shared lock (${flock ? 'no /proc/locks' : 'no flock(1) on PATH'})`); return null; }
+  if (!flock || held === null) { console.error(`note: running without the shared lock (${flock ? 'no /proc/locks' : 'no flock(1) on PATH'})`); return none; }
   if (spawnSync(flock, ['-n', o.lock, 'true']).status !== 0) console.error(`waiting for ${o.lock}: another slidev-stage-shots run holds it`);
-  const child = spawn(flock, [o.lock, process.execPath, fileURLToPath(import.meta.url), ...argv], {
-    stdio: 'inherit', env: { ...process.env, SLIDEV_STAGE_SHOTS_LOCKED: o.lock },
-  });
-  const pass = (sig) => () => child.kill(sig);
-  process.on('SIGINT', pass('SIGINT')); process.on('SIGTERM', pass('SIGTERM'));
-  return new Promise((ok) => child.on('exit', (code) => ok(code ?? 1)));
+  // in its own process group: a Ctrl-C meant for this run does not free the
+  // lock before the run has closed its browser
+  const helper = spawn(flock, [o.lock, 'sh', '-c', 'echo held; exec cat >/dev/null'], { stdio: ['pipe', 'pipe', 'inherit'], detached: true });
+  const quit = (sig) => { try { process.kill(-helper.pid, 'SIGTERM'); } catch { /* gone */ } process.exit(signalCode(sig)); };
+  for (const s of SIGNALS) process.on(s, quit);
+  try {
+    await new Promise((ok, fail) => {
+      helper.stdout.once('data', ok);
+      helper.once('error', fail);
+      helper.once('exit', (code) => fail(new Error(`flock exited (${code}) before it took ${o.lock}`)));
+    });
+  } finally { for (const s of SIGNALS) process.off(s, quit); }
+  helper.removeAllListeners('exit');
+  helper.on('error', () => {}); helper.stdin.on('error', () => {});
+  helper.stdout.destroy();
+  helper.unref(); helper.stdin.unref();
+  process.env.SLIDEV_STAGE_SHOTS_LOCKED = o.lock;
+  return () => { helper.stdin.end(); };
 }
 
 // ---- the browser ------------------------------------------------------------------------------
@@ -278,7 +300,8 @@ async function launch(chromium, gl) {
     const [name, args] = tries[i];
     const last = i === tries.length - 1;
     let browser;
-    try { browser = await chromium.launch({ args: [...args, ...extra] }); } catch (e) { if (last) throw e; continue; }
+    // signals are the run's to handle (see shoot); Playwright still kills the browser if the process exits first
+    try { browser = await chromium.launch({ args: [...args, ...extra], handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false }); } catch (e) { if (last) throw e; continue; }
     const renderer = await rendererOf(browser);
     if (last || (renderer && !/swiftshader/i.test(renderer))) return { browser, renderer, gl: name };
     await browser.close();
@@ -844,8 +867,9 @@ const freePort = () => new Promise((ok, fail) => {
 });
 
 // slidev's dev server for a deck, on a free port; stopped by its process
-// group's id, never by a name pattern.
-async function startDev(deck) {
+// group's id, never by a name pattern. `onStart` gets the stop at once, so a
+// run stopped while slidev starts stops it too.
+async function startDev(deck, onStart = () => {}) {
   const file = resolve(deck), dir = dirname(file);
   const bin = findUp(dir, join('node_modules', '.bin', 'slidev'));
   if (!bin) throw new Error(`--dev: no slidev in ${dir}/node_modules/.bin or above it`);
@@ -859,6 +883,7 @@ async function startDev(deck) {
     try { process.kill(-child.pid, 'SIGTERM'); } catch { /* gone */ }
     setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch { /* gone */ } }, 3000).unref();
   };
+  onStart(stop);
   const url = `http://localhost:${port}/`;
   const t0 = Date.now();
   for (;;) {
@@ -872,29 +897,44 @@ async function startDev(deck) {
 
 // ---- the run --------------------------------------------------------------------------------------
 
-export async function shoot(o, log = console.log) {
+export async function shoot(o, logTo = console.log) {
+  const log = (...a) => { if (!stopped) logTo(...a); };   // quiet once a signal has stopped the run
   o.outDir = resolve(o.out);
   await mkdir(o.outDir, { recursive: true });
   const report = resolve(o.json || join(o.outDir, 'shots.ndjson'));
   await writeFile(report, '');
   const records = [];
-  const emit = async (r) => { records.push(r); await appendFile(report, `${JSON.stringify(r)}\n`); };
-  const cleanup = [];
-  const done = async () => { for (const f of cleanup.reverse()) { try { await f(); } catch { /* best effort */ } } };
-  const onSignal = (sig) => {
-    try { appendFileSync(report, `${JSON.stringify({ fatal: `stopped by ${sig}` })}\n`); } catch { /* best effort */ }
-    done().finally(() => process.exit(130));
+  let renderer = null, gl = null, fatal = null, stopped = null, writing = Promise.resolve();
+  // in slide order, the fatal line (if any) last
+  const lines = (f) => [...records].sort(byFrame).map((r) => `${JSON.stringify(r)}\n`).join('') + (f ? `${JSON.stringify({ fatal: f.slice(0, 2000), renderer })}\n` : '');
+  const emit = (r) => {
+    if (stopped) return writing;
+    records.push(r);
+    return (writing = writing.then(() => appendFile(report, `${JSON.stringify(r)}\n`)).catch(() => {}));
   };
-  process.once('SIGINT', onSignal); process.once('SIGTERM', onSignal);
+  const cleanup = [];
+  let closing = null;
+  const done = () => (closing ??= (async () => { for (const f of [...cleanup].reverse()) { try { await f(); } catch { /* best effort */ } } })());
+  // A signal ends the run where it stands: the report is written at once with
+  // the frames so far and a fatal line last, the browser (and slidev dev) is
+  // closed, and the process exits 128 + n. A second signal does not wait.
+  const onSignal = (sig) => {
+    if (stopped) process.exit(signalCode(sig));
+    stopped = sig;
+    console.error(`\nstopped by ${sig}; report ${report}`);
+    const write = () => { try { writeFileSync(report, lines(`stopped by ${sig}`)); } catch { /* best effort */ } };
+    write();
+    setTimeout(() => process.exit(signalCode(sig)), 15000);
+    Promise.allSettled([writing, done()]).then(() => { write(); process.exit(signalCode(sig)); });
+  };
+  for (const s of SIGNALS) process.on(s, onSignal);
   const T0 = Date.now();
-  let renderer = null, gl = null, fatal = null;
   try {
     const { chromium } = loadPlaywright();
     // where the deck is
     let url, dist = null;
     if (o.dev) {
-      const dev = await startDev(o.dev);
-      cleanup.push(dev.stop);
+      const dev = await startDev(o.dev, (stop) => cleanup.push(stop));
       url = dev.url;
       log(`slidev dev on ${url} (pid ${dev.pid})`);
     } else {
@@ -938,6 +978,7 @@ export async function shoot(o, log = console.log) {
     for (let i = 1; i < runs.length; i++) pages.push(await new Deck(launched.browser, o, url, renderer).open());
     const runSlides = async (deck, list) => {
       for (const n of list) {
+        if (stopped) return;
         try {
           if (deck.page.isClosed()) deck = await new Deck(launched.browser, o, url, renderer).open();
           if (!(await deck.go(n, 0))) throw new Error(`slide ${n} did not appear`);
@@ -951,7 +992,7 @@ export async function shoot(o, log = console.log) {
           }
           const ks = clicksFor(o, n, !o.clickMap && o.clicks !== 'none' ? await deck.clicksTotal(n) : 0);
           for (const k of ks) {
-            for (let b = 0; b < o.burst; b++) {
+            for (let b = 0; b < o.burst && !stopped; b++) {
               const rec = { slide: n, click: k, ...(o.burst > 1 ? { burst: b } : {}), frame: frameName(n, k, o.burst > 1 ? b : 0) };
               try {
                 if (b === 0 && !(await deck.go(n, k))) throw new Error(`click ${k} of slide ${n} did not come`);
@@ -997,14 +1038,15 @@ export async function shoot(o, log = console.log) {
     }
   } catch (e) {
     fatal = String(e.message || e);
-    await appendFile(report, `${JSON.stringify({ fatal: fatal.slice(0, 2000), renderer })}\n`).catch(() => {});
+    if (!stopped) await appendFile(report, `${JSON.stringify({ fatal: fatal.slice(0, 2000), renderer })}\n`).catch(() => {});
   } finally {
     await done();
-    process.removeListener('SIGINT', onSignal); process.removeListener('SIGTERM', onSignal);
   }
-  // in slide order, the fatal line (if any) last
+  if (stopped) await new Promise(() => {});   // the signal's path writes the report and ends the process
+  for (const s of SIGNALS) process.off(s, onSignal);
+  await writing;
+  await writeFile(report, lines(fatal));
   const sorted = [...records].sort(byFrame);
-  await writeFile(report, sorted.map((r) => `${JSON.stringify(r)}\n`).join('') + (fatal ? `${JSON.stringify({ fatal: fatal.slice(0, 2000), renderer })}\n` : ''));
   const problems = sorted.map((r) => [r.frame ?? frameName(r.slide), problemsOf(r)]).filter(([, p]) => p.length);
   return { records: sorted, renderer, gl, report, fatal, problems, ms: Date.now() - T0, code: fatal ? 1 : problems.length ? 3 : 0 };
 }
@@ -1015,10 +1057,9 @@ export async function main(argv = process.argv.slice(2)) {
   const o = parseArgs(argv);
   if (o.help) { console.log(USAGE); return 0; }
   if (o.errors.length) { console.error(`${o.errors.join('\n')}\n\n${USAGE}`); return 2; }
-  const relaunched = await relaunchLocked(o, argv);
-  if (relaunched !== null) return relaunched;
-  let res;
-  try { res = await shoot(o); } catch (e) { console.error(e.message || e); return 1; }
+  let release, res;
+  try { release = await holdLock(o); } catch (e) { console.error(e.message || e); return 1; }
+  try { res = await shoot(o); } catch (e) { console.error(e.message || e); return 1; } finally { release(); }
   const frames = res.records.filter((r) => r.png || r.unchanged).length;
   if (res.problems.length) {
     console.log(`\n${res.problems.length} frame(s) with problems:`);

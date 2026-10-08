@@ -16,9 +16,14 @@
 //   9. slidev-stage-shots settles each frame: the camera has landed, the form
 //      has gathered, the guard kept the full pixel ratio and dust, and a clean
 //      deck exits 0; --changed keeps a frame whose public files were only
-//      copied again (new times, the same bytes).
+//      copied again (new times, the same bytes);
+//  10. SIGTERM to the process that was started stops the whole run: the
+//      browser and the lock's helper are gone, the report ends in a fatal
+//      line, the exit is 143.
 // Every assertion polls for the state it expects, so a slow runner is only slow.
-import { mkdtemp, rm, cp, readdir, utimes } from 'node:fs/promises'
+import { mkdtemp, rm, cp, readdir, utimes, readFile } from 'node:fs/promises'
+import { readFileSync, readdirSync } from 'node:fs'
+import { spawn, spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from 'playwright-chromium'
@@ -227,6 +232,53 @@ for (const e of await readdir(dist, { recursive: true, withFileTypes: true })) {
 const again = await shoot(parseArgs([dist, shots, '--slides', '2,4', '--changed', '--no-lock']), () => {})
 check('--changed keeps frames whose files were only copied again', again.records.length === 2 && again.records.every((r) => r.unchanged) && again.code === 0,
   again.fatal || again.records.map((r) => `${r.frame}: unchanged=${!!r.unchanged}`).join(' | '))
+
+// SIGTERM to the process that was started, while it photographs; it takes a
+// lock of its own, so the lock's helper is part of what must go
+const procs = () => {
+  const out = new Map()
+  for (const p of readdirSync('/proc').filter((p) => /^\d+$/.test(p))) {
+    try {
+      const s = readFileSync(`/proc/${p}/stat`, 'utf8'), f = s.slice(s.lastIndexOf(')') + 2).split(' ')
+      out.set(Number(p), { state: f[0], ppid: Number(f[1]), start: f[19] })
+    } catch { /* gone */ }
+  }
+  return out
+}
+const descendants = (root) => {
+  const all = procs(), found = []
+  const walk = (pid) => {
+    for (const [p, v] of all) {
+      if (v.ppid !== pid) continue
+      let cmd = ''
+      try { cmd = readFileSync(`/proc/${p}/cmdline`, 'utf8').split('\0')[0] } catch { /* gone */ }
+      found.push({ pid: p, start: v.start, cmd })
+      walk(p)
+    }
+  }
+  walk(root)
+  return found
+}
+const living = (list) => { const all = procs(); return list.filter(({ pid, start }) => all.get(pid)?.start === start && all.get(pid).state !== 'Z') }
+const lock = join(out, 'lock'), sigOut = join(out, 'sig')
+const run = spawn(process.execPath, [new URL('../bin/shots.mjs', import.meta.url).pathname, dist, sigOut, '--slides', '1-4', '--lock', lock],
+  { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, SLIDEV_STAGE_SHOTS_LOCKED: '' } })
+let runLog = ''
+run.stdout.on('data', (d) => { runLog += d }); run.stderr.on('data', (d) => { runLog += d })
+const exited = new Promise((ok) => run.on('exit', (code, signal) => ok({ code, signal })))
+const waitFor = async (pred, ms) => { const t0 = Date.now(); while (!pred() && Date.now() - t0 < ms) await new Promise((r) => setTimeout(r, 100)); return pred() }
+await waitFor(() => /booted/.test(runLog), 90000)
+const tree = descendants(run.pid)
+const browserUp = tree.some((p) => /chrom/i.test(p.cmd)) && tree.some((p) => /flock$/.test(p.cmd))
+run.kill('SIGTERM')
+const ended = await exited
+await waitFor(() => living(tree).length === 0, 10000)
+const left = living(tree)
+const lockFree = await waitFor(() => spawnSync('flock', ['-n', lock, 'true']).status === 0, 5000)
+const last = (await readFile(join(sigOut, 'shots.ndjson'), 'utf8').catch(() => '')).trim().split('\n').at(-1)
+check('SIGTERM to the run stops all of it', browserUp && ended.code === 143 && !left.length && lockFree && JSON.parse(last || '{}').fatal === 'stopped by SIGTERM',
+  `exit ${JSON.stringify(ended)}, ${tree.length} process(es) under it (browser and lock helper: ${browserUp}), ${left.length} left, lock ${lockFree ? 'free' : 'held'}, last line ${last}`)
+for (const { pid } of left) { try { process.kill(pid, 'SIGKILL') } catch { /* gone */ } }
 
 await rm(out, { recursive: true, force: true })
 if (failures) { console.error(`${failures} smoke failure(s)`); process.exit(1) }

@@ -1,10 +1,11 @@
 // node --test test/   — what can be held to account without a browser.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { mkdtemp, mkdir, writeFile, utimes, rename, rm } from 'node:fs/promises';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtemp, mkdir, writeFile, utimes, rename, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawn, spawnSync } from 'node:child_process';
 import { CORE_TYPES, PLUGIN_TYPES, anchorIds } from '../stage/types.js';
 import { resolvePalette, PALETTES, DEFAULT_PALETTE, hexToRgb, rgbTriplet, paletteVars, definePalette } from '../stage/palette.js';
 import { checkStage, readStageConfig, deckPoses } from '../bin/check.mjs';
@@ -294,4 +295,82 @@ test('--changed keys public files by their bytes, not their time', async () => {
     await rename(join(dist, 'assets', 'index-a1.css'), join(dist, 'assets', 'index-b2.css'));   // restyled
     assert.notEqual(await key(), k2);
   } finally { await rm(dist, { recursive: true, force: true }); }
+});
+
+// ---- signals: what the process the caller started does with them -----------------------
+// No browser: a deck under --dev whose slidev starts and never answers keeps
+// the run busy, holding a private lock, until the signal comes.
+const SHOTS = new URL('../bin/shots.mjs', import.meta.url).pathname;
+const hasFlock = spawnSync('flock', ['--version']).status === 0;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const alive = (pid) => { try { return !/^\d+ \(.*\) Z/.test(readFileSync(`/proc/${pid}/stat`, 'utf8')); } catch { return false; } };
+const lockFree = (lock) => spawnSync('flock', ['-n', lock, 'true']).status === 0;
+// the flock(1) processes on a lock file
+const flocksOn = (file) => readdirSync('/proc').filter((p) => /^\d+$/.test(p)).filter((p) => {
+  try { const a = readFileSync(`/proc/${p}/cmdline`, 'utf8').split('\0'); return /(^|\/)flock$/.test(a[0]) && a.includes(file); } catch { return false; }
+});
+const until = async (pred, ms = 10000) => { const t0 = Date.now(); while (!(await pred()) && Date.now() - t0 < ms) await sleep(50); return pred(); };
+
+async function busyRun(dir, lock) {
+  await mkdir(join(dir, 'node_modules', '.bin'), { recursive: true });
+  await writeFile(join(dir, 'node_modules', '.bin', 'slidev'), `#!/bin/sh\necho $$ > "${dir}/slidev.pid"\nexec sleep 600\n`, { mode: 0o755 });
+  await writeFile(join(dir, 'deck.md'), '# deck\n');
+  const run = spawn(process.execPath, [SHOTS, '--dev', join(dir, 'deck.md'), join(dir, 'out'), '--lock', lock], {
+    stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, SLIDEV_STAGE_SHOTS_LOCKED: '' },
+  });
+  run.log = '';
+  run.stdout.on('data', (d) => { run.log += d; }); run.stderr.on('data', (d) => { run.log += d; });
+  run.exited = new Promise((ok) => run.on('exit', (code, signal) => ok({ code, signal })));
+  return run;
+}
+
+// the fake slidev's pid once it has written it whole, else 0
+const slidevPid = (dir) => { try { const n = Number(readFileSync(join(dir, 'slidev.pid'), 'utf8').trim()); return n > 1 ? n : 0; } catch { return 0; } };
+
+// a failed test leaves nothing behind either
+async function cleanUp(run, dir) {
+  run.kill('SIGKILL');
+  const pid = slidevPid(dir);
+  if (pid) try { process.kill(-pid, 'SIGKILL'); } catch { /* gone */ }
+  await rm(dir, { recursive: true, force: true });
+}
+
+for (const [sig, code] of [['SIGTERM', 143], ['SIGINT', 130]]) {
+  test(`${sig} to the run stops it: the report ends in a fatal line, slidev and the lock are let go`, { skip: !hasFlock && 'no flock(1)' }, async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'shots-sig-'));
+    const lock = join(dir, 'lock');
+    const run = await busyRun(dir, lock);
+    try {
+      assert.ok(await until(() => slidevPid(dir)), `slidev never started:\n${run.log}`);
+      const slidev = slidevPid(dir);
+      assert.ok(!lockFree(lock), 'the run holds the lock');
+      assert.equal(flocksOn(lock).length, 1, 'one flock(1) helper holds it');
+      run.kill(sig);
+      assert.deepEqual(await run.exited, { code, signal: null }, run.log);
+      const lines = (await readFile(join(dir, 'out', 'shots.ndjson'), 'utf8')).trim().split('\n');
+      assert.deepEqual(JSON.parse(lines.at(-1)), { fatal: `stopped by ${sig}`, renderer: null });
+      assert.ok(await until(() => !alive(slidev)), 'slidev dev is left running');
+      assert.ok(await until(() => lockFree(lock)), 'the lock is still held');
+      assert.ok(await until(() => flocksOn(lock).length === 0), 'the flock(1) helper is left running');
+    } finally { await cleanUp(run, dir); }
+  });
+}
+
+test('a signal while waiting for the lock ends the wait and leaves nothing waiting', { skip: !hasFlock && 'no flock(1)' }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'shots-wait-'));
+  const lock = join(dir, 'lock');
+  const holder = spawn('flock', [lock, 'sleep', '60'], { stdio: 'ignore', detached: true });
+  let run = null;
+  try {
+    assert.ok(await until(() => !lockFree(lock)));
+    run = await busyRun(dir, lock);
+    assert.ok(await until(() => /waiting for/.test(run.log) && flocksOn(lock).length === 2), run.log);
+    run.kill('SIGTERM');
+    assert.deepEqual(await run.exited, { code: 143, signal: null });
+    assert.ok(await until(() => flocksOn(lock).length === 1), 'a flock(1) helper is left waiting');
+    assert.ok(!existsSync(join(dir, 'slidev.pid')), 'the run went ahead without the lock');
+  } finally {
+    try { process.kill(-holder.pid, 'SIGKILL'); } catch { /* gone */ }
+    if (run) await cleanUp(run, dir); else await rm(dir, { recursive: true, force: true });
+  }
 });

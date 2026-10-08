@@ -295,7 +295,16 @@ photograph offline.
 Every run holds `/tmp/slidev-stage-shots.lock` (`flock`) for its whole length,
 so runs from several sessions queue instead of slowing each other down. A run
 started inside `flock /tmp/slidev-stage-shots.lock …` sees that the lock is
-already its own and goes ahead.
+already its own and goes ahead; so does one whose environment says
+`SLIDEV_STAGE_SHOTS_LOCKED=/tmp/slidev-stage-shots.lock`. Otherwise a small
+`flock` helper takes the lock for the run and lets it go when the run's
+process ends, however it ends.
+
+The run stays in the process that was started, so Ctrl-C, or a `SIGTERM` or
+`SIGHUP` sent to that one process, stops all of it: the report is written with
+the frames so far and a `{ "fatal": "stopped by SIGTERM" }` line last, the
+browser (and `slidev dev`) is closed, and the exit code is 128 + the signal's
+number. A second signal does not wait for the browser to close.
 
 ### Exit codes
 
@@ -305,6 +314,7 @@ already its own and goes ahead.
 | 3 | a frame runs off the slide (more than 1 px), has page errors or failed same-origin requests, failed, or did not settle |
 | 1 | the run itself failed (no browser, no deck, a crash) |
 | 2 | bad arguments |
+| 130, 143, 129 | stopped by SIGINT, SIGTERM or SIGHUP |
 
 ### The report
 
@@ -328,7 +338,8 @@ run goes (a crash keeps what was photographed):
 | `error` | the frame failed; the run went on |
 
 `--probe` writes `{ slide, probe: true, fps, engineSecPerSec, dpr, dust, station }`
-per slide instead. A run that fails ends with a `{ "fatal": … }` line.
+per slide instead. A run that fails, or is stopped by a signal, ends with a
+`{ "fatal": … }` line.
 
 ### The probe
 
