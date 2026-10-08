@@ -2,10 +2,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { mkdtemp, mkdir, writeFile, utimes, rename, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { CORE_TYPES, PLUGIN_TYPES, anchorIds } from '../stage/types.js';
 import { resolvePalette, PALETTES, DEFAULT_PALETTE, hexToRgb, rgbTriplet, paletteVars, definePalette } from '../stage/palette.js';
 import { checkStage, readStageConfig, deckPoses } from '../bin/check.mjs';
-import { parseSlides, parseArgs, detectBase, clicksFor, frameName, parseProcLocks, problemsOf, split, serve } from '../bin/shots.mjs';
+import { parseSlides, parseArgs, detectBase, clicksFor, frameName, parseProcLocks, problemsOf, split, serve, staticKey } from '../bin/shots.mjs';
 
 const here = (p) => new URL(p, import.meta.url);
 const exampleSpace = JSON.parse(readFileSync(here('../example/public/data/space.json'), 'utf8'));
@@ -260,4 +263,35 @@ test('a deck is served under the base it was built for', async () => {
     assert.equal(await at('/repo/talk/data/missing.json'), 404);
     assert.equal(await at('/repo/talk/../../etc/passwd'), 404);
   } finally { server.close(); }
+});
+
+test('--changed keys public files by their bytes, not their time', async () => {
+  const dist = await mkdtemp(join(tmpdir(), 'shots-key-'));
+  try {
+    await mkdir(join(dist, 'assets')); await mkdir(join(dist, 'data'));
+    await writeFile(join(dist, 'index.html'), '<script src="/assets/index-a1.js"></script>');
+    await writeFile(join(dist, 'assets', 'index-a1.css'), 'x');
+    await writeFile(join(dist, 'data', 'space.json'), '{"stations":[]}');
+    await writeFile(join(dist, '_redirects'), '/* /index.html 200');
+    const clip = Buffer.alloc(300 << 10, 7);
+    await writeFile(join(dist, 'clip.mp4'), clip);
+    const o = parseArgs(['d', 'o']);
+    const key = () => staticKey(dist, o, 'r', 200 << 10);   // the clip counts as big: its size, first and last 64 KB
+    const k0 = await key();
+    // a rebuild copies public/ and writes _redirects again: the same bytes, new times
+    const later = new Date(Date.now() + 60000);
+    for (const f of ['data/space.json', '_redirects', 'clip.mp4', 'index.html']) await utimes(join(dist, f), later, later);
+    assert.equal(await key(), k0);
+    await writeFile(join(dist, 'index.html'), '<script src="/assets/index-b2.js"></script>');   // new chunk names: the slides' own business
+    assert.equal(await key(), k0);
+    await writeFile(join(dist, 'data', 'space.json'), '{"stations":[1]}');
+    const k1 = await key();
+    assert.notEqual(k1, k0);
+    clip[10] = 8;
+    await writeFile(join(dist, 'clip.mp4'), clip);
+    const k2 = await key();
+    assert.notEqual(k2, k1);
+    await rename(join(dist, 'assets', 'index-a1.css'), join(dist, 'assets', 'index-b2.css'));   // restyled
+    assert.notEqual(await key(), k2);
+  } finally { await rm(dist, { recursive: true, force: true }); }
 });

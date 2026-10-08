@@ -15,9 +15,10 @@
 //   8. nothing on the page threw;
 //   9. slidev-stage-shots settles each frame: the camera has landed, the form
 //      has gathered, the guard kept the full pixel ratio and dust, and a clean
-//      deck exits 0.
+//      deck exits 0; --changed keeps a frame whose public files were only
+//      copied again (new times, the same bytes).
 // Every assertion polls for the state it expects, so a slow runner is only slow.
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, cp, readdir, utimes } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from 'playwright-chromium'
@@ -200,9 +201,12 @@ await browser.close()
 server.close()
 
 // --- slidev-stage-shots ------------------------------------------------------------------
-// the two slides whose forms gather on arrival, from a cold start
+// the two slides whose forms gather on arrival, from a cold start, on a copy
+// of the build whose times the checks below may change
 const out = await mkdtemp(join(tmpdir(), 'stage-shots-'))
-const res = await shoot(parseArgs([DIST, out, '--slides', '2,4', '--no-lock']), () => {})
+const dist = join(out, 'dist'), shots = join(out, 'shots')
+await cp(DIST, dist, { recursive: true })
+const res = await shoot(parseArgs([dist, shots, '--slides', '2,4', '--changed', '--no-lock']), () => {})
 const recs = res.records.filter((r) => r.png)
 const brief = recs.map((r) => `${r.frame}: settled=${r.settled} ${r.settleMs} ms ${r.engineSec} engine-s flying=${r.flying} assembled=${r.assembled} dpr=${r.dpr} dust=${r.dust}/${r.dustTotal}`).join(' | ')
 check('shots photographs both slides', recs.length === 2 && !res.fatal, res.fatal || brief)
@@ -214,6 +218,16 @@ check('shots settles in seconds', recs.every((r) => r.settleMs < 20000), brief)
 check('shots reads the text on screen', recs.every((r) => r.wordsOnScreen > 0 && r.textBoxes.every((b) => b.fontPx > 0 && b.lumMean != null)), brief)
 check('shots exits 0 on a clean deck', res.code === 0, JSON.stringify(res.problems))
 console.log(`     renderer: ${res.renderer}`)
+
+// a rebuild copies public/ and writes _redirects again: new times, the same bytes
+const later = new Date(Date.now() + 60000)
+for (const e of await readdir(dist, { recursive: true, withFileTypes: true })) {
+  if (e.isFile()) await utimes(join(e.parentPath, e.name), later, later)
+}
+const again = await shoot(parseArgs([dist, shots, '--slides', '2,4', '--changed', '--no-lock']), () => {})
+check('--changed keeps frames whose files were only copied again', again.records.length === 2 && again.records.every((r) => r.unchanged) && again.code === 0,
+  again.fatal || again.records.map((r) => `${r.frame}: unchanged=${!!r.unchanged}`).join(' | '))
+
 await rm(out, { recursive: true, force: true })
 if (failures) { console.error(`${failures} smoke failure(s)`); process.exit(1) }
 console.log('STAGE SMOKE PASS')

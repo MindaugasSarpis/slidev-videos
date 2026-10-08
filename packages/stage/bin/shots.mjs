@@ -20,7 +20,7 @@
 // directory. Runs queue on a shared lock (/tmp/slidev-stage-shots.lock), so
 // sessions on one machine take turns instead of thrashing the CPU.
 import { createServer } from 'node:http';
-import { readFile, stat, mkdir, writeFile, appendFile, readdir } from 'node:fs/promises';
+import { readFile, stat, mkdir, writeFile, appendFile, readdir, open } from 'node:fs/promises';
 import { readFileSync, statSync, existsSync, realpathSync, appendFileSync } from 'node:fs';
 import { join, extname, resolve, dirname, relative, sep } from 'node:path';
 import { createRequire } from 'node:module';
@@ -722,10 +722,29 @@ async function shootFrame(deck, o, rec, { sec = null } = {}) {
   };
 }
 
+// A public file as --changed compares it: by its bytes, never its time (every
+// build copies public/ and writes _redirects afresh, the same bytes with a new
+// mtime). Up to `whole` bytes it is hashed whole; a bigger file (a clip) by
+// its size and its first and last 64 KB.
+export const WHOLE = 8 << 20;
+export async function fileKey(file, whole = WHOLE) {
+  const fh = await open(file);
+  try {
+    const { size } = await fh.stat();
+    const h = createHash('sha1');
+    if (size <= whole) h.update(await fh.readFile());
+    else {
+      const buf = Buffer.alloc(64 << 10);
+      for (const at of [0, size - buf.length]) h.update(buf.subarray(0, (await fh.read(buf, 0, buf.length, at)).bytesRead));
+    }
+    return `${size}:${h.digest('hex')}`;
+  } finally { await fh.close(); }
+}
+
 // The files a frame's look depends on besides its own slide: the built CSS
-// (content-hashed names), the public files (data/space.json …: size and
-// mtime), the tool's own settings.
-async function staticKey(dist, o, renderer) {
+// (content-hashed names), the public files (data/space.json …, by content),
+// the tool's own settings.
+export async function staticKey(dist, o, renderer, whole = WHOLE) {
   const files = [];
   const walk = async (d) => {
     for (const e of await readdir(d, { withFileTypes: true })) {
@@ -740,8 +759,7 @@ async function staticKey(dist, o, renderer) {
   for (const f of files) {
     const r = relative(dist, f);
     if (r.startsWith(`assets${sep}`) || r === 'index.html' || r === '404.html') continue;
-    const s = await stat(f);
-    pub.push(`${r}:${s.size}:${Math.round(s.mtimeMs)}`);
+    pub.push(`${r}:${await fileKey(f, whole)}`);
   }
   pub.sort();
   return JSON.stringify([VERSION, o.size, o.draft, o.seed, o.halo, o.settle, o.dust, o.burst, o.every, renderer, css, pub]);

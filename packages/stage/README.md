@@ -282,10 +282,13 @@ frame. `--draft` (device pixel ratio 0.5) draws a quarter of the pixels,
 A deck built for GitHub Pages (`--base /repo/talk/`) is served under that
 base. `--changed` keeps its hashes in `<out-dir>/.shots-cache.json`: each
 frame's markup and frontmatter, the built CSS file names, the public files
-(size and time) and the options. It does not see edits to builder code
-(`setup/*.js`): photograph without it after changing a form. A production
-build streams its clips from the release (the player is remote-first outside
-`slidev dev`); build with `VITE_VIDEOS_LOCAL_FIRST=1` to photograph offline.
+and the options. Public files count by their bytes, not their times, so a
+rebuild that copies them again changes nothing; a file over 8 MB (a clip)
+counts by its size and its first and last 64 KB. It does not see edits to
+builder code (`setup/*.js`): photograph without it after changing a form. A
+production build streams its clips from the release (the player is
+remote-first outside `slidev dev`); build with `VITE_VIDEOS_LOCAL_FIRST=1` to
+photograph offline.
 
 ### Shared machine
 
