@@ -37,6 +37,7 @@ Subcommands:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import functools
 import json
 import os
@@ -84,6 +85,12 @@ def _init_paths(project: "_config.Project") -> None:
     SLIDES_DIR = project.slides_dir
     repo = project.defaults.get("repo")
     GH_REPO_ARGS = ["--repo", repo] if repo else []
+
+
+def _forget_project() -> None:
+    """No videos.toml: a command that runs without one sees no project."""
+    global _PROJECT, _TOOLS
+    _PROJECT, _TOOLS = None, None
 
 
 def _tools() -> "_tools_mod.Tools":
@@ -546,6 +553,11 @@ def cmd_fetch(args: argparse.Namespace) -> int:
 # sync — pull raw files from Google Drive via rclone
 # ---------------------------------------------------------------------------
 
+def _rclone_progress() -> list[str]:
+    """--progress redraws in place on a terminal; in a log it repeats every block."""
+    return ["--progress"] if sys.stdout.isatty() else []
+
+
 def cmd_sync(args: argparse.Namespace) -> int:
     defaults, videos = load_manifest()
     remote = defaults.get("source_remote")
@@ -567,7 +579,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
     # Drive already stores an MD5, so the compare costs one API field per file
     # and the hash of anything we'd have transferred anyway. Cheap insurance
     # against presenting last week's edit. --quick opts back into size+modtime.
-    cmd = ["rclone", "sync", remote, str(RAW_DIR), "--progress", "--transfers", "4"]
+    cmd = ["rclone", "sync", remote, str(RAW_DIR), *_rclone_progress(), "--transfers", "4"]
     if not args.quick:
         cmd.append("--checksum")
     if not args.all:
@@ -1032,7 +1044,7 @@ def _rclone_from_raw(entries: list[VideoEntry], source_remote: str | None, dry_r
         # --checksum for the same reason as cmd_sync: a re-exported master can
         # keep its size and modtime, and these entries ARE the venue master —
         # a stale one plays on the wall.
-        rc = subprocess.call(["rclone", "copyto", src, str(dst), "--progress", "--checksum"])
+        rc = subprocess.call(["rclone", "copyto", src, str(dst), *_rclone_progress(), "--checksum"])
         if rc != 0:
             return rc
     return 0
@@ -1253,7 +1265,13 @@ def _slide_references() -> dict[str, list[str]]:
     return refs
 
 
-def cmd_check(_: argparse.Namespace) -> int:
+def _report(args: argparse.Namespace) -> dict:
+    """The machine-readable result a command fills in; `--json` prints it."""
+    return vars(args).setdefault("report", {})
+
+
+def cmd_check(args: argparse.Namespace) -> int:
+    report = _report(args)
     defaults, videos = load_manifest()
     _, shared_videos = load_shared_manifest()
     manifest_names = {v.name for v in videos}
@@ -1263,14 +1281,17 @@ def cmd_check(_: argparse.Namespace) -> int:
     hq_files = {p.name for p in HQ_DIR.glob("*") if p.is_file() and not p.name.startswith(".")}
     refs = _slide_references()
 
-    problems = 0
     infos: list[str] = []
+    found: list[dict] = []
+
+    def problem(kind: str, name: str, detail: str = "") -> None:
+        print(f"  {kind + ':':<18}{name}{detail}")
+        found.append({"kind": kind, "name": name, "detail": detail.strip()})
 
     # Unknown encoding profiles (would otherwise only surface at encode time).
     for v in videos:
         if v.profile not in PROFILE_NAMES:
-            print(f"  BAD PROFILE:      {v.name} -> {v.profile!r}")
-            problems += 1
+            problem("BAD PROFILE", v.name, f" -> {v.profile!r}")
 
     # Manifest entries with no local copy in ANY tier. Since the post-Yaga
     # cleanup (2026-07-18) empty local dirs are the steady state: a clip that
@@ -1287,8 +1308,7 @@ def cmd_check(_: argparse.Namespace) -> int:
                 f"not local, on release ({human_size(release_sizes[name])}) — videos:pull on demand: {name}"
             )
         else:
-            print(f"  MISSING LOCAL:    {name}  (no local copy, not on the release — videos:sync + encode + publish)")
-            problems += 1
+            problem("MISSING LOCAL", name, "  (no local copy, not on the release — videos:sync + encode + publish)")
     for name in sorted((manifest_names - raw_files) & (web_files | hq_files)):
         infos.append(f"raw not synced (encoded copy present): {name}")
 
@@ -1297,8 +1317,7 @@ def cmd_check(_: argparse.Namespace) -> int:
     for name in sorted(manifest_names & web_files):
         size = (WEB_DIR / name).stat().st_size
         if size > max_mb * 1024 * 1024:
-            print(f"  OVER BUDGET:      {name}  ({human_size(size)} > max_size_mb={max_mb})")
-            problems += 1
+            problem("OVER BUDGET", name, f"  ({human_size(size)} > max_size_mb={max_mb})")
 
     # Local files not declared by the talk OR the shared registry.
     # Shared-overlap files in any tier are valid (inherited copies pulled
@@ -1306,28 +1325,23 @@ def cmd_check(_: argparse.Namespace) -> int:
     # from both manifests.
     bank_names = bank_manifest_names(RAW_DIR, TALK)   # sibling talks' raws in a shared bank
     for name in sorted(raw_files - manifest_names - shared_names - bank_names):
-        print(f"  ORPHAN RAW:       {name}")
-        problems += 1
+        problem("ORPHAN RAW", name)
 
     for name in sorted(web_files - manifest_names - shared_names):
-        print(f"  ORPHAN WEB:       {name}")
-        problems += 1
+        problem("ORPHAN WEB", name)
 
     for name in sorted(hq_files - manifest_names - shared_names):
-        print(f"  ORPHAN HQ:        {name}")
-        problems += 1
+        problem("ORPHAN HQ", name)
 
     # Slide references not satisfied by the talk manifest OR the shared registry.
     for name in sorted(set(refs) - manifest_names - shared_names):
         where = ", ".join(sorted(set(refs[name])))
-        print(f"  UNKNOWN REF:      {name}  (in {where})")
-        problems += 1
+        problem("UNKNOWN REF", name, f"  (in {where})")
 
     # Manifest entries referenced nowhere.
     for v in videos:
         if v.name not in refs:
-            print(f"  UNUSED MANIFEST:  {v.name}")
-            problems += 1
+            problem("UNUSED MANIFEST", v.name)
 
     # Informational: deck refs satisfied ONLY by the shared registry
     # (i.e., not also in the talk manifest). Clips that appear in both are
@@ -1348,6 +1362,7 @@ def cmd_check(_: argparse.Namespace) -> int:
     # A `dust` transition colours its grains from a frame strip; without one
     # the clip quietly fades instead (it still plays).
     dust = _dust_references()
+    no_strip: list[str] = []
     if dust:
         index = _read_frames_index(_frames_dir())
         no_strip = sorted(n for n in dust if n not in index)
@@ -1358,6 +1373,17 @@ def cmd_check(_: argparse.Namespace) -> int:
             )
             infos.extend(f"  - {n}" for n in no_strip)
 
+    problems = len(found)
+    report.update({
+        "problems": found,
+        "talk_owned": sorted(manifest_names),
+        "inherited": inherited,
+        "also_in_shared": duplicated,
+        "referenced": sorted(refs),
+        "inherited_not_local": inherited_not_local,
+        "dust_without_strip": no_strip,
+        "info": infos,
+    })
     if problems == 0:
         owned = len(manifest_names)
         print(
@@ -2348,26 +2374,102 @@ def cmd_build(args: argparse.Namespace) -> int:
     return 0
 
 
+# Commands that answer `--json` with one object on stdout (text goes to stderr).
+JSON_COMMANDS = ("check", "preflight", "frames", "doctor")
+# Commands that run without a videos.toml.
+PROJECTLESS = ("doctor",)
+
+
+class _Parser(argparse.ArgumentParser):
+    """argparse whose usage errors are also a JSON object under --json."""
+    json_errors = False
+
+    def error(self, message):
+        if _Parser.json_errors:
+            self.print_usage(sys.stderr)
+            print(f"{self.prog}: error: {message}", file=sys.stderr)
+            print(json.dumps({"ok": False, "exit": 2, "error": message}))
+            sys.exit(2)
+        super().error(message)
+
+
+def cli_version() -> str:
+    from importlib.metadata import PackageNotFoundError, version
+    try:
+        return version("slidev-videos")
+    except PackageNotFoundError:
+        return "unknown"
+
+
+class _Version(argparse.Action):
+    """`--version`: the installed version and where it runs from, unwrapped."""
+
+    def __init__(self, option_strings, dest=argparse.SUPPRESS, default=argparse.SUPPRESS,
+                 help="print the version and install path, then exit"):
+        super().__init__(option_strings=option_strings, dest=dest, default=default, nargs=0, help=help)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        print(f"slidev-videos {cli_version()} ({Path(__file__).resolve().parent})")
+        parser.exit()
+
+
+def _leading_command(argv: list[str]) -> tuple[int, str | None]:
+    """Index and name of the first non-option token (--project's value skipped)."""
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--project":
+            i += 2
+        elif argv[i].startswith("-"):
+            i += 1
+        else:
+            return i, argv[i]
+    return len(argv), None
+
+
+def _usage_failure(message: str, as_json: bool) -> int:
+    print(message, file=sys.stderr)
+    if as_json:
+        print(json.dumps({"ok": False, "exit": 2, "error": message}))
+    return 2
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="slidev-videos", description=__doc__)
-    parser.add_argument("--project", default=None,
-                        help="project directory (default: walk up from cwd for videos.toml)")
+    # pnpm >=7 forwards the `--` delimiter verbatim, so the documented
+    # `pnpm videos:pull -- --include-shared` arrives as
+    # ['pull', '--', '--include-shared'] and argparse rejects the rest.
+    # No subcommand takes a positional that starts with "-", so every bare
+    # `--` is dropped, wherever it lands (`--project X pull -- --prune`).
+    args_list = [a for a in (sys.argv[1:] if argv is None else argv) if a != "--"]
     # `discover` is a self-contained archive search (CDS/NASA/ESO/Commons);
     # it needs no project, so it bypasses videos.toml discovery entirely.
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
-    if raw_argv[:1] == ["discover"]:
+    at, first = _leading_command(args_list)
+    if first == "discover":
         from . import discover
-        return discover.main(raw_argv[1:])
-    sub = parser.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("discover", help="search open archives (CDS/NASA/ESO/Hubble/Webb/NOIRLab/Commons) for clips; prints [[videos]] snippets")
+        rest = args_list[at + 1:]
+        if "--json" in args_list[:at] and "--json" not in rest:
+            rest.append("--json")
+        return discover.main(rest)
 
-    p_sync = sub.add_parser("sync", help="rclone manifest-listed raw files from Drive")
+    _Parser.json_errors = "--json" in args_list
+    # --project and --json are accepted before or after the subcommand.
+    common = _Parser(add_help=False)
+    common.add_argument("--project", default=argparse.SUPPRESS,
+                        help="project directory (default: walk up from cwd for videos.toml)")
+    common.add_argument("--json", action="store_true", default=argparse.SUPPRESS,
+                        help=f"one JSON object on stdout, the text on stderr ({', '.join(JSON_COMMANDS)})")
+    parser = _Parser(prog="slidev-videos", description=__doc__, parents=[common])
+    parser.add_argument("--version", action=_Version)
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    add = functools.partial(sub.add_parser, parents=[common])
+    add("discover", help="search open archives (CDS/NASA/ESO/Hubble/Webb/NOIRLab/Commons) for clips; prints [[videos]] snippets")
+
+    p_sync = add("sync", help="rclone manifest-listed raw files from Drive")
     p_sync.add_argument("--dry-run", action="store_true")
     p_sync.add_argument("--all", action="store_true", help="mirror the whole remote folder, not just manifest-listed raws")
     p_sync.add_argument("--quick", action="store_true", help="compare by size+modtime instead of MD5 (faster, but misses same-size re-exports)")
     p_sync.set_defaults(func=cmd_sync)
 
-    p_fetch = sub.add_parser("fetch", help="yt-dlp a URL into raw/ + append a manifest entry")
+    p_fetch = add("fetch", help="yt-dlp a URL into raw/ + append a manifest entry")
     p_fetch.add_argument("url")
     p_fetch.add_argument("--name", required=True, help="target file name (\".mp4\" appended if missing)")
     p_fetch.add_argument("--profile", default="remux")
@@ -2375,12 +2477,12 @@ def main(argv: list[str] | None = None) -> int:
     p_fetch.add_argument("--force", action="store_true", help="re-download even if raw exists")
     p_fetch.set_defaults(func=cmd_fetch)
 
-    p_enc = sub.add_parser("encode", help="ffmpeg raw -> web")
+    p_enc = add("encode", help="ffmpeg raw -> web")
     p_enc.add_argument("--force", action="store_true", help="re-encode even if up to date")
     p_enc.add_argument("--only", nargs="+", metavar="NAME", help="limit to named file(s)")
     p_enc.set_defaults(func=cmd_encode)
 
-    p_pub = sub.add_parser("publish", help="upload web files to GH Release")
+    p_pub = add("publish", help="upload web files to GH Release")
     p_pub.add_argument("--dry-run", action="store_true")
     p_pub.add_argument("--only", nargs="+", metavar="NAME", help="limit to named file(s)")
     p_pub.add_argument("--force", action="store_true", help="re-upload even if remote size matches local")
@@ -2388,7 +2490,7 @@ def main(argv: list[str] | None = None) -> int:
     p_pub.add_argument("--yes", action="store_true", help="confirm that --prune may delete")
     p_pub.set_defaults(func=cmd_publish)
 
-    p_pull = sub.add_parser("pull", help="download web files from GH Release")
+    p_pull = add("pull", help="download web files from GH Release")
     p_pull.add_argument("--dry-run", action="store_true")
     p_pull.add_argument("--only", nargs="+", metavar="NAME", help="limit to named file(s)")
     p_pull.add_argument("--force", action="store_true", help="re-download even if local size matches")
@@ -2397,15 +2499,15 @@ def main(argv: list[str] | None = None) -> int:
     p_pull.add_argument("--include-shared", action="store_true", help="also pull deck-referenced shared clips (offline/portable builds)")
     p_pull.set_defaults(func=cmd_pull)
 
-    p_chk = sub.add_parser("check", help="sanity-check manifest vs raw/web/slides")
+    p_chk = add("check", help="sanity-check manifest vs raw/web/slides")
     p_chk.set_defaults(func=cmd_check)
 
-    p_ehq = sub.add_parser("encode-hq", help="ffmpeg raw -> videos/hq/ (visually-lossless venue masters)")
+    p_ehq = add("encode-hq", help="ffmpeg raw -> videos/hq/ (visually-lossless venue masters)")
     p_ehq.add_argument("--force", action="store_true", help="re-encode even if up to date")
     p_ehq.add_argument("--only", nargs="+", metavar="NAME", help="limit to named file(s)")
     p_ehq.set_defaults(func=cmd_encode_hq)
 
-    p_phq = sub.add_parser("publish-hq", help="upload HQ files to the parallel GH Release")
+    p_phq = add("publish-hq", help="upload HQ files to the parallel GH Release")
     p_phq.add_argument("--dry-run", action="store_true")
     p_phq.add_argument("--only", nargs="+", metavar="NAME", help="limit to named file(s)")
     p_phq.add_argument("--force", action="store_true", help="re-upload even if remote size matches local")
@@ -2413,7 +2515,7 @@ def main(argv: list[str] | None = None) -> int:
     p_phq.add_argument("--yes", action="store_true", help="confirm that --prune may delete")
     p_phq.set_defaults(func=cmd_publish_hq)
 
-    p_pull_hq = sub.add_parser("pull-hq", help="download HQ files from the parallel GH Release")
+    p_pull_hq = add("pull-hq", help="download HQ files from the parallel GH Release")
     p_pull_hq.add_argument("--dry-run", action="store_true")
     p_pull_hq.add_argument("--only", nargs="+", metavar="NAME", help="limit to named file(s)")
     p_pull_hq.add_argument("--force", action="store_true", help="re-download even if local size matches")
@@ -2422,10 +2524,10 @@ def main(argv: list[str] | None = None) -> int:
     p_pull_hq.add_argument("--include-shared", action="store_true", help="also pull deck-referenced shared HQ masters (offline/venue builds)")
     p_pull_hq.set_defaults(func=cmd_pull_hq)
 
-    p_shared = sub.add_parser("shared-check", help="sanity-check the shared registry (run from the package repo)")
+    p_shared = add("shared-check", help="sanity-check the shared registry (run from the package repo)")
     p_shared.set_defaults(func=cmd_shared_check)
 
-    p_frames = sub.add_parser("frames", help="frame strips for the `dust` transition -> public/video-frames/")
+    p_frames = add("frames", help="frame strips for the `dust` transition -> public/video-frames/")
     p_frames.add_argument("--only", nargs="+", metavar="NAME", help="limit to named clip(s)")
     p_frames.add_argument("--all", action="store_true", help="every referenced clip, not only those using the dust transition")
     p_frames.add_argument("--force", action="store_true", help="cut again even if the strip is up to date")
@@ -2438,7 +2540,7 @@ def main(argv: list[str] | None = None) -> int:
     p_frames.add_argument("--jobs", type=int, default=3, help="clips cut at once (default 3)")
     p_frames.set_defaults(func=cmd_frames)
 
-    p_clean = sub.add_parser("clean", help="delete local video files that are verified recoverable (dry-run by default)")
+    p_clean = add("clean", help="delete local video files that are verified recoverable (dry-run by default)")
     p_clean.add_argument("--yes", action="store_true", help="actually delete (default is a dry run)")
     p_clean.add_argument("--raw", action="store_true", help="restrict to the raw tier")
     p_clean.add_argument("--hq", action="store_true", help="restrict to the HQ tier")
@@ -2446,18 +2548,18 @@ def main(argv: list[str] | None = None) -> int:
     p_clean.add_argument("--include-shared", action="store_true", help="also clean local copies of shared-registry clips")
     p_clean.set_defaults(func=cmd_clean)
 
-    p_pf = sub.add_parser("preflight", help="venue lint: probe what each deck ref will actually serve")
+    p_pf = add("preflight", help="venue lint: probe what each deck ref will actually serve")
     p_pf.add_argument("--only", nargs="+", metavar="NAME", help="limit to named clip(s)")
     p_pf.add_argument("--no-loudness", action="store_true", help="skip the R128 loudness measurement (much faster)")
     p_pf.add_argument("--max-mbps", type=float, default=None, help="bitrate ceiling to flag (default 10, or [defaults].preflight_max_mbps)")
     p_pf.set_defaults(func=cmd_preflight)
 
-    p_venue = sub.add_parser("venue", help="one-shot offline bundle: pull --include-shared -> preflight -> build:portable -> zip")
+    p_venue = add("venue", help="one-shot offline bundle: pull --include-shared -> preflight -> build:portable -> zip")
     p_venue.add_argument("--dry-run", action="store_true")
     p_venue.add_argument("--skip-pull", action="store_true", help="assume local web tier is already complete")
     p_venue.set_defaults(func=cmd_venue)
 
-    p_build = sub.add_parser("build", help="one-shot: (sync) -> encode -> encode-hq -> check")
+    p_build = add("build", help="one-shot: (sync) -> encode -> encode-hq -> check")
     p_build.add_argument("--sync", action="store_true", help="rclone raws from Drive first")
     p_build.add_argument("--all", action="store_true", help="with --sync: mirror the whole remote folder")
     p_build.add_argument("--web-only", action="store_true", help="skip the HQ master encode")
@@ -2467,15 +2569,38 @@ def main(argv: list[str] | None = None) -> int:
     p_build.add_argument("--quick", action="store_true", help="with --sync: compare by size+modtime instead of MD5")
     p_build.set_defaults(func=cmd_build)
 
-    # pnpm >=7 forwards the `--` delimiter verbatim, so the documented
-    # `pnpm videos:pull -- --include-shared` arrives as
-    # ['pull', '--', '--include-shared'] and argparse rejects the rest.
-    # No subcommand takes a positional that starts with "-", so every bare
-    # `--` is dropped, wherever it lands (`--project X pull -- --prune`).
-    args_list = [a for a in (sys.argv[1:] if argv is None else argv) if a != "--"]
     args = parser.parse_args(args_list)
-    _init_paths(_config.load_project(args.project))
-    return args.func(args)
+    as_json = getattr(args, "json", False)
+    if as_json and args.cmd not in JSON_COMMANDS:
+        parser.error(f"--json is supported by {', '.join(JSON_COMMANDS)}, not {args.cmd}")
+    try:
+        project = _config.load_project(getattr(args, "project", None))
+    except SystemExit as e:
+        if args.cmd not in PROJECTLESS:
+            return _usage_failure(str(e.code), as_json)
+        project = None
+    if project is not None:
+        _init_paths(project)
+    else:
+        _forget_project()
+    if not as_json:
+        return args.func(args)
+
+    error = None
+    with contextlib.redirect_stdout(sys.stderr):
+        try:
+            rc = args.func(args)
+        except SystemExit as e:
+            if isinstance(e.code, int) or e.code is None:
+                rc = e.code or 0
+            else:
+                rc, error = 1, str(e.code)
+                print(error, file=sys.stderr)
+    payload = {"command": args.cmd, "ok": rc == 0, "exit": rc, **_report(args)}
+    if error:
+        payload["error"] = error
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    return rc
 
 
 if __name__ == "__main__":

@@ -206,7 +206,14 @@ Names changed when the outreach decks moved onto the library (2026-09-08):
     slidev-videos discover "cloud chamber" lhc --source cds,nasa   # find new clips; prints [[videos]] snippets
 
 Run from anywhere inside a project (`videos.toml` is found by walking up), or
-pass `--project <dir>`.
+pass `--project <dir>`, before or after the subcommand.
+
+`check`, `preflight`, `frames` and `doctor` take `--json`: one JSON object on
+stdout, the usual text on stderr. Exit codes: 0 when all is well, 1 when
+problems were found, 2 for usage and setup errors (a bad flag, no
+`videos.toml`, a missing tool). `slidev-videos --version` prints the installed
+version and the directory it runs from. rclone's `--progress` is passed only
+when stdout is a terminal.
 
 `--prune` (on `publish`, `publish-hq`, `pull`, `pull-hq`) deletes what the
 whole manifest no longer lists: release assets for the publish commands, local
