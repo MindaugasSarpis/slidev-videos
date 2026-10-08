@@ -67,22 +67,55 @@ export const PALETTES = {
 // What goes with a palette besides its colours: engine options a deck gets
 // with the name unless it sets them itself (`stage.options`). The classic
 // look is Startertalk's, and stays as it was: no nebula.
+//
+// A look can also be asked for on its own, over any palette (`stage.look`).
+// `broadcast` is for a deck that is filmed, recorded or streamed: an encoder
+// at a few Mbit/s turns film grain, colour fringes, fine dust and twinkle into
+// block noise, so the finish is clean, the dust fewer and larger, the flights
+// slower, the halo off; the ground is lifted off near-black, which bands on a
+// stream; and the frame-rate guard is off, so a slow moment never drops the
+// resolution mid-take. `max` caps what the palette's own look brings (blue's
+// nebula is 0.8). Keys the engine does not know are read by the Stage
+// component: `halo` (the dust borders), `lift` (see liftGround).
 export const LOOKS = {
   classic: { nebula: 0 },
   blue: { nebula: 0.8 },
   ember: { nebula: 0.7 },
+  broadcast: {
+    grain: 0, aberration: 0,
+    density: 0.6, dustSize: 2.85,   // 1.5 × the default 1.9: a grain still reads at 720p
+    streak: 0.4, bloom: 0.45, flight: [2.5, 5],
+    twinkle: 0.35, guard: false, halo: false, lift: 0.07,
+    max: { nebula: 0.3 },
+  },
 };
-export function resolveLook(input) {
-  const name = typeof input === 'string' ? input : (input && typeof input === 'object' ? input.base : null);
-  return { ...(LOOKS[name] || {}) };
+
+// The options a deck's palette and look give it: the palette's look, then the
+// named look over it, then that look's caps. `stage.options` win over both
+// (the Stage component lays them on last).
+export function resolveLook(palette, look) {
+  const name = typeof palette === 'string' ? palette : (palette && typeof palette === 'object' ? palette.base : null);
+  const out = { ...(LOOKS[name] || {}) };
+  const named = typeof look === 'string' ? LOOKS[look] : null;
+  if (named) {
+    const { max, ...set } = named;
+    Object.assign(out, set);
+    for (const [k, cap] of Object.entries(max || {})) {
+      if (Number.isFinite(Number(out[k]))) out[k] = Math.min(Number(out[k]), cap);
+    }
+  }
+  return out;
 }
 
 export const DEFAULT_PALETTE = PALETTES.classic;
 
 const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 
-export function definePalette(name, colours) {
+// definePalette('venue', { accent: '#…', … }, { nebula: 0.5 }): the third
+// argument, when given, is the look that comes with the name.
+export function definePalette(name, colours, look) {
   PALETTES[name] = { ...DEFAULT_PALETTE, ...colours };
+  if (look && typeof look === 'object') LOOKS[name] = { ...look };
   return PALETTES[name];
 }
 
@@ -113,6 +146,18 @@ export function hexToRgb(hex) {
 // '#7dd3fc' → '125, 211, 252', for rgba(var(--stage-accent-rgb), a)
 export const rgbTriplet = (hex) => hexToRgb(hex).map((v) => Math.round(v * 255)).join(', ');
 
+// The ground mixed `amount` (0..1) of the way toward the accent: off
+// near-black, in the palette's own hue. Blue's #03050d at 0.07 is #090f1d.
+// The page, the scrim and the cards all take their dark from `bg`, so all of
+// them are lifted together.
+export function liftGround(p, amount) {
+  const k = Math.min(1, Math.max(0, Number(amount) || 0));
+  if (!k) return p;
+  const [a, b] = [hexToRgb(p.bg), hexToRgb(p.accent)];
+  const hex = a.map((v, i) => Math.round((v + (b[i] - v) * k) * 255).toString(16).padStart(2, '0')).join('');
+  return { ...p, bg: `#${hex}` };
+}
+
 // The palette as CSS custom properties.
 export function paletteVars(p) {
   return {
@@ -120,6 +165,8 @@ export function paletteVars(p) {
     '--stage-fg': p.fg,
     '--stage-dim': p.dim,
     '--stage-accent': p.accent,
+    '--stage-dust': p.dust,
+    '--stage-nebula': p.nebula,
     '--stage-bg-rgb': rgbTriplet(p.bg),
     '--stage-accent-rgb': rgbTriplet(p.accent),
   };

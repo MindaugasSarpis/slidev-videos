@@ -4,7 +4,7 @@ import '@fontsource/space-grotesk/500.css'
 import '@fontsource/space-grotesk/700.css'
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useNav, configs } from '@slidev/client'
-import { createSpace, usePlugin, resolvePalette, resolveLook, paletteVars, warmAudio, startHum, stopHum, humProbe, playWhoosh, playRise } from '../index.js'
+import { createSpace, usePlugin, resolvePalette, resolveLook, liftGround, paletteVars, warmAudio, startHum, stopHum, humProbe, playWhoosh, playRise } from '../index.js'
 import StagePanel from './StagePanel.vue'
 
 // The persistent 3D world under a whole deck. The addon mounts it from its
@@ -15,6 +15,7 @@ import StagePanel from './StagePanel.vue'
 //     space: data/space.json     # the stations (under the deck's public/)
 //     records: data/records.json # optional: things a stop can name, { states | records: [...], figures: {...} }
 //     palette: blue              # a name, or { base, accent, dust, … }
+//     look: broadcast            # a named look over any palette (stage/palette.js LOOKS)
 //     plugins: [hadron]          # shipped plugins to load
 //     hero: hero                 # the station the deck opens and closes on
 //     sound: true                # false: silent. Or pick: { hum: true, flight: true, clip: true, level: 1 }
@@ -51,7 +52,12 @@ const props = defineProps({
 
 const spaceSrc = computed(() => props.space || CFG.space || 'data/space.json')
 const recordsSrc = computed(() => props.records || (CFG.records === false ? '' : CFG.records) || '')
-const palette = resolvePalette(props.palette ?? CFG.palette)
+// The engine's options: what the palette brings, a named look over it
+// (`look: broadcast`), the deck's own `options` over both. A look may lift
+// the ground off near-black (`lift`), which the CSS takes up with the palette.
+const LOOK = typeof CFG.look === 'string' ? CFG.look : ''
+const OPTIONS = { ...resolveLook(props.palette ?? CFG.palette, LOOK), ...(CFG.options || {}) }
+const palette = liftGround(resolvePalette(props.palette ?? CFG.palette), OPTIONS.lift)
 const soundOn = computed(() => (props.sound ?? CFG.sound ?? true) !== false)
 // which voices: the hum at a station, the whoosh of a flight, the rise of a clip condensing
 const VOICES = { hum: true, flight: true, clip: true, level: 1, ...(CFG.sound && typeof CFG.sound === 'object' ? CFG.sound : {}) }
@@ -189,7 +195,7 @@ async function boot() {
       space: spaceDef,
       records: records?.records || records?.states || [],
       palette,
-      options: { ...resolveLook(props.palette ?? CFG.palette), ...(CFG.options || {}), hero: CFG.hero },
+      options: { ...OPTIONS, hero: CFG.hero },
       asset,
       onArrive: () => { arrived.value = true },
       // what builds itself at the hero does so on arrival; the cover's title
@@ -279,6 +285,7 @@ const onVideoCover = (e) => {
 onMounted(() => {
   const html = document.documentElement
   html.dataset.stage = '1'
+  if (LOOK) html.dataset.stageLook = LOOK    // the CSS kit keys on html[data-stage-look]
   for (const [k, v] of Object.entries(paletteVars(palette))) html.style.setProperty(k, v)
   document.addEventListener('visibilitychange', onVisibility)
   window.addEventListener('keydown', onKey)
@@ -302,6 +309,7 @@ onUnmounted(() => {
   stopHum()
   assembled(true)
   delete document.documentElement.dataset.stage
+  delete document.documentElement.dataset.stageLook
   delete document.documentElement.dataset.spaceStop
   space?.dispose()
   space = null
@@ -357,6 +365,8 @@ onUnmounted(() => {
   position: absolute; inset: 0; pointer-events: none; opacity: 0.05;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
+/* the paper texture is fine detail an encoder smears; a broadcast frame goes without it */
+html[data-stage-look="broadcast"] .grain { display: none; }
 /* stop HUD: record left, figure right; sizes in px against the 980-wide canvas */
 .hud { position: absolute; inset: 0; display: grid; grid-template-columns: 340px 1fr; gap: 24px; padding: 60px 44px 48px; align-items: start; pointer-events: none; }
 .hud-card { align-self: end; }

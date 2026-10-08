@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useNav, configs } from '@slidev/client'
-import { resolvePalette, rgbTriplet } from '../stage/palette.js'
+import { resolvePalette, resolveLook, rgbTriplet } from '../stage/palette.js'
 
 // Hazy particle borders. One 2D canvas over the slide (the addon mounts it
 // from its global-top.vue); each frame it finds every `.card` / `.halo` on
@@ -24,6 +24,8 @@ const MAX_DOTS = 520     // grain count scales with the element's perimeter
 const MIN_DOTS = 160
 const SPREAD = 15        // px at the 980-wide canvas scale
 const ACCENT = rgbTriplet(resolvePalette(CFG.palette).accent)
+// how far a grain's light swells and fades: the engine's `twinkle` (1, or less under a calmer look)
+const TWINKLE = (() => { const t = Number({ ...resolveLook(CFG.palette, CFG.look), ...(CFG.options || {}) }.twinkle); return Number.isFinite(t) ? Math.max(0, t) : 1 })()
 const seeds = new WeakMap()
 let raf = 0
 
@@ -118,7 +120,7 @@ function frame(now) {
         if (px > o.x - pad && px < o.x + o.w + pad && py > o.y - pad && py < o.y + o.h + pad) { hidden = true; break }
       }
       if (hidden) continue
-      const tw = 0.55 + 0.45 * Math.sin(time * (0.8 + d.sp) + d.ph)
+      const tw = 0.55 + 0.45 * TWINKLE * Math.sin(time * (0.8 + d.sp) + d.ph)
       const near = 1 - Math.min(Math.abs(off) / (SPREAD * 1.3 * u), 1)
       const alpha = d.a * tw * fade * (0.25 + 0.75 * near)
       if (alpha < 0.02) continue

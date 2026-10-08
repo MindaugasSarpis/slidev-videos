@@ -26,7 +26,7 @@ const D2R = Math.PI / 180;
 const HEAD = /* glsl */ `
 attribute vec3 aScatter, aColor;
 attribute float aSize, aAlpha, aSeed;
-uniform float uTime, uForm, uPixelRatio;
+uniform float uTime, uForm, uPixelRatio, uTwinkle;
 varying vec3 vColor; varying float vAlpha;
 float formed() {
   float x = clamp(uForm * 1.55 - aSeed * 0.55, 0.0, 1.0);
@@ -39,7 +39,7 @@ vec3 adrift() {
 void place(vec3 p, float f, float sizeBoost) {
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
-  float tw = 0.72 + 0.28 * sin(uTime * (1.1 + aSeed * 2.3) + aSeed * 40.0);
+  float tw = 0.72 + 0.28 * uTwinkle * sin(uTime * (1.1 + aSeed * 2.3) + aSeed * 40.0);
   gl_PointSize = uPixelRatio * aSize * sizeBoost * tw * (72.0 / max(-mv.z, 0.1));
   vColor = aColor;
   // adrift a grain is one mote among the dust; in place it carries its full light
@@ -110,10 +110,10 @@ function former(uForm, seconds) {
   };
 }
 
-function material(vertexShader, uniforms) {
+function material(vertexShader, uniforms, ctx) {
   return new ShaderMaterial({
     vertexShader, fragmentShader: FRAG, transparent: true, depthWrite: false, depthTest: false, blending: AdditiveBlending,
-    uniforms: { uTime: { value: 0 }, uForm: { value: 0 }, uPixelRatio: { value: Math.min(devicePixelRatio || 1, 2) }, ...uniforms },
+    uniforms: { uTime: { value: 0 }, uForm: { value: 0 }, uPixelRatio: { value: Math.min(devicePixelRatio || 1, 2) }, uTwinkle: { value: ctx?.twinkle ?? 1 }, ...uniforms },
   });
 }
 
@@ -196,7 +196,7 @@ export function buildGalaxy(o, ctx) {
     }
     G.put({ home: [r * Math.cos(a), h, r * Math.sin(a)], color, size, alpha, reach: R * 1.5, aPolar: [r, a, h] });
   }
-  const mat = material(GALAXY_VERT, { uSpin: { value: o.spin ?? 1 }, uRadius: { value: R } });
+  const mat = material(GALAXY_VERT, { uSpin: { value: o.spin ?? 1 }, uRadius: { value: R } }, ctx);
   return finish(o, G.geometry(), mat, { seconds: 3.6 });
 }
 
@@ -299,7 +299,7 @@ export function buildCollider(o, ctx) {
       });
     }
   }
-  const mat = material(COLLIDER_VERT, { uRadius: { value: R }, uLap: { value: Math.max(2, o.lap ?? 9) }, uLife: { value: life } });
+  const mat = material(COLLIDER_VERT, { uRadius: { value: R }, uLap: { value: Math.max(2, o.lap ?? 9) }, uLife: { value: life } }, ctx);
   // the ring lies in the xz plane with its meeting points on x; the beam line there runs along z
   return finish(o, G.geometry(), mat, { seconds: 3.4 });
 }

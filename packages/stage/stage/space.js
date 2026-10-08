@@ -53,6 +53,8 @@ const DEFAULTS = {
   streak: 1,             // grains are drawn out along their path while the camera flies, 0 (never) … 2
   reach: 12,             // a pose within this of a station is *at* it: what stands there gathers on arrival
   flight: [1.4, 4.5],    // shortest and longest flight, seconds
+  twinkle: 1,            // how far a form's grains swell and fade as they shine, 0 (steady) … 1
+  guard: true,           // false: no frame-rate guard (the pixel ratio and the dust stay as they are on a slow machine)
 };
 
 // The page gradient, drawn by the renderer itself (post-processing wants a
@@ -176,7 +178,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   const byId = new Map((records || []).filter((s) => s && s.id != null).map((s) => [String(s.id), { ...s }]));
   const stations = new Map();
   const anchors = new Map();
-  const ctx = { records: byId, states: byId, palette: pal, anisotropy: renderer.capabilities.getMaxAnisotropy(), asset: asset || ((s) => s), helpers };
+  const ctx = { records: byId, states: byId, palette: pal, anisotropy: renderer.capabilities.getMaxAnisotropy(), asset: asset || ((s) => s), helpers, twinkle: Math.max(0, num(opt.twinkle, 1)) };
   for (const st of space.stations || []) {
     const built = buildStation(st, ctx);
     scene.add(built.group);
@@ -449,7 +451,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     // frame-rate guard: step the pixel ratio down, then halve the field, if slow —
     // before this frame's render, so the resized canvas is drawn at once (a resize
     // clears it, and a frame of page background showed through)
-    if (elapsed > 4 && guardStage < 2) {
+    if (opt.guard !== false && elapsed > 4 && guardStage < 2) {
       winFrames++; winTime += dt;
       if (winTime >= 2) {
         if (winFrames / winTime < 40) {

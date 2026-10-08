@@ -18,7 +18,7 @@ import { buildGalaxy, buildCollider } from './forms.js';
 //   api         { arm(), assemble(now, onDone) }: a thing that builds itself on arrival
 //   pixelRatio  a { value } uniform the engine keeps at the drawing buffer's ratio
 //
-//   ctx         { palette, records: Map, anisotropy, asset(src), helpers }
+//   ctx         { palette, records: Map, anisotropy, asset(src), helpers, twinkle }
 //
 // The builders below are the general ones. A deck adds its own with
 // registerBuilder (from its setup/main.ts), or takes a shipped plugin
@@ -222,12 +222,12 @@ registerBuilder('bar', (o, ctx) => {
 //     coreSize?: 15, coreAlpha?: 0.9 }
 const GRAIN_VERT = /* glsl */ `
 attribute float aSize, aAlpha, aSeed, aKind; attribute vec3 aColor;
-uniform float uPixelRatio, uTime, uReveal, uTrail;   // aKind 0: node grain, 1: string/haze (fades in with the assembly), 2: trail (only while assembling)
+uniform float uPixelRatio, uTime, uReveal, uTrail, uTwinkle;   // aKind 0: node grain, 1: string/haze (fades in with the assembly), 2: trail (only while assembling)
 varying vec3 vColor; varying float vAlpha;
 void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   gl_Position = projectionMatrix * mv;
-  float tw = 0.7 + 0.3 * sin(uTime * (1.2 + aSeed * 2.4) + aSeed * 40.0);
+  float tw = 0.7 + 0.3 * uTwinkle * sin(uTime * (1.2 + aSeed * 2.4) + aSeed * 40.0);
   gl_PointSize = uPixelRatio * aSize * tw * (72.0 / max(-mv.z, 0.1));
   float k = aKind < 0.5 ? 1.0 : (aKind < 1.5 ? uReveal : uTrail);
   vColor = aColor; vAlpha = aAlpha * tw * k;
@@ -303,7 +303,7 @@ export function buildConstellation(o, ctx) {
   geo.setAttribute('aKind', new BufferAttribute(kind, 1));
   const mat = new ShaderMaterial({
     vertexShader: GRAIN_VERT, fragmentShader: GRAIN_FRAG, transparent: true, depthWrite: false, depthTest: false, blending: AdditiveBlending,
-    uniforms: { uTime: { value: 0 }, uPixelRatio: { value: Math.min(devicePixelRatio || 1, 2) }, uReveal: { value: 1 }, uTrail: { value: 0 } },
+    uniforms: { uTime: { value: 0 }, uPixelRatio: { value: Math.min(devicePixelRatio || 1, 2) }, uReveal: { value: 1 }, uTrail: { value: 0 }, uTwinkle: { value: ctx.twinkle ?? 1 } },
   });
   const pts = new Points(geo, mat); pts.frustumCulled = false; g.add(pts);
   // node centres on tilted orbits through their home positions
