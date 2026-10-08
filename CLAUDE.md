@@ -1,12 +1,11 @@
 # slidev-videos: notes for agents
 
 Tools for keynote-grade Slidev talks. The talks live in the sibling checkout
-`../outreach_talks` (GitHub `cern_outreach_talks`); this repo holds what they
-share. Both sit in `$OUTREACH_ROOT`. outreach_talks' `scripts/bootstrap.sh`
-writes the machine's settings to `~/.config/outreach_talks/env`
-(`OUTREACH_ROOT`, `SLIDEV_VIDEOS_DIR`, `OUTREACH_ENV_BIN`, the render
-backend). A shell loads them with
-`set -a; . ~/.config/outreach_talks/env; set +a`.
+`../outreach_talks`; this repo holds what they share. Both sit in
+`$OUTREACH_ROOT`. outreach_talks' `scripts/bootstrap.sh` writes the
+machine's settings (`OUTREACH_ROOT`, `SLIDEV_VIDEOS_DIR`, `OUTREACH_ENV_BIN`,
+the render backend) to `~/.config/outreach_talks/env`; a shell loads them
+with `set -a; . ~/.config/outreach_talks/env; set +a`.
 
 ## Sessions
 
@@ -21,7 +20,7 @@ running `claude --name Tools --remote-control Tools`.
   tests in `tests/`; `shared.toml`, the shared clip library (encodes on the
   `videos-shared` release, root `videos.toml`).
 - Root: `slidev-addon-videos` (`components/VideoPlayer.vue`, the dust
-  overlay), kept at the root so `#v0.3.x` installs resolve.
+  overlay), at the root for `#v0.3.x` installs.
 - `packages/stage/`: `slidev-addon-stage`, own version in its package.json:
   the 3D world (`stage/`), `components/`, `styles/`, the bins
   (`slidev-stage-check`, `-shots`, `-record`, `-safe`), `example/`, `test/`.
@@ -29,8 +28,8 @@ running `claude --name Tools --remote-control Tools`.
 Each talk pins `github:MindaugasSarpis/slidev-videos#<ref>` and
 `...#<ref>&path:/packages/stage`; outreach_talks' `new_talk.py`
 (`ADDONS_REF`) and `env.yaml` carry the pin for new talks. The CLI is an
-editable install of the main checkout (bootstrap's `pip install -e`), so
-every talk session runs what the main checkout holds, the moment it changes.
+editable install of the main checkout (bootstrap's `pip install -e`): every
+talk session runs the main checkout as it stands.
 
 ## Worktrees
 
@@ -44,8 +43,7 @@ every talk session runs what the main checkout holds, the moment it changes.
 ## Dev loop: an engine change in a talk without re-pinning
 
 Re-pinning costs about 7 minutes a tweak. Instead link the addons to your
-checkout in a /tmp copy of outreach_talks (tested 2026-10-08 on OpenData
-and Innoday):
+checkout in a /tmp copy of outreach_talks (tested 2026-10-08):
 
     export PATH=$OUTREACH_ENV_BIN:$PATH
     W=/tmp/<label>; SV=$SLIDEV_VIDEOS_DIR/.claude/worktrees/<slug>
@@ -64,8 +62,7 @@ and Innoday):
 
 Never do this in the real outreach_talks or a talk's worktree: it rewrites
 `pnpm-lock.yaml` under a live session. CLI: `python3 -m venv $W/venv &&
-$W/venv/bin/pip install -e $SV`, `$W/venv/bin` first on PATH. Pin a tag only
-at release.
+$W/venv/bin/pip install -e $SV`, `$W/venv/bin` first on PATH.
 
 ## Tests
 
@@ -83,13 +80,14 @@ executable (`git update-index --chmod=+x`): a `link:` install sets the bit.
 ## Headless Chromium
 
 shots, record, safe and the smoke start the browser through
-`packages/stage/bin/lib/chromium.mjs` (feat/shots-v2 and feat/broadcast carry
-byte-identical copies). Backends, best first, each kept only when the
+`packages/stage/bin/lib/chromium.mjs` (byte-identical on feat/shots-v2 and
+feat/broadcast). Backends, best first, each kept only when the
 page's renderer string confirms it:
 
 - `gpu-nvidia`: native NVIDIA driver over EGL (nvidia-smi, not WSL)
 - `d3d12`: WSL's GPU (`/dev/dxg`) through Mesa's d3d12 driver in a private
-  prefix, `$SLIDEV_STAGE_MESA_D3D12` (default `~/.local/share/mesa-d3d12`)
+  prefix, `$SLIDEV_STAGE_MESA_D3D12` (default `~/.local/share/mesa-d3d12`;
+  outreach_talks' `scripts/mesa-d3d12.sh` fetches it)
 - `llvmpipe`: Mesa on an X display (`DISPLAY=:0` when unset and
   `/tmp/.X11-unix/X0` exists), `LP_NUM_THREADS=8`
 - `swiftshader`: last, about 3x slower, with a warning
@@ -102,11 +100,11 @@ the env file; `pnpm talk` passes them on. playwright-chromium is pinned
 `~1.59.1`: in WSL, Chromium 151 and 153 headless shells fell back to
 SwiftShader.
 
-## Machine gotchas
+## ffmpeg
 
-- Static Linux ffmpeg builds crash (exit 139) on `https://` input, silently
-  under `-v error`. Use the env's ffmpeg (`$OUTREACH_ENV_BIN`, with NVENC);
-  `slidev-videos doctor` names the pair the CLI picked.
+Static Linux ffmpeg builds crash (exit 139) on `https://` input, silently
+under `-v error`. Use the env's ffmpeg (`$OUTREACH_ENV_BIN`, with NVENC);
+`slidev-videos doctor` names the pair the CLI picked.
 
 ## Merge order (open branches, 2026-10)
 
@@ -146,8 +144,8 @@ is then empty, as the talks' pin bump needs. release.py starts at v0.6.0
    there and leave version strings to release.py.
 3. With `$OUTREACH_ENV_BIN` first on PATH:
    `$PY scripts/release.py 0.6.0 --stage 0.3.0 --dry-run`; read the plan and
-   diff, then run it without `--dry-run`: checks, both suites, commit
-   `chore: v0.6.0`, local tag.
+   diff, then run it without `--dry-run` (checks, both suites, commit
+   `chore: v0.6.0`, local tag).
 4. Run the two printed commands (`git push --atomic ...`,
    `gh release create ...`), or pass `--push`.
 5. In outreach_talks, `pnpm talk bump-toolkit v0.6.0` moves the pins; talks
@@ -161,9 +159,8 @@ is then empty, as the talks' pin bump needs. release.py starts at v0.6.0
   headmatter, extended by registration, with no talk's content.
 - Tools meet through window events, not imports.
 - Stage scenes are grains of light, of a piece with the dust: no solid
-  meshes, floating labels or scale bars in keynote visuals (the owner
-  rejected lit spheres as cheap).
+  meshes, floating labels or scale bars in keynote visuals.
 - Visual reworks wait until the owner has seen them on a real GPU: show
-  screenshots, keep the PR a draft until then.
+  screenshots, keep the PR a draft.
 - Public repo: no personal data. Refer to the owner as "the owner".
 - Commits: `type(scope): what changes, in plain words`; the body says why.
