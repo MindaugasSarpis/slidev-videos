@@ -41,6 +41,7 @@ import { getOverlay, announce, warmStrip, stripFrame, liveFrame, fitPicture, mea
 //     dust: '#7dd3fc'             (the colour of the grains in flight, `dust` only)
 //     dustFrom: lit               (lit | start — a clip that opens on black arrives as its first lit frame and plays from there)
 //     dustStyle: frame            (frame | flight — grains fill the frame and condense in place, or gather into a card that flies in)
+//     advanceOnEnd: false         (true — when a clip ends, the deck goes on to the next slide)
 const CFG = (configs && configs.videos) || {}
 const ENV = import.meta.env
 const REPO    = CFG.repo    || ENV.VITE_VIDEO_REPO    || ''
@@ -106,6 +107,12 @@ const props = defineProps({
   // How the grains move (`dust`): frame (default) fills the whole frame and
   // condenses in place; flight gathers a card off in the world that flies in.
   dustStyle: { type: String, default: '' },
+  // When the clip ends, go on to the next slide by itself, once. Only the
+  // audience's slide does it (never the presenter window, the overview, the
+  // next-slide preview or a print), only while the slide is still the one the
+  // clip started on with no click taken since, and never for a looping clip.
+  // `undefined` = `videos.advanceOnEnd`, else false.
+  advanceOnEnd: { type: Boolean, default: undefined },
 })
 const effHq     = computed(() => props.hq === undefined ? (CFG.hq ?? false) : props.hq)
 const effFit    = computed(() => props.fit || CFG.fit || 'cover')
@@ -549,7 +556,27 @@ const isLive = computed(() => $renderContext.value === 'slide' || $renderContext
 // alike (2026-09-09). Placeholder instances (overview) have no <video>.
 const PRELOAD_AHEAD = 3
 const KEEP_BEHIND = 1
-const { currentPage } = useNav()
+const { currentPage, clicks, next, isPrintMode } = useNav()
+
+// ---- advance on end ---------------------------------------------------------
+// Armed each time the slide becomes the current one, with the click count it
+// stands at; disarmed by leaving. The clip's `ended` goes on only from the
+// arming it belongs to, and only once.
+const effAdvance = computed(() => props.advanceOnEnd === undefined ? CFG.advanceOnEnd === true : props.advanceOnEnd)
+let armed = null             // { clicks } while armed
+watch(isActive, (on) => { armed = on ? { clicks: clicks?.value ?? 0 } : null }, { immediate: true })
+function onEnded() {
+  const a = armed
+  armed = null
+  if (!a || !effAdvance.value || props.loop || videoRef.value?.loop) return
+  if ($renderContext.value !== 'slide' || isPrintMode?.value || !isActive.value) return
+  // slidev-stage-record drives the deck itself and plays clips to their end
+  // to stage the next slide's arrival: it moves on, not the clip
+  if (typeof window !== 'undefined' && window.__rec) return
+  if ($page?.value !== currentPage?.value || (clicks?.value ?? 0) !== a.clicks) return
+  announce('advance', { src: props.src, from: $page.value })
+  next()
+}
 
 const distance = computed(() => {
   const here = $page?.value
@@ -597,6 +624,7 @@ watch(attached, (yes) => {
       :preload="attached || !autoplay ? 'auto' : 'none'"
       :style="{ objectFit: effFit }"
       @loadeddata="onLoaded"
+      @ended="onEnded"
       @error="onError"
       @click="onVideoClick"
       @touchstart.passive="onVideoTouch"

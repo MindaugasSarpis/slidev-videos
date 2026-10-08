@@ -38,6 +38,7 @@ Enable the addon and point it at your release in the deck headmatter:
       transition: cut           # cut | fade | dust (default cut)
       dust: '#7dd3fc'           # colour of the grains in flight (dust only)
       dustStyle: frame          # frame | flight (dust only; default frame)
+      advanceOnEnd: false       # go to the next slide when a clip ends (default false)
     ---
 
     <VideoPlayer src="clip_name.mp4" />
@@ -50,8 +51,18 @@ own-release step), `autoplay` (default `true`; `false` = the presenter starts
 the clip by hand, it still preloads), `loop`, `muted`, `controls` (default
 `true`), `autoHideControls` (default `true`: the native bar appears only while
 the pointer is over the bottom strip or for a few seconds after a click/tap),
-`hq`, `volume`, `fit`, `transition`, `dust`, `dustStyle`. Prop beats headmatter beats env
+`hq`, `volume`, `fit`, `transition`, `dust`, `dustStyle`, `advanceOnEnd`. Prop beats headmatter beats env
 beats built-in.
+
+**Advance on end:** `<VideoPlayer src="intro.mp4" advance-on-end />` (or
+`videos.advanceOnEnd: true` for every clip) goes on to the next slide when the
+clip ends, so a clip can hand over to what follows without a key press. It
+fires once, from the audience's slide only: not in the presenter window, the
+overview, the next-slide preview or a print or export, and not under
+`slidev-stage-record`, which moves the deck itself. If the speaker has left
+the slide or taken a click on it since the clip started, the clip's end does
+nothing, and a looping clip never ends. The player also sends a
+`slidev-videos:advance` event (`{ src, from }`) as it goes on.
 
 **Source chain**, front to back: a production build tries the own release,
 then the shared release, then `videos/` and `videos-hq/` under the deck's
