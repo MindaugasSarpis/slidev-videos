@@ -227,7 +227,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  stage {cur[STAGE_PACKAGE]} -> {a.stage}" if a.stage else f"  stage stays {cur[STAGE_PACKAGE]} (no --stage)")
     print("checks")
     for ok, line in found:
-        print(f"  {'ok  ' if ok else 'FAIL'}  {line}")
+        mark, line = ("note", line[6:]) if line.startswith("note: ") else ("ok  " if ok else "FAIL", line)
+        print(f"  {mark}  {line}")
     later = "" if a.push else "   # printed, not run: no --push"
     print("steps")
     print("  1. PYTHONPATH=src python3 -m pytest tests -q")
