@@ -2446,6 +2446,10 @@ def _write_frames_index(out_dir: Path, clips: dict) -> None:
 # venue — one-command offline bundle: pull → preflight → build → zip
 # ---------------------------------------------------------------------------
 
+VENUE_BUILD_ENV = {"VITE_VIDEOS_LOCAL_FIRST": "1"}
+VENUE_BUILD_ENV_TEXT = " ".join(f"{k}={v}" for k, v in VENUE_BUILD_ENV.items())
+
+
 def cmd_venue(args: argparse.Namespace) -> int:
     """Self-contained venue bundle for this deck.
 
@@ -2454,6 +2458,10 @@ def cmd_venue(args: argparse.Namespace) -> int:
     with a RUN_ME note. HQ masters are NOT pulled — since 2026-07-18 the
     venue plays the 1080p H.264 web tier; a populated videos/hq/ still gets
     bundled via the public/videos-hq symlink for talks that opted in.
+
+    The build runs with VITE_VIDEOS_LOCAL_FIRST=1, so the bundle's player
+    tries its own copies before GitHub whatever the talk's build:portable
+    script sets; without it a production build streams over venue Wi-Fi.
     """
     if not args.skip_pull:
         print("=== venue: pull web tier (incl. inherited shared clips) ===")
@@ -2464,17 +2472,17 @@ def cmd_venue(args: argparse.Namespace) -> int:
             return rc
 
     print("\n=== venue: preflight (metadata only; run videos:preflight for loudness) ===")
-    pf = cmd_preflight(argparse.Namespace(only=None, no_loudness=True, max_mbps=None))
+    pf = cmd_preflight(argparse.Namespace(only=None, no_loudness=True, max_mbps=None, mode="local-first"))
     if pf != 0:
         print("WARNING: preflight flagged clips above. Bundle continues — fix or accept consciously.")
 
     if args.dry_run:
-        print("\n(dry run) would run: pnpm build:portable, then zip dist-portable/ "
+        print(f"\n(dry run) would run: {VENUE_BUILD_ENV_TEXT} pnpm build:portable, then zip dist-portable/ "
               f"-> {TALK.name}-venue.zip")
         return 0
 
-    print("\n=== venue: pnpm build:portable ===")
-    rc = subprocess.call(["pnpm", "build:portable"], cwd=TALK)
+    print(f"\n=== venue: {VENUE_BUILD_ENV_TEXT} pnpm build:portable ===")
+    rc = subprocess.call(["pnpm", "build:portable"], cwd=TALK, env={**os.environ, **VENUE_BUILD_ENV})
     if rc != 0:
         return rc
 

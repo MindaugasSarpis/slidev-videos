@@ -93,3 +93,33 @@ def test_rclone_progress_only_on_a_terminal(tmp_path, monkeypatch, tty):
     monkeypatch.setattr(pipeline.sys, "stdout", types.SimpleNamespace(isatty=lambda: tty, write=lambda s: None, flush=lambda: None))
     assert pipeline.main(["--project", str(root), "sync"]) == 0
     assert ("--progress" in calls[0]) is tty
+
+
+# --- venue ---------------------------------------------------------------------
+
+def test_venue_builds_local_first(tmp_path, monkeypatch, capsys):
+    root = make_talk(tmp_path)
+    builds = []
+
+    def fake_call(cmd, *a, **k):
+        builds.append((cmd, k.get("env", {})))
+        (root / "dist-portable").mkdir(exist_ok=True)
+        (root / "dist-portable" / "index.html").write_text("<html></html>")
+        return 0
+    monkeypatch.setattr(pipeline.subprocess, "call", fake_call)
+    monkeypatch.setattr(pipeline, "_release_assets", lambda *a: (None, None))
+    monkeypatch.setattr(pipeline, "_probe_media", lambda src: None)
+    assert pipeline.main(["--project", str(root), "venue", "--skip-pull"]) == 0
+    (cmd, env), = builds
+    assert cmd == ["pnpm", "build:portable"]
+    assert env["VITE_VIDEOS_LOCAL_FIRST"] == "1"
+    assert "PATH" in env                      # the rest of the environment is kept
+    assert (root / f"{root.name}-venue.zip").is_file()
+
+
+def test_venue_dry_run_names_the_variable(tmp_path, monkeypatch, capsys):
+    root = make_talk(tmp_path)
+    monkeypatch.setattr(pipeline, "_release_assets", lambda *a: (None, None))
+    monkeypatch.setattr(pipeline, "_probe_media", lambda src: None)
+    assert pipeline.main(["--project", str(root), "venue", "--skip-pull", "--dry-run"]) == 0
+    assert "VITE_VIDEOS_LOCAL_FIRST=1 pnpm build:portable" in capsys.readouterr().out

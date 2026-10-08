@@ -57,8 +57,9 @@ then the shared release, then `videos/` and `videos-hq/` under the deck's
 `public/` (only present in a keep-videos build — the offline fallback);
 `slidev` dev mode tries the local copies first. Setting
 `VITE_VIDEOS_LOCAL_FIRST=1` at build time makes a keep-videos build
-local-first too. Each `<source>` failure advances the chain; when it is
-exhausted the slide shows `Video not available: <src>`.
+local-first too; `slidev-videos venue` always builds with it. Each
+`<source>` failure advances the chain; when it is exhausted the slide shows
+`Video not available: <src>`.
 
 **Playback** is slide-driven: rewind + play on activation (muted first, then
 unmuted unless `muted`), pause + rewind on deactivation. A `<source>` is only
