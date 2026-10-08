@@ -5,7 +5,7 @@
 // Pages build loads as it does on the web.
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { join, extname } from 'node:path';
 
 const MIME = {
@@ -33,6 +33,7 @@ export function normaliseBase(base, dist) {
 // root; `misses` collects requests that fell through to index.html although
 // they named a file (an asset the build expects and the dist lacks).
 export function serve(dist, { base = '/' } = {}) {
+  if (!existsSync(join(dist, 'index.html'))) return Promise.reject(new Error(`${dist}: no index.html (build the deck first)`));
   const misses = [];
   const server = createServer(async (req, res) => {
     let p = decodeURIComponent(new URL(req.url, 'http://x').pathname);
