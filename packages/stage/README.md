@@ -187,14 +187,155 @@ deck's own `styles/index.css`.
 ## Tools
 
     slidev-stage-check [deck-dir] [--plugins hadron] [--types beacon]
-    slidev-stage-shots <dist> <out-dir> [--slides 1-12] [--clicks '{"9":3}'] [--wait 4200]
+    slidev-stage-shots <dist> <out-dir> [options]
 
 `check` validates the space file and that every `space.at` and stop in the
-deck resolves; run it after editing either. `shots` photographs a built deck
-slide by slide in a headless browser (WebGL on SwiftShader) and reports
-content running off a slide, where the camera stood, and page errors. It
-needs `playwright-chromium` in the deck (`pnpm add -D playwright-chromium`,
-then `pnpm exec playwright install chromium`); nothing else in the addon does.
+deck resolves; run it after editing either. `shots` photographs a deck frame
+by frame in a headless browser; see [Headless review](#headless-review). It
+needs `playwright-chromium` (`pnpm add -D playwright-chromium`, then
+`pnpm exec playwright install chromium`); nothing else in the addon does.
+
+## Headless review
+
+`slidev-stage-shots` photographs a built deck, or a dev server, one settled
+frame at a time, and writes a report a person or an agent can act on: where
+the camera stood, content running off the slide, page errors and failed
+requests, and every box of text on screen with its type size and the
+brightness behind it.
+
+    slidev build deck.md --base /
+    slidev-stage-shots dist shots --sheet              # every slide, plus shots/sheet.png
+    slidev-stage-shots dist shots --slides 4-6 --clicks all
+    slidev-stage-shots dist shots --changed --sheet    # only what changed since the last run
+    slidev-stage-shots --dev deck.md shots --slides 3  # straight from the markdown
+
+### Why it settles instead of waiting
+
+The world keeps its own time: a flight takes up to 4.5 s and a form gathers
+for about as long after it. Headless, WebGL runs in software at 2–6 frames a
+second, and the engine clamps its frame step to 1/12 s, so the same flight
+takes half a minute of wall time. A fixed `--wait` either spends that time on
+every slide or photographs the camera mid-flight.
+
+So each frame is settled. Before the deck's own code runs, the tool puts
+`performance.now` and every `requestAnimationFrame` timestamp on a clock it
+drives. The clock stands still while the tool changes slide or click. Then the
+world runs undrawn, each animation frame one full engine step, until the
+camera has landed, nothing assembles (`html[data-space-assembled]`) and
+`--settle` engine-seconds (default 6) have passed since the change. That
+minimum is for talk forms that step on a click without telling the engine.
+Then the dust simulates for `--dust` frames, one frame is drawn with the clock
+held, finite CSS animations are finished (the cover title, rising cards) and
+the page is photographed. The halo and the talks' counters read the same
+clock, so they have finished too. `--wait` caps one frame's settle in wall
+time; a frame that reaches it is reported as not settled.
+
+The frame-rate guard is held from the first frame, so every picture has the
+full pixel ratio and dust (the report records `dpr` and `dust`).
+`Math.random` is seeded (`--seed`, default 1) and the clock moves in whole
+steps, so two runs on one renderer settle to the same engine time. Compare
+runs with a pixel threshold rather than checksums, never across renderers,
+and with `--no-halo`: the halo draws from `Math.random` as cards appear.
+
+### Renderer
+
+`--gl auto` (the default) starts the browser with ANGLE on GL, keeps it when
+that reaches a real driver (Mesa's llvmpipe is about three times faster than
+SwiftShader), and otherwise starts again on SwiftShader. Which one you get
+depends on the browser build: in WSL, Chromium 147 (playwright-chromium 1.59)
+reaches llvmpipe and Chromium 151 (1.62) does not. The renderer string is in
+every report line. playwright-chromium is an optional peer, looked for next
+to the tool, then in the working directory; `SLIDEV_STAGE_PLAYWRIGHT=<dir>`
+points at another install.
+
+### When shots are slow
+
+Run `--probe` first. For each slide it measures, on the live page and the
+real clock, frames per second and engine-seconds per wall second, and warns
+below 0.5. Settle gets there either way, but a slow page costs on every drawn
+frame. `--draft` (device pixel ratio 0.5) draws a quarter of the pixels,
+`--slides` keeps a run small, and `--jobs N` photographs with N pages at once.
+
+### Options
+
+| option | |
+|---|---|
+| `--slides 1-12,15` | which slides (default: all) |
+| `--clicks none\|last\|all` | which click states of a slide (default `none`); `{"9":3}` still works |
+| `--settle S` | engine-seconds a frame stands still after its last change (default 6) |
+| `--wait MS` | cap on one frame's settle, wall time (default 30000); the screenshot timeout is the larger of this and 60 s |
+| `--dust N` | dust frames after the settle (default 12) |
+| `--size WxH`, `--draft` | viewport (default 1600x900); device pixel ratio 0.5 |
+| `--burst N --every S` | N frames per click state, S engine-seconds apart (`04-b1.png` …) |
+| `--seed N`, `--no-halo` | for comparing runs |
+| `--base PATH` | the base the deck was built for (default: read from `dist/index.html`) |
+| `--changed` | photograph only frames whose slide, CSS or public files changed |
+| `--sheet` | a labelled contact sheet, `<out-dir>/sheet.png`, drawn in the browser |
+| `--probe` | fps and engine-seconds per second per slide; no pictures |
+| `--console` | record console warnings |
+| `--jobs N` | N pages in parallel |
+| `--gl auto\|gl\|swiftshader` | the renderer |
+| `--json FILE` | the report (default `<out-dir>/shots.ndjson`) |
+| `--dev deck.md` | start `slidev` on a free port, photograph it, stop it by its process group |
+| `--lock FILE`, `--no-lock` | the shared lock (default `/tmp/slidev-stage-shots.lock`) |
+
+A deck built for GitHub Pages (`--base /repo/talk/`) is served under that
+base. `--changed` keeps its hashes in `<out-dir>/.shots-cache.json`: each
+frame's markup and frontmatter, the built CSS file names, the public files
+(size and time) and the options. It does not see edits to builder code
+(`setup/*.js`): photograph without it after changing a form. A production
+build streams its clips from the release (the player is remote-first outside
+`slidev dev`); build with `VITE_VIDEOS_LOCAL_FIRST=1` to photograph offline.
+
+### Shared machine
+
+Every run holds `/tmp/slidev-stage-shots.lock` (`flock`) for its whole length,
+so runs from several sessions queue instead of slowing each other down. A run
+started inside `flock /tmp/slidev-stage-shots.lock …` sees that the lock is
+already its own and goes ahead.
+
+### Exit codes
+
+| | |
+|---|---|
+| 0 | every frame settled and clean |
+| 3 | a frame runs off the slide (more than 1 px), has page errors or failed same-origin requests, failed, or did not settle |
+| 1 | the run itself failed (no browser, no deck, a crash) |
+| 2 | bad arguments |
+
+### The report
+
+One JSON object per line, one line per frame, in slide order, written as the
+run goes (a crash keeps what was photographed):
+
+| field | |
+|---|---|
+| `slide`, `click`, `burst`, `frame`, `png` | which frame, and its picture (`07-c2.png`) |
+| `station`, `at`, `atStation` | where the camera stood |
+| `renderer` | the WebGL renderer string |
+| `settled`, `settleMs`, `engineSec`, `engineTime` | did it settle, in how long, over how many engine-seconds, at what engine time |
+| `shotMs` | finishing, measuring and photographing |
+| `flying`, `assembled`, `dpr`, `dust` | the world's state in the picture (`dust`: grains drawn) |
+| `probe` | `stage` (window.__stage), `handles` (an older engine's canvas.__space) or `none` |
+| `overflowPx`, `overflowRightPx` | how far the slide's content runs past its bottom and right edges (negative: inside) |
+| `textBoxes` | `[{ text, x, y, w, h, fontPx, lumMean, lumVar, white }]`: every visible box of text on the slide and in the stop HUD, in screen px; luminance (0–1) of its area in the picture, and the share of clipped white |
+| `wordsOnScreen`, `minFontPx` | |
+| `pageErrors`, `consoleWarnings`, `httpErrors` | since the frame before (`httpErrors`: `{ status, url, local }`) |
+| `unchanged` | `--changed` kept the last picture |
+| `error` | the frame failed; the run went on |
+
+`--probe` writes `{ slide, probe: true, fps, engineSecPerSec, dpr, dust, station }`
+per slide instead. A run that fails ends with a `{ "fatal": … }` line.
+
+### The probe
+
+The deck publishes `window.__stage` for tools like this one:
+`state()` (slide, `total`, `clicks`, `clicksTotal`, `at`, `station`,
+`flying`, `assembled`, `changedAt` — the engine time of the last pose or step
+change — `elapsed`, `dpr`, `guard`, `dust`), `settle({ min, max })`,
+`holdQuality()`, `fps(seconds)`, and `space` / `probe` / `hum`, the handles
+older probes read as `root.__space`, `canvas.__space` and `root.__hum`. The
+tool falls back to those handles on decks built with an older engine.
 
 ## Develop
 
