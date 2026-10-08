@@ -1,166 +1,169 @@
 # slidev-videos: notes for agents
 
-Tools for keynote-grade Slidev talks. The talks live in `~/outreach_talks`
-(GitHub `cern_outreach_talks`); this repo holds what they share.
+Tools for keynote-grade Slidev talks. The talks live in the sibling checkout
+`../outreach_talks` (GitHub `cern_outreach_talks`); this repo holds what they
+share. Both sit in `$OUTREACH_ROOT`. outreach_talks' `scripts/bootstrap.sh`
+writes the machine's settings to `~/.config/outreach_talks/env`
+(`OUTREACH_ROOT`, `SLIDEV_VIDEOS_DIR`, `OUTREACH_ENV_BIN`, the render
+backend). A shell loads them with
+`set -a; . ~/.config/outreach_talks/env; set +a`.
+
+## Sessions
+
+The Tools session starts from outreach_talks: `pnpm talk session tools`
+opens the window `tools` in the tmux session `talks`, in this repo's main
+checkout (`$SLIDEV_VIDEOS_DIR`, default `$OUTREACH_ROOT/slidev-videos`),
+running `claude --name Tools --remote-control Tools`.
 
 ## What is here
 
-- `src/slidev_videos/`: the `slidev-videos` CLI (Python 3.11+, stdlib only),
-  tests in `tests/`. `shared.toml` is the shared clip library; with the root
-  `videos.toml` this repo is itself a project whose `videos-shared` release
-  hosts the library's encodes.
-- Repo root: `slidev-addon-videos` (`components/VideoPlayer.vue`, the dust
-  overlay `components/VideoDust.vue` + `components/video-dust/`,
-  `global-top.vue`). It stays at the root so `#v0.3.x` installs resolve.
-- `packages/stage/`: `slidev-addon-stage`, with its own version in its
-  package.json. The 3D world (`stage/`), `components/`, `styles/`,
-  `bin/check.mjs` (`slidev-stage-check`), `bin/shots.mjs`
-  (`slidev-stage-shots`), `example/`, `test/`.
-- `example/`: the player's example deck for the smoke test. `scripts/`:
-  `make-example-clip.mjs`, `smoke-example.mjs`, `fetch-shared-raws.sh`,
-  `release.py`.
+- `src/slidev_videos/`: the `slidev-videos` CLI (Python 3.11+, stdlib),
+  tests in `tests/`; `shared.toml`, the shared clip library (encodes on the
+  `videos-shared` release, root `videos.toml`).
+- Root: `slidev-addon-videos` (`components/VideoPlayer.vue`, the dust
+  overlay), kept at the root so `#v0.3.x` installs resolve.
+- `packages/stage/`: `slidev-addon-stage`, own version in its package.json:
+  the 3D world (`stage/`), `components/`, `styles/`, the bins
+  (`slidev-stage-check`, `-shots`, `-record`, `-safe`), `example/`, `test/`.
 
-Consumers: each talk pins `github:MindaugasSarpis/slidev-videos#<ref>` and
-`...#<ref>&path:/packages/stage` in `talks/<t>/package.json`;
-`scripts/new_talk.py` (`ADDONS_REF`) and `env.yaml` carry the pin for new
-talks. The CLI on this machine is an editable install of the main checkout
-(`/usr/bin/python3`, user site), so every talk session runs whatever
-`~/slidev-videos` holds, the moment it changes.
+Each talk pins `github:MindaugasSarpis/slidev-videos#<ref>` and
+`...#<ref>&path:/packages/stage`; outreach_talks' `new_talk.py`
+(`ADDONS_REF`) and `env.yaml` carry the pin for new talks. The CLI is an
+editable install of the main checkout (bootstrap's `pip install -e`), so
+every talk session runs what the main checkout holds, the moment it changes.
 
 ## Worktrees
 
-- Never switch the main checkout `~/slidev-videos` off `main` and never leave
-  edits in it: it is the CLI every talk session is running.
+- Never switch the main checkout off `main` or leave edits in it.
 - Work in `.claude/worktrees/<slug>` (gitignored):
-  `git -C ~/slidev-videos worktree add .claude/worktrees/<slug> -b <type>/<name> <base>`.
-- `git add` named paths; no `git stash` (the stash is shared by all worktrees).
-- Merging and tagging are the owner's. Merge with a merge commit, never squash
-  or rebase: talks pin commits of PR branches by hash, and after a squash
-  those commits are on no branch once the PR branch is deleted.
+  `git worktree add .claude/worktrees/<slug> -b <type>/<name> <base>`.
+- `git add` named paths; no `git stash` (shared by all worktrees).
+- Merging and tagging are the owner's, with merge commits, never squash or
+  rebase: talks pin PR-branch commits by hash.
 
 ## Dev loop: an engine change in a talk without re-pinning
 
-Re-pinning a hash and reinstalling cost about 7 minutes per tweak. Instead,
-link the addons to your checkout in a /tmp copy of outreach_talks. Tested on
-2026-10-08 with the workspace layout (root `pnpm-workspace.yaml` over
-`talks/*`), pnpm 10.33 and 9.15.9, on OpenData and Innoday:
+Re-pinning costs about 7 minutes a tweak. Instead link the addons to your
+checkout in a /tmp copy of outreach_talks (tested 2026-10-08 on OpenData
+and Innoday):
 
-    export PATH=~/micromamba/envs/outreach_talks/bin:$PATH
-    W=/tmp/build/<label>; SV=~/slidev-videos/.claude/worktrees/<slug>
-    git clone -q ~/outreach_talks $W/ot
-    # a talk's uncommitted work, if wanted:
-    rsync -a --exclude node_modules --exclude dist --exclude shots \
-      ~/outreach_talks/talks/<t>/ $W/ot/talks/<t>/
+    export PATH=$OUTREACH_ENV_BIN:$PATH
+    W=/tmp/<label>; SV=$SLIDEV_VIDEOS_DIR/.claude/worktrees/<slug>
+    git clone -q --shared $OUTREACH_ROOT/outreach_talks $W/ot
 
-1. `pnpm install` in `$SV` first: the linked engine resolves its own
-   imports (`@fontsource/space-grotesk`) from `$SV/node_modules`, and the
-   build fails without it. Then in `$W/ot/package.json` add (absolute paths,
-   `$SV` written out):
+1. `pnpm install` in `$SV` (the engine resolves its imports there). In
+   `$W/ot/package.json` add, `$SV` written out:
+   `"pnpm": { "overrides": { "slidev-addon-videos": "link:<SV>",
+   "slidev-addon-stage": "link:<SV>/packages/stage" } }`, then
+   `cd $W/ot && pnpm install`.
+2. A checkout without fix/stage-addon's `vite.config.js`: a talk that
+   imports three itself needs `resolve: { dedupe: ['three'] }` in its
+   `vite.config.ts`, or `slidev dev` loads two copies.
+3. Edit in `$SV`; `pnpm exec slidev build deck.md --out $W/site --base /`
+   (about 6 s) or keep `pnpm exec slidev deck.md` running.
 
-       "pnpm": { "overrides": {
-         "slidev-addon-videos": "link:<SV>",
-         "slidev-addon-stage": "link:<SV>/packages/stage" } }
-
-   then `cd $W/ot && pnpm install`. In every talk of the copy,
-   `node_modules/slidev-addon-*` are now symlinks into `$SV`. The install
-   also makes `$SV/packages/stage/bin/*` executable; a branch cut before
-   they were committed executable then shows them as changed.
-2. If the talk imports three itself (builders in `setup/`), add
-   `resolve: { dedupe: ['three'] }` to its `vite.config.ts` (create it if
-   missing), e.g.
-   `export default { optimizeDeps: { exclude: ['slidev-addon-stage', 'three'] }, resolve: { dedupe: ['three'] } }`.
-   The linked engine imports three from `$SV/node_modules`, the talk from its
-   own: OpenData's build carried two copies without the line and one with it,
-   and in `slidev dev` both then import the same file. Innoday, with no three
-   of its own, had one copy either way.
-3. Edit in `$SV`, then `pnpm exec slidev build deck.md --out $W/site --base /`
-   (about 6 s, no install) or keep `pnpm exec slidev deck.md` running; Slidev
-   serves files from addon roots, linked ones included.
-
-`pnpm link <dir>` works too but writes a root dependency, an `overrides:`
-entry in `pnpm-workspace.yaml` and the lockfile; the explicit override is
-easier to see and undo. Never do any of this in `~/outreach_talks` or a talk's
-worktree: it rewrites `pnpm-lock.yaml` under a live session.
-
-For the CLI: `python3 -m venv $W/venv && $W/venv/bin/pip install -e $SV`,
-then `PATH=$W/venv/bin:$PATH` in the copy, and `pnpm videos:*` runs your
-checkout. Never pip install into the shared `/usr/bin/python3` user site.
-
-Pin a tag only at release.
+Never do this in the real outreach_talks or a talk's worktree: it rewrites
+`pnpm-lock.yaml` under a live session. CLI: `python3 -m venv $W/venv &&
+$W/venv/bin/pip install -e $SV`, `$W/venv/bin` first on PATH. Pin a tag only
+at release.
 
 ## Tests
 
-    export PATH=~/micromamba/envs/outreach_talks/bin:$PATH
-    PYTHONPATH=src /usr/bin/python3 -m pytest tests -q
-    pnpm install && pnpm test:all      # clip, example build + smoke, stage tests, stage build + smoke
-    pnpm stage:test                    # stage unit tests alone
-    node packages/stage/bin/check.mjs packages/stage/example
+`$PY` is a Python 3.11+ with pytest (the env's has none):
 
-`PYTHONPATH=src` matters: without it `slidev_videos` imports from the main
-checkout's editable install, not your worktree. Wrap headless browser runs
-(smoke, shots) in `flock /tmp/slidev-stage-shots.lock <cmd>` and keep them to
-a few slides: other sessions run headless WebGL on the same CPU. Commit bins
-executable (`git update-index --chmod=+x`): linking a checkout into a talk
-(the dev loop's `link:` override) sets the bit on `packages/stage/bin/*`,
-and git would then show a change that release.py refuses. A `pnpm install`
-in this repo leaves the bits as they are.
+    PYTHONPATH=src $PY -m pytest tests -q
+    pnpm install && pnpm test:all     # every build, smoke and stage test
+    pnpm stage:test
+
+Without `PYTHONPATH=src`, `slidev_videos` imports from the main checkout.
+Run browsers inside `flock /tmp/slidev-stage-shots.lock <cmd>`, a few
+slides at a time: other sessions render here too. Commit bins
+executable (`git update-index --chmod=+x`): a `link:` install sets the bit.
+
+## Headless Chromium
+
+shots, record, safe and the smoke start the browser through
+`packages/stage/bin/lib/chromium.mjs` (feat/shots-v2 and feat/broadcast carry
+byte-identical copies). Backends, best first, each kept only when the
+page's renderer string confirms it:
+
+- `gpu-nvidia`: native NVIDIA driver over EGL (nvidia-smi, not WSL)
+- `d3d12`: WSL's GPU (`/dev/dxg`) through Mesa's d3d12 driver in a private
+  prefix, `$SLIDEV_STAGE_MESA_D3D12` (default `~/.local/share/mesa-d3d12`)
+- `llvmpipe`: Mesa on an X display (`DISPLAY=:0` when unset and
+  `/tmp/.X11-unix/X0` exists), `LP_NUM_THREADS=8`
+- `swiftshader`: last, about 3x slower, with a warning
+
+`SLIDEV_STAGE_GL` (`auto`, a backend, `gl`, `none`; a forced backend not
+reached fails), `SLIDEV_STAGE_CHROMIUM` (a browser to try first),
+`SLIDEV_STAGE_CHROMIUM_ARGS` (shell words, last), `SLIDEV_STAGE_CHROMIUM_ENV`
+(`K=V;K=V`), `SLIDEV_STAGE_PLAYWRIGHT`. Bootstrap writes the GL settings to
+the env file; `pnpm talk` passes them on. playwright-chromium is pinned
+`~1.59.1`: in WSL, Chromium 151 and 153 headless shells fell back to
+SwiftShader.
 
 ## Machine gotchas
 
-- `~/.local/bin/ffmpeg` and `ffprobe` (static 7.0.2) come first on the bare
-  PATH and exit 139 (segfault) on any `https://` input, silently under
-  `-v error`. Use the micromamba env's build (it also has NVENC). `frames`
-  downloads and cuts locally to get round it; `preflight` of release-only
-  clips needs the env's ffmpeg.
-- The bare PATH starts with a Windows pnpm shim under `/mnt/c`; use the env's.
-- With the env first, `python3` is the env's Python, which has no pytest; run
-  pytest and `release.py` with `/usr/bin/python3`.
-- The editable install's metadata keeps the version it was installed at
-  (0.1.0) until `pip install -e` is re-run; `slidev_videos.__version__` is
-  current.
-- The shell is zsh: quote globs.
+- Static Linux ffmpeg builds crash (exit 139) on `https://` input, silently
+  under `-v error`. Use the env's ffmpeg (`$OUTREACH_ENV_BIN`, with NVENC);
+  `slidev-videos doctor` names the pair the CLI picked.
+
+## Merge order (open branches, 2026-10)
+
+All five fork from PR #2's head (758c0e7). Tried in a /tmp clone, where
+`pnpm test:all` then passed:
+
+1. PR #2 (feat/effects-v2) alone; tag v0.5.0 (below).
+2. chore/release-tooling, fix/cli-hardening: they conflict with nothing.
+3. feat/shots-v2.
+4. feat/broadcast: launcher, pins and lockfile equal shots-v2's; only
+   `packages/stage/README.md` conflicts (one hunk): keep both sides.
+5. fix/stage-addon conflicts in `packages/stage/`: `README.md`,
+   `components/Stage.vue`, `scripts/smoke.mjs` (keep both sides),
+   `test/stage.test.mjs` (union the imports), `stage/space.js` (its
+   `forms` line, broadcast's `twinkle`). Then fix what merges clean but
+   breaks: `stage/types.js` needs `look` in STAGE_KEYS and `twinkle`,
+   `guard`, `lift` in OPTION_KEYS (else check warns of `look` and fails
+   those options; the key-list test then expects `lift` and skips the
+   look's `halo` and `max`); `scripts/smoke-dev.mjs` launches through
+   `bin/lib/chromium.mjs` (`GL_ARGS` is gone); the example has 7 slides
+   (smoke's `probe.total`).
+
+After each, `pnpm install --frozen-lockfile` and the unit tests; at the
+end, `pnpm test:all` under the lock.
 
 ## Releasing
 
-v0.5.0 is tagged by hand, before chore/release-tooling is merged: merge
-PR #2 (feat/effects-v2) on its own, tag that merge commit
-(`git tag -a v0.5.0 -m 'slidev-videos v0.5.0' <merge>`) and push the tag;
-the release notes are CHANGELOG.md's v0.5.0 section. There
-`git diff 640eaa5 v0.5.0 -- packages/` is empty, as the talks' pin bump
-needs (chore/release-tooling also changes the bins' file modes).
-release.py starts with v0.6.0; it refuses while a version in CHANGELOG.md
-has no tag.
+v0.5.0 is tagged by hand: merge PR #2 alone,
+`git tag -a v0.5.0 -m 'slidev-videos v0.5.0' <merge>`, push the tag; notes
+from CHANGELOG.md's v0.5.0 section. `git diff 640eaa5 v0.5.0 -- packages/`
+is then empty, as the talks' pin bump needs. release.py starts at v0.6.0
+(it refuses while a CHANGELOG version is untagged):
 
-1. The owner merges what goes in (merge commits) and pulls main.
-2. Make CHANGELOG.md's `## Unreleased` match what landed. Branches add
-   entries there and leave version strings to release.py
-   (`tests/test_versions.py` holds them together).
-3. In an installed checkout on main:
-   `PATH=~/micromamba/envs/outreach_talks/bin:$PATH /usr/bin/python3 scripts/release.py X.Y.Z [--stage A.B.C] --dry-run`,
-   read the plan and the diff, then run it without `--dry-run`. Give
-   `--stage` when `packages/stage` changed (the plan says so). It checks the
-   tree, runs both test suites, commits `chore: vX.Y.Z` and tags locally.
-4. Run the two commands it prints (`git push --atomic origin main
-   refs/tags/vX.Y.Z`, `gh release create ...`), or pass `--push`.
-5. In outreach_talks: `pnpm talk bump-toolkit vX.Y.Z` (the talks' two addon
-   pins, `new_talk.py`'s `ADDONS_REF`, `env.yaml`). Talks being filmed or
-   presented keep their pin until delivered.
+1. The owner merges the branches (above) and pulls main.
+2. Make `## Unreleased` match what landed (a comment above each entry
+   names its branch; the release drops comments). Branches add entries
+   there and leave version strings to release.py.
+3. With `$OUTREACH_ENV_BIN` first on PATH:
+   `$PY scripts/release.py 0.6.0 --stage 0.3.0 --dry-run`; read the plan and
+   diff, then run it without `--dry-run`: checks, both suites, commit
+   `chore: v0.6.0`, local tag.
+4. Run the two printed commands (`git push --atomic ...`,
+   `gh release create ...`), or pass `--push`.
+5. In outreach_talks, `pnpm talk bump-toolkit v0.6.0` moves the pins; talks
+   being filmed or presented keep theirs until delivered. A talk then moves
+   `<Count>` to `<StageCount>` and drops `setup/Count.vue` and
+   `vite.config.ts` (`packages/stage/README.md`).
 
 ## Durable rules
 
-- The repo grows into a toolkit for keynote talks: one package per capability
-  under `packages/`, configured from deck headmatter, extended by registration
-  (builders, palettes), with no talk's content in it.
-- Tools meet through window events, not imports, so a deck can take one
-  without the other.
-- In the stage, build scenes of grains of light, of a piece with the dust. No
-  solid meshes, floating labels or scale bars for keynote visuals: the owner
-  rejected a Solar System of lit spheres as cheap. The solid builders (`orbs`,
-  `ring`, `bar`, `tracks`, `page`) remain for diagrams.
-- Headless checks render in software (llvmpipe or SwiftShader). Visual
-  reworks wait until the owner has seen them on a real GPU: show screenshots,
-  keep the PR a draft until then.
-- The repo is public: no personal data in any file or commit. Refer to the
-  owner as "the owner".
-- Commits: `type(scope): what changes, in plain words` (scopes such as
-  player, stage, cli, check, shared); the body says why.
+- One package per capability under `packages/`, configured from deck
+  headmatter, extended by registration, with no talk's content.
+- Tools meet through window events, not imports.
+- Stage scenes are grains of light, of a piece with the dust: no solid
+  meshes, floating labels or scale bars in keynote visuals (the owner
+  rejected lit spheres as cheap).
+- Visual reworks wait until the owner has seen them on a real GPU: show
+  screenshots, keep the PR a draft until then.
+- Public repo: no personal data. Refer to the owner as "the owner".
+- Commits: `type(scope): what changes, in plain words`; the body says why.
