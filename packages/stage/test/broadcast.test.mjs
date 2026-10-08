@@ -97,6 +97,10 @@ test('record arguments', () => {
   const p = recordArgs(['d', 'o', '--fps', '25', '--size', '1280x720', '--slides', '2-4', '--plate', '--hold', '3', '--clicks', '{"3":1}', '--flash']);
   assert.deepEqual([p.fps, p.size, p.slides, p.plate, p.hold, p.clicks, p.flash], [25, [1280, 720], '2-4', true, 3, { 3: 1 }, true]);
   assert.equal(recordArgs(['d', 'o', '--clicks', 'none']).clicks, 'none');
+  // the shared launcher's backends, all but none (the recorder draws every frame)
+  assert.equal(recordArgs(['d', 'o']).gl, 'auto');
+  for (const gl of ['gpu-nvidia', 'd3d12', 'llvmpipe', 'swiftshader', 'gl']) assert.equal(recordArgs(['d', 'o', '--gl', gl]).gl, gl);
+  assert.throws(() => recordArgs(['d', 'o', '--gl', 'none']), /--gl wants/);
   assert.throws(() => recordArgs(['d', 'o', '--fps', '0']));
   assert.throws(() => recordArgs(['d', 'o', '--size', '1920']));
 });

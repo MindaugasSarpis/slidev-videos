@@ -8,7 +8,8 @@
 //
 //   slidev-stage-record <dist> <out-dir> [--fps 50] [--size 1920x1080] [--slides 2-5]
 //                       [--plate] [--hold 8] [--max 40] [--clicks all|none|'{"3":1}']
-//                       [--base auto] [--seed 1] [--flash] [--gl auto|gl|swiftshader]
+//                       [--base auto] [--seed 1] [--flash]
+//                       [--gl auto|gpu-nvidia|d3d12|llvmpipe|swiftshader|gl]
 //                       [--chromium path] [--encoder auto|nvenc|x264]
 //
 //   NN.mp4        slide NN as it arrives: the flight, the settle, then --hold seconds
@@ -24,6 +25,9 @@
 //   --max     seconds at most per file
 //   --base    the base the deck was built for; auto reads it from index.html
 //   --flash   a rough flash check of each file (see lib/record-flash.mjs)
+//   --gl      the WebGL backend: auto ($SLIDEV_STAGE_GL, else the fastest the
+//             machine reaches), gpu-nvidia, d3d12, llvmpipe, swiftshader, or
+//             gl (any but SwiftShader); see lib/chromium.mjs
 //
 // A clip slide is recorded when the clip is served from the deck itself
 // (build with VITE_VIDEOS_LOCAL_FIRST=1 and the clips in public/videos/): the
@@ -31,8 +35,11 @@
 // (a release URL) cannot be stepped that way; the slide is skipped and the
 // edit list names the clip, for the editor to cut in from the source.
 //
-// Needs playwright-chromium and ffmpeg. Software WebGL: llvmpipe where the
-// browser reaches it, SwiftShader otherwise (see lib/record-browser.mjs).
+// Needs playwright-chromium and ffmpeg. The browser comes from lib/chromium.mjs,
+// the launcher every stage tool shares: the GPU where it is reached, then
+// llvmpipe, then SwiftShader, with a warning (every frame is drawn here, so
+// the backend sets the pace). Run it inside `flock /tmp/slidev-stage-shots.lock`
+// on a machine others render on: it does not take the lock itself.
 // Exit 0 when a slide was recorded or named for cutting in, 1 on a failure
 // or when the deck has none of the slides asked for, 2 on a usage error.
 import { mkdir, writeFile, rm } from 'node:fs/promises';
@@ -41,12 +48,13 @@ import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { serve, normaliseBase, parseSlides, checkSlides, parseSize } from './lib/record-serve.mjs';
-import { loadChromium, launchBrowser } from './lib/record-browser.mjs';
+import { launch, loadPlaywright, MODES } from './lib/chromium.mjs';
 import { resolveFfmpeg, pickEncoder, encoder, decodeSmall } from './lib/record-ffmpeg.mjs';
 import { seedRandom, recorderHooks } from './lib/record-page.mjs';
 import { findFlashes } from './lib/record-flash.mjs';
 
-const USAGE = "usage: slidev-stage-record <dist> <out-dir> [--fps 50] [--size 1920x1080] [--slides 2-5] [--plate] [--hold 8] [--max 40] [--clicks all|none|'{\"3\":1}'] [--base auto] [--seed 1] [--flash] [--gl auto|gl|swiftshader] [--chromium path] [--encoder auto|nvenc|x264]";
+const USAGE = "usage: slidev-stage-record <dist> <out-dir> [--fps 50] [--size 1920x1080] [--slides 2-5] [--plate] [--hold 8] [--max 40] [--clicks all|none|'{\"3\":1}'] [--base auto] [--seed 1] [--flash] [--gl auto|gpu-nvidia|d3d12|llvmpipe|swiftshader|gl] [--chromium path] [--encoder auto|nvenc|x264]";
+const GL = MODES.filter((m) => m !== 'none');
 const PREROLL_STEP = 83;     // ms: the engine's own frame-time clamp (12 fps), so the world gets there in the fewest frames
 const NOISE = /Wake Lock/;   // page errors that say nothing about the deck
 
@@ -69,7 +77,7 @@ export function parseArgs(argv) {
     else if (a === '--base') o.base = value();
     else if (a === '--seed') o.seed = Number(value());
     else if (a === '--flash') o.flash = true;
-    else if (a === '--gl') o.gl = oneOf('auto', 'gl', 'swiftshader');
+    else if (a === '--gl') o.gl = oneOf(...GL);
     else if (a === '--chromium') o.chromium = value();
     else if (a === '--encoder') o.encoder = oneOf('auto', 'nvenc', 'x264');
     else if (a === '-h' || a === '--help') o.help = true;
@@ -226,20 +234,25 @@ async function recordSegment({ page, cdp }, n, k, o, ff, enc) {
 }
 
 export async function record(o, log = console.log) {
-  const chromium = await loadChromium('slidev-stage-record');
+  const { chromium } = loadPlaywright('slidev-stage-record');
   const dist = resolve(o.dist);
   o.out = resolve(o.out);
-  await mkdir(o.out, { recursive: true });
   const ff = resolveFfmpeg();
   const enc = pickEncoder(ff, o.encoder);
   const base = normaliseBase(o.base, dist);
   const { server, url, misses } = await serve(dist, { base });
-  const { browser, renderer, executablePath, version } = await launchBrowser(chromium, { gl: o.gl, executable: o.chromium || undefined });
-  log(`renderer: ${renderer}\nbrowser:  ${executablePath} (${version})\nffmpeg:   ${ff} (${enc.name})`);
+  // a backend asked for and not reached is an error before anything is written
+  const launched = await launch({ chromium, backend: o.gl, executable: o.chromium || undefined, tool: 'slidev-stage-record' })
+    .catch((e) => { server.close(); throw e; });
+  const { browser, renderer, backend, warning, executablePath, version } = launched;
+  await mkdir(o.out, { recursive: true });
+  // what the backend set for the browser; a path by its name only
+  const set = Object.entries(launched.env).map(([k, v]) => (v.length > 32 ? k : `${k}=${v}`)).join(' ');
+  log(`renderer: ${renderer}  (${backend}, Chromium ${version}${set ? `, ${set}` : ''})\nbrowser:  ${executablePath}\nffmpeg:   ${ff} (${enc.name})`);
   const errors = [];
   const report = {
-    deck: dist, base, size: o.size, fps: o.fps, seed: o.seed, hold: o.hold, renderer, browser: version, ffmpeg: ff, encoder: enc.name,
-    look: null, segments: [],
+    deck: dist, base, size: o.size, fps: o.fps, seed: o.seed, hold: o.hold, renderer, backend, browser: version, ffmpeg: ff, encoder: enc.name,
+    ...(warning ? { warning } : {}), look: null, segments: [],
   };
   const save = () => writeFile(join(o.out, 'index.json'), JSON.stringify(report, null, 2) + '\n');
   const clicksFor = (n, total) => {
@@ -311,7 +324,8 @@ export async function main(argv = process.argv.slice(2)) {
   if (r.errors.length) console.log(`\npage errors:\n  ${r.errors.join('\n  ')}`);
   if (r.missing.length) console.log(`\nnot in the dist: ${r.missing.join(', ')}`);
   const done = r.segments.filter((s) => !s.skipped);
-  console.log(`\n${done.length} file(s), ${r.segments.length - done.length} skipped, ${r.secondsPerFrame ?? '-'} s a frame, in ${o.out} (index.json)`);
+  console.log(`\n${done.length} file(s), ${r.segments.length - done.length} skipped, ${r.secondsPerFrame ?? '-'} s a frame on ${r.backend}, in ${o.out} (index.json)`);
+  if (r.warning) console.error(r.warning);
   // nothing recorded and nothing to cut in: none of the slides asked for is in the deck
   if (!r.segments.length) { console.error('no slide recorded: the deck has none of --slides'); return 1; }
   return 0;

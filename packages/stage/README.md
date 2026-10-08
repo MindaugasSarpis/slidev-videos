@@ -198,7 +198,7 @@ deck's own `styles/index.css`.
 deck resolves; run it after editing either. `shots` photographs a built deck
 slide by slide in a headless browser (WebGL on SwiftShader) and reports
 content running off a slide, where the camera stood, and page errors. It
-needs `playwright-chromium` in the deck (`pnpm add -D playwright-chromium`,
+needs `playwright-chromium` 1.59 in the deck (`pnpm add -D playwright-chromium@~1.59.1`,
 then `pnpm exec playwright install chromium`); nothing else in the addon does.
 `record` and `safe` are for a deck that goes to video or to air; see below.
 
@@ -270,7 +270,8 @@ unknown. The stop HUD needs the world and is not measured.
 
     slidev-stage-record <dist> <out-dir> [--fps 50] [--size 1920x1080] [--slides 2-5]
                         [--plate] [--hold 8] [--max 40] [--clicks all|none|'{"3":1}']
-                        [--base auto] [--seed 1] [--flash] [--gl auto|gl|swiftshader]
+                        [--base auto] [--seed 1] [--flash]
+                        [--gl auto|gpu-nvidia|d3d12|llvmpipe|swiftshader|gl]
                         [--chromium path] [--encoder auto|nvenc|x264]
 
 One file per slide, as the audience sees it arrive: the flight in, the forms
@@ -298,16 +299,40 @@ through a real analyser (EA's IRIS is free) as well. Exit 0 when a slide was
 recorded or named for cutting in, 1 on a failure or when the deck has none
 of the slides asked for, 2 on a wrong or unknown option.
 
-The renderer is software WebGL. Mesa's llvmpipe is about three times faster
-than SwiftShader, but headless Chromium 151 and later no longer reach it in WSL:
-the recorder then tries the older headless shells in the Playwright cache
-(`npx playwright@1.59 install chromium-headless-shell` puts one there), or
-takes `--chromium` / `$SLIDEV_STAGE_CHROMIUM`, before falling back to
-SwiftShader. On llvmpipe a 1080p frame of the example deck took 0.13 s under
-the broadcast look and 0.18 s under the default one (SwiftShader: about
-0.55 s), and about 0.4 s with `--plate`, which shoots every frame twice. So a
-15-slide deck at 10 s a slide and 50 fps (7,500 frames) takes 20–30 minutes
-with the start of each slide, or about an hour with plates. ffmpeg comes
+The browser comes from `bin/lib/chromium.mjs`, the launcher shots and safe
+use as well: the fastest WebGL the machine reaches, tried best first (a
+native NVIDIA driver, WSL's GPU through Mesa's d3d12 driver, Mesa's
+llvmpipe, then SwiftShader), each kept only when the page's renderer string
+says it got there. `--gl` or `$SLIDEV_STAGE_GL` forces one, `--chromium` or
+`$SLIDEV_STAGE_CHROMIUM` names a browser to try first, and the launcher's
+header lists the other variables (the Mesa prefix for d3d12, extra browser
+flags and environment). index.json records `renderer` and `backend`; on
+SwiftShader the recorder prints a `WARNING`, and index.json carries it as
+`warning`. In WSL the headless shell of Chromium 147 (playwright-chromium
+1.59, which this package pins) reaches GL and those of 151 and 153 do not,
+so the launcher also tries the other headless shells in the Playwright
+cache (`npx playwright@1.59.1 install chromium-headless-shell` puts one
+there).
+
+Every frame is drawn, so the backend sets the pace. One slide at 1080p50 on
+a 16-core WSL2 machine with an RTX 5080, one run each (wall from start to
+exit, browser start included; CPU of every process of the run):
+
+| slide | backend | frames | a frame | wall | CPU |
+| --- | --- | --- | --- | --- | --- |
+| a still frame dissolving into 140,000 grains | d3d12 | 430 | 0.11 s | 52 s | 64 s |
+| the same | llvmpipe | 430 | 0.20 s | 88 s | 346 s |
+| a title card, with `--plate` | d3d12 | 560, each shot twice | 0.13 s | 76 s | 94 s |
+| the same | llvmpipe | 560, each shot twice | 0.24 s | 136 s | 475 s |
+
+On llvmpipe a frame of the example deck took 0.13 s under the broadcast
+look and 0.18 s under the default one (SwiftShader: about 0.55 s), and 0.4 s
+with `--plate`, which shoots every frame twice. So a 15-slide deck at
+10 s a slide and 50 fps (7,500 frames) takes roughly 15–25 minutes on
+llvmpipe, 30–50 with plates, and about a quarter of an hour on d3d12 with or
+without them, plus a few seconds a slide to start. The recorder takes
+no lock of its own: where others render on the same machine, run it inside
+`flock /tmp/slidev-stage-shots.lock`, the lock shots queue on. ffmpeg comes
 from `$SLIDEV_VIDEOS_FFMPEG_DIR`, the active conda env, `~/micromamba/envs`
 or PATH; NVENC at QP 16 when it works, else x264 at CRF 14.
 

@@ -24,7 +24,7 @@ import { resolve } from 'node:path';
 import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { serve, normaliseBase, parseSlides, checkSlides, parseSize } from './lib/record-serve.mjs';
-import { loadChromium } from './lib/record-browser.mjs';
+import { launch, loadPlaywright } from './lib/chromium.mjs';
 
 const USAGE = 'usage: slidev-stage-safe <dist> [--broadcast] [--json] [--slides 1-12] [--size 1920x1080] [--base auto]';
 const CANVAS_H = 980 * 9 / 16;
@@ -121,12 +121,13 @@ export function judge(state, rules) {
 }
 
 export async function check(o) {
-  const chromium = await loadChromium('slidev-stage-safe');
+  const { chromium } = loadPlaywright('slidev-stage-safe');
   const dist = resolve(o.dist);
   const base = normaliseBase(o.base, dist);
   const rules = o.broadcast ? RULES.broadcast : RULES.hall;
   const { server, url } = await serve(dist, { base });
-  const browser = await chromium.launch({ args: ['--disable-3d-apis', '--mute-audio'] });
+  // the shared launcher's browser and flags, with no WebGL at all
+  const { browser } = await launch({ chromium, backend: 'none', tool: 'slidev-stage-safe' });
   const report = { deck: dist, rules: o.broadcast ? 'broadcast' : 'hall', floor: rules.floor, size: o.size, look: null, states: [], smallest: null, problems: 0 };
   try {
     const page = await browser.newPage({ viewport: { width: o.size[0], height: o.size[1] }, deviceScaleFactor: 1 });
