@@ -22,7 +22,7 @@ ${NOISE}
 vec3 curve(float t) {
   vec3 p = mix(uA, uB, t);
   // envelope pins both ends (hard at the core end so it lands on the node)
-  float env = smoothstep(0.0, 0.2, t) * smoothstep(1.0, 0.85, t);
+  float env = smoothstep(0.0, 0.2, t) * (1.0 - smoothstep(0.85, 1.0, t));
   p.y += snoise(vec3(t * uFreq, uTime * 0.12, uSeed)) * uAmp * env;
   p.x += snoise(vec3(t * uFreq * 0.7, uTime * 0.09, uSeed + 31.7)) * uAmp * 0.35 * env;
   p.z += snoise(vec3(t * uFreq * 0.55, uTime * 0.10, uSeed + 77.3)) * uAmp * 0.6 * env;
@@ -65,7 +65,7 @@ void main() {
   }
   vec3 toP = vWorld - uPointer;
   float near = exp(-dot(toP, toP) / 6.0) * 0.6;
-  float ends = smoothstep(0.0, 0.06, vT) * smoothstep(1.0, 0.985, vT);
+  float ends = smoothstep(0.0, 0.06, vT) * (1.0 - smoothstep(0.985, 1.0, vT));
   float b = (uBaseAlpha + near) * (core + glow) * ends * (1.0 + pulse * 2.6) * uIntro;
   vec3 col = mix(vec3(0.35, 0.62, 0.78), vec3(1.0), clamp(pulse * 0.8 + near * 0.3, 0.0, 1.0));
   gl_FragColor = vec4(col * b, b);

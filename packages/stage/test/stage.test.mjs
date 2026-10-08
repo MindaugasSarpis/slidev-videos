@@ -1,7 +1,7 @@
 // node --test test/   — what can be held to account without a browser.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { CORE_TYPES, PLUGIN_TYPES, anchorIds } from '../stage/types.js';
 import { resolvePalette, PALETTES, DEFAULT_PALETTE, hexToRgb, rgbTriplet, paletteVars, definePalette } from '../stage/palette.js';
 import { checkStage, readStageConfig, deckPoses } from '../bin/check.mjs';
@@ -167,6 +167,19 @@ test('anchors', () => {
   assert.deepEqual(anchorIds({ type: 'orbs', items: [{ id: 'a' }, { pos: [0, 0, 0] }, { id: 7 }] }), ['a', '7']);
   assert.deepEqual(anchorIds({ type: 'ring', id: 'r' }), ['r']);
   assert.deepEqual(anchorIds({ type: 'text', id: 'ignored' }), []);
+});
+
+// ---- shaders -------------------------------------------------------------------------------
+// GLSL leaves smoothstep(a, b, x) undefined for a >= b; a falling edge is
+// written 1.0 - smoothstep(b, a, x).
+test('no shader calls smoothstep with its edges reversed', () => {
+  const files = (dir) => readdirSync(here(dir), { recursive: true }).filter((f) => /\.(js|vue)$/.test(f)).map((f) => `${dir}${f}`);
+  const bad = [];
+  for (const f of [...files('../stage/'), ...files('../components/')]) {
+    const src = readFileSync(here(f), 'utf8');
+    for (const m of src.matchAll(/smoothstep\(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,/g)) if (Number(m[1]) >= Number(m[2])) bad.push(`${f}: ${m[0]}`);
+  }
+  assert.deepEqual(bad, []);
 });
 
 // ---- the shots tool ---------------------------------------------------------------------
