@@ -19,7 +19,8 @@
   },
   "bin": {
     "slidev-stage-check": "bin/check.mjs",
-    "slidev-stage-shots": "bin/shots.mjs"
+    "slidev-stage-shots": "bin/shots.mjs",
+    "slidev-stage-record": "bin/record.mjs"
   },
   "files": ["components", "stage", "styles", "bin", "index.js", "global-top.vue", "global-bottom.vue", "README.md"],
   "scripts": {

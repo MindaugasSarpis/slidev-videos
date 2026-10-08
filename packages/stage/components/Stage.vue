@@ -89,6 +89,7 @@ function webgl2Ok() {
 const frontmatter = computed(() => nav.currentSlideRoute.value?.meta?.slide?.frontmatter || {})
 const frontmatterSpace = computed(() => frontmatter.value.space || null)
 const clicks = computed(() => nav.clicks.value || 0)
+const clicksTotal = computed(() => nav.clicksTotal?.value || 0)   // on the root as data-clicks-total, for the headless tools
 
 function apply(immediate = false) {
   if (!space) return
@@ -317,7 +318,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="root" class="stage" :class="{ 'static-bg': staticBg, ready }">
+  <div ref="root" class="stage" :class="{ 'static-bg': staticBg, ready }" :data-clicks="clicks" :data-clicks-total="clicksTotal">
     <canvas ref="canvas" class="field" aria-hidden="true"></canvas>
     <div class="scrim" aria-hidden="true" :style="{ opacity: dim }"></div>
     <div class="grain" aria-hidden="true"></div>

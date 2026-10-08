@@ -1,8 +1,15 @@
-// node --test test/   — the broadcast look.
+// node --test test/   — the broadcast look, and the recorder's pure parts
+// (the browser runs are in the README's verification).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { LOOKS, PALETTES, resolveLook, liftGround, definePalette, paletteVars } from '../stage/palette.js';
+import { parseArgs as recordArgs } from '../bin/record.mjs';
+import { detectBase, normaliseBase, parseSlides, parseSize } from '../bin/lib/record-serve.mjs';
+import { findFlashes } from '../bin/lib/record-flash.mjs';
+import { ffmpegCandidates } from '../bin/lib/record-ffmpeg.mjs';
 
 const here = (p) => new URL(p, import.meta.url);
 
@@ -54,4 +61,53 @@ test('every type size of the CSS kit follows the scale and the floor', () => {
   assert.ok(sizes.length > 20);
   for (const s of sizes) assert.match(s, /^max\(var\(--stage-type-min, 0px\), [\d.]+px \* var\(--stage-type-scale, 1\)\)$/, s);
   assert.match(css, /html\[data-stage-look="broadcast"\] \{[^}]*--stage-type-min: 16px/);
+});
+
+// ---- the recorder --------------------------------------------------------------------
+test('record arguments', () => {
+  const o = recordArgs(['dist', 'out']);
+  assert.equal(o.fps, 50);
+  assert.deepEqual(o.size, [1920, 1080]);
+  assert.equal(o.hold, 8);
+  assert.equal(o.clicks, 'all');
+  assert.equal(o.base, 'auto');
+  const p = recordArgs(['d', 'o', '--fps', '25', '--size', '1280x720', '--slides', '2-4', '--plate', '--hold', '3', '--clicks', '{"3":1}', '--flash']);
+  assert.deepEqual([p.fps, p.size, p.slides, p.plate, p.hold, p.clicks, p.flash], [25, [1280, 720], '2-4', true, 3, { 3: 1 }, true]);
+  assert.equal(recordArgs(['d', 'o', '--clicks', 'none']).clicks, 'none');
+  assert.throws(() => recordArgs(['d', 'o', '--fps', '0']));
+  assert.throws(() => recordArgs(['d', 'o', '--size', '1920']));
+});
+
+test('a deck is served under the base it was built for', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'stage-base-'));
+  writeFileSync(join(dir, 'index.html'), '<script type="module" src="/talks/x/assets/index-1.js"></script>');
+  assert.equal(detectBase(dir), '/talks/x/');
+  assert.equal(normaliseBase('auto', dir), '/talks/x/');
+  writeFileSync(join(dir, 'index.html'), '<link rel="stylesheet" href="/assets/index-1.css">');
+  assert.equal(detectBase(dir), '/');
+  assert.equal(normaliseBase('/', dir), '/');
+  assert.equal(normaliseBase('a/b', dir), '/a/b/');
+  assert.equal(detectBase(join(dir, 'missing')), '/');
+  assert.deepEqual(parseSlides('3,1-2,9', 5), [1, 2, 3]);
+  assert.deepEqual(parseSize('1280x720'), [1280, 720]);
+});
+
+test('ffmpeg is looked for in the named dir first', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'stage-ff-'));
+  writeFileSync(join(dir, 'ffmpeg'), '');
+  const c = ffmpegCandidates({ SLIDEV_VIDEOS_FFMPEG_DIR: dir, PATH: '' });
+  assert.equal(c[0], join(dir, 'ffmpeg'));
+});
+
+test('the flash check counts bursts over a quarter of the frame', () => {
+  const w = 8, h = 4, fps = 50, frame = (y) => Buffer.alloc(w * h * 3, y);
+  const flicker = Array.from({ length: 100 }, (_, i) => frame(Math.floor(i / 5) % 2 ? 230 : 20));   // 5 Hz, whole frame
+  assert.ok(findFlashes(flicker, { w, h, fps }).warnings.length > 0);
+  const once = Array.from({ length: 100 }, (_, i) => frame(i > 50 && i < 60 ? 230 : 20));
+  const r = findFlashes(once, { w, h, fps });
+  assert.equal(r.transitions.length, 2);
+  assert.deepEqual(r.warnings, []);
+  // the same flicker in one corner (an eighth of the frame) is not a flash
+  const corner = Array.from({ length: 100 }, (_, i) => { const b = frame(20); if (Math.floor(i / 5) % 2) for (const p of [0, 1, 8, 9]) b.fill(230, p * 3, p * 3 + 3); return b; });
+  assert.equal(findFlashes(corner, { w, h, fps }).transitions.length, 0);
 });
