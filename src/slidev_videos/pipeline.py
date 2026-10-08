@@ -2443,6 +2443,88 @@ def _write_frames_index(out_dir: Path, clips: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# contact-sheet — one picture of a clip, to judge candidate footage
+# ---------------------------------------------------------------------------
+#
+# Choosing between candidate clips meant opening each one, or a hand-written
+# frames-to-montage script. contact-sheet tiles a frame every --every seconds
+# (widened for long clips, as for strips) into one PNG, from a local file or
+# an https URL; a URL the ffmpeg in use cannot read is downloaded into a
+# temporary directory first. Needs no project.
+
+SHEET_EVERY_S = 10.0
+SHEET_COLS = 6
+SHEET_TILE_W = 320
+SHEET_PAD = 4
+
+
+def _sheet_out(src: str) -> Path:
+    from urllib.parse import urlparse
+    stem = Path(urlparse(src).path).stem if src.startswith(("http://", "https://")) else Path(src).stem
+    return Path.cwd() / f"{stem or 'clip'}.sheet.png"
+
+
+def _clock(t: float) -> str:
+    m, sec = divmod(int(round(t)), 60)
+    return f"{m // 60}:{m % 60:02d}:{sec:02d}" if m >= 60 else f"{m}:{sec:02d}"
+
+
+def cmd_contact_sheet(args: argparse.Namespace) -> int:
+    src = args.source
+    is_url = src.startswith(("http://", "https://"))
+    if not is_url and not Path(src).is_file():
+        print(f"error: {src}: no such file", file=sys.stderr)
+        return 2
+    if not _tools().ffmpeg:
+        print("error: contact-sheet needs ffmpeg and ffprobe (see `slidev-videos doctor`)", file=sys.stderr)
+        return 2
+    out = Path(args.out) if args.out else _sheet_out(src)
+    with _sigterm_raises(), tempfile.TemporaryDirectory(prefix="slidev-videos-sheet-") as scratch:
+        info = _probe_media(src)
+        if info is None and is_url:
+            fetched = Path(scratch) / "clip.src"
+            print(f"  downloading {src} (ffprobe can't read the URL)")
+            if not _download(src, fetched):
+                print("error: the download failed", file=sys.stderr)
+                return 1
+            src = str(fetched)
+            info = _probe_media(src)
+        vstreams = [st for st in (info or {}).get("streams", []) if st.get("codec_type") == "video"]
+        if not vstreams:
+            print(f"error: ffprobe can't read a video stream in {args.source}", file=sys.stderr)
+            return 1
+        width, height = int(vstreams[0].get("width") or 0), int(vstreams[0].get("height") or 0)
+        try:
+            duration = float(info.get("format", {}).get("duration") or 0)
+        except (TypeError, ValueError):
+            duration = 0.0
+        plan = frames_plan(duration, args.every, args.max_tiles, args.cols)
+        tw, th = frames_tile_size(width, height, args.tile_width)
+        vf = (
+            f"select='isnan(prev_selected_t)+gte(t-prev_selected_t\\,{plan['interval']})',"
+            f"scale={tw}:{th}:flags=bicubic,setsar=1,"
+            f"tile={plan['cols']}x{plan['rows']}:padding={SHEET_PAD}:margin={SHEET_PAD}:color=0x111111"
+        )
+        out.parent.mkdir(parents=True, exist_ok=True)
+        res = subprocess.run(
+            [_ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-i", src, "-an", "-sn",
+             "-vf", vf, "-fps_mode", "vfr", "-frames:v", "1", "-update", "1", str(out)],
+            capture_output=True, text=True,
+        )
+    if res.returncode != 0 or not out.is_file():
+        tail = (res.stderr or "").strip().splitlines()[-1:] or ["ffmpeg failed"]
+        print(f"error: {tail[0]}", file=sys.stderr)
+        return 1
+    print(f"{out}  ({plan['count']} frames, one every {plan['interval']:g} s of {_clock(duration)}, "
+          f"{plan['cols']} per row, {width}x{height} source)")
+    for row in range(plan["rows"]):
+        first = row * plan["cols"]
+        last = min(first + plan["cols"], plan["count"]) - 1
+        print(f"  row {row + 1}: {_clock(first * plan['interval'])} – {_clock(last * plan['interval'])}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # venue — one-command offline bundle: pull → preflight → build → zip
 # ---------------------------------------------------------------------------
 
@@ -2698,7 +2780,7 @@ def cmd_build(args: argparse.Namespace) -> int:
 # Commands that answer `--json` with one object on stdout (text goes to stderr).
 JSON_COMMANDS = ("check", "preflight", "frames", "doctor")
 # Commands that run without a videos.toml.
-PROJECTLESS = ("doctor",)
+PROJECTLESS = ("doctor", "contact-sheet")
 
 
 class _Parser(argparse.ArgumentParser):
@@ -2885,6 +2967,15 @@ def main(argv: list[str] | None = None) -> int:
 
     p_doctor = add("doctor", help="CLI version and install, the ffmpeg in use, gh, rclone, the deck's addon versions")
     p_doctor.set_defaults(func=cmd_doctor)
+
+    p_sheet = add("contact-sheet", help="one PNG of a clip's frames (file or https URL), to judge footage at a glance")
+    p_sheet.add_argument("source", help="video file or https URL")
+    p_sheet.add_argument("--every", type=float, default=SHEET_EVERY_S, help=f"seconds between frames (default {SHEET_EVERY_S:g}; widened for long clips)")
+    p_sheet.add_argument("--out", default=None, help="PNG to write (default: <name>.sheet.png here)")
+    p_sheet.add_argument("--max-tiles", type=int, default=FRAMES_MAX_TILES, dest="max_tiles", help=f"frames at most (default {FRAMES_MAX_TILES})")
+    p_sheet.add_argument("--cols", type=int, default=SHEET_COLS, help=f"frames per row (default {SHEET_COLS})")
+    p_sheet.add_argument("--tile-width", type=int, default=SHEET_TILE_W, dest="tile_width", help=f"frame width in px (default {SHEET_TILE_W})")
+    p_sheet.set_defaults(func=cmd_contact_sheet)
 
     p_build = add("build", help="one-shot: (sync) -> encode -> encode-hq -> check")
     p_build.add_argument("--sync", action="store_true", help="rclone raws from Drive first")

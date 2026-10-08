@@ -321,3 +321,26 @@ def test_frames_json_lists_each_clip(tmp_path, capsys, monkeypatch):
     d = json.loads(capsys.readouterr().out)
     assert d["command"] == "frames" and d["failed"] == 2
     assert {c["name"]: c["status"] for c in d["clips"]} == {"a.mp4": "fail", "b.mp4": "fail"}
+
+
+# --- contact-sheet -----------------------------------------------------------------
+
+@pytest.mark.skipif(not HAVE_FFMPEG, reason="needs ffmpeg")
+def test_contact_sheet_tiles_a_clip_without_a_project(tmp_path, capsys, monkeypatch):
+    monkeypatch.chdir(tmp_path)                  # no videos.toml anywhere above
+    clip = tmp_path / "clip.mp4"
+    make_clip(clip, seconds=9)
+    assert pipeline.main(["contact-sheet", str(clip), "--every", "2"]) == 0
+    sheet = tmp_path / "clip.sheet.png"
+    assert "5 frames, one every 2 s" in capsys.readouterr().out
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0", str(sheet)],
+        capture_output=True, text=True, check=True,
+    )
+    assert probe.stdout.strip() == "1624,188"    # 5 tiles of 320x180, 4 px padding and margin
+
+
+def test_contact_sheet_of_a_missing_file_is_a_usage_error(tmp_path, capsys, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert pipeline.main(["contact-sheet", str(tmp_path / "nope.mp4")]) == 2
+    assert "no such file" in capsys.readouterr().err

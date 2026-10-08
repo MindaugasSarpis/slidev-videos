@@ -6,7 +6,7 @@ takes the ones it wants.
 
 | tool | where | what it is |
 | --- | --- | --- |
-| **`slidev-videos`** | `src/` (Python ≥3.11, stdlib only) | manifest-driven CLI: `fetch · sync · encode · encode-hq · publish · publish-hq · pull · pull-hq · check · shared-check · frames · clean · preflight · venue · build · discover · doctor`. Web tier is 1080p H.264 with EBU R128 loudness normalisation; clips are hosted as GitHub Release assets |
+| **`slidev-videos`** | `src/` (Python ≥3.11, stdlib only) | manifest-driven CLI: `fetch · sync · encode · encode-hq · publish · publish-hq · pull · pull-hq · check · shared-check · frames · clean · preflight · venue · build · discover · doctor · contact-sheet`. Web tier is 1080p H.264 with EBU R128 loudness normalisation; clips are hosted as GitHub Release assets |
 | **`slidev-addon-videos`** | repo root | the full-bleed `VideoPlayer`: a local → own-release → shared-release fallback chain, slide-driven playback, look-ahead preload, `cut` / `fade` / `dust` transitions, native auto-hide controls, keyboard volume |
 | **`slidev-addon-stage`** | [`packages/stage`](packages/stage/README.md) | one persistent 3D world under a whole deck: stations in a field of dust, a camera that flies from slide to slide, palettes, a builder registry, halo borders, a validator and a screenshot tool |
 | **the shared clip library** | `src/slidev_videos/shared.toml` | the registry, with the encodes on this repo's `videos-shared` Release |
@@ -209,6 +209,7 @@ Names changed when the outreach decks moved onto the library (2026-09-08):
     slidev-videos pull           # restore local web copies from the release
     slidev-videos discover "cloud chamber" lhc --source cds,nasa   # find new clips; prints [[videos]] snippets
     slidev-videos doctor         # CLI version and install, the ffmpeg in use, gh, rclone, the deck's addon versions
+    slidev-videos contact-sheet clip.mp4 --every 10   # one PNG of a candidate clip's frames (a file or https URL)
 
 Run from anywhere inside a project (`videos.toml` is found by walking up), or
 pass `--project <dir>`, before or after the subcommand.
