@@ -421,16 +421,18 @@ function pageInit(cfg) {
     };
     const step = () => {
       if (phase === 'run') {
-        if (sec != null && draw === 'off') { if (!offOdd()) setDraw('dust'); return; }
+        // the extra undrawn frame offOdd asks for runs with time held, so a run
+        // settles to the same engine time however long it took to get here
+        if (sec != null && draw === 'off') { if (offOdd()) setMode('hold'); else { setMode('fast'); setDraw('dust'); } return; }
         const s = state();
         const anchor = Math.max(since ?? 0, s.changedAt ?? 0);
         const still = sec != null ? s.elapsed - e0 >= sec - 1e-6
           : !s.ready || s.static || s.paused || (!s.flying && s.assembled && s.elapsed - anchor >= min - 1e-6);
         if (!still && realNow() - t0 < capMs) return;
-        if (offOdd()) return;   // one more undrawn frame first (see offOdd)
+        if (offOdd()) { setMode('hold'); return; }
         settled = still;
         phase = 'dust'; n = 0;
-        if (sec == null && dust > 0) { setDraw('dust'); return; }   // this frame is the first dust frame
+        if (sec == null && dust > 0) { setMode('fast'); setDraw('dust'); return; }   // this frame is the first dust frame
       }
       if (phase === 'dust') {
         if (sec == null && ++n < dust) return;
@@ -601,10 +603,19 @@ class Deck {
       this.sink.http.push({ status: 0, url: r.url(), error: f, local: r.url().startsWith(origin) });
     });
     page.setDefaultTimeout(Math.max(60000, o.wait));
-    await page.goto(this.url, { waitUntil: 'load', timeout: o.dev ? 180000 : 90000 });
-    await page.waitForSelector('.slidev-layout', { state: 'attached', timeout: o.dev ? 180000 : 90000 });   // attached: the first may be a hidden slide
+    const limit = o.dev ? 180000 : 90000;
+    await page.goto(this.url, { waitUntil: 'load', timeout: limit });
+    // the first slide in the DOM (attached: it may be a hidden one); a deck
+    // whose scripts do not load says so at once
+    let t0 = Date.now();
+    while (!(await page.$('.slidev-layout'))) {
+      const broken = this.sink.http.filter((h) => h.local && /\.(js|css)(\?|$)/.test(h.url));
+      if (broken.length && Date.now() - t0 > 3000) throw new Error(`the deck did not load: ${broken.length} script(s) or stylesheet(s) failed, e.g. ${broken[0].status} ${broken[0].url} (built for another base? see --base)`);
+      if (Date.now() - t0 > limit) throw new Error(`the deck did not load in ${limit / 1000} s`);
+      await page.waitForTimeout(200);
+    }
     // the world boots (or the deck has none, or no WebGL)
-    const t0 = Date.now();
+    t0 = Date.now();
     for (;;) {
       const s = await this.state();
       if (s.ready || s.static) break;
