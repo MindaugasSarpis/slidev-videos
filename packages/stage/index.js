@@ -20,6 +20,7 @@ import { PALETTES, DEFAULT_PALETTE, LOOKS, definePalette, resolvePalette, resolv
 import { createSpace } from './stage/space.js';
 import { warmAudio, playCollision, playWhoosh, playRise, startHum, stopHum, humProbe } from './stage/sound.js';
 import { shared } from './stage/shared.js';
+import { formatCount, countLang } from './stage/count.js';
 
 // Plugins shipped with the package, loaded on demand by name
 // (`stage.plugins: [hadron]`), so a deck that does not want one never
@@ -55,4 +56,5 @@ export {
   orb, marble, shell, ball, setOrb,
   PALETTES, DEFAULT_PALETTE, LOOKS, definePalette, resolvePalette, resolveLook, paletteVars,
   warmAudio, playCollision, playWhoosh, playRise, startHum, stopHum, humProbe,
+  formatCount, countLang,
 };

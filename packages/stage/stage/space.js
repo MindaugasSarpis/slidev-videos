@@ -26,7 +26,7 @@ import { resolvePalette, hexToRgb } from './palette.js';
 //   createSpace(canvas, container, { space, records, palette, options, onArrive, onEvent })
 //     space    { stations: [{ id, pos, look, gather?, pulse?, objects: [...] }], poses?, hero? }
 //     records  [{ id, … }]: things a stop can name; an object with an id anchors one
-//   → { setPose, setStop, setDim, setPaused, stir, assemble, record, dispose, … }
+//   → { setPose, setStop, setDim, setPaused, stir, assemble, record, value, dispose, … }
 //
 // The field is pulled toward the active station only faintly: the dust reads
 // as a uniform, bright ground behind the scenes, not a cloud clumped round them.
@@ -176,12 +176,14 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   const byId = new Map((records || []).filter((s) => s && s.id != null).map((s) => [String(s.id), { ...s }]));
   const stations = new Map();
   const anchors = new Map();
+  const forms = new Map();   // an object's `name` → its builder's api (value() for <StageCount for>)
   const ctx = { records: byId, states: byId, palette: pal, anisotropy: renderer.capabilities.getMaxAnisotropy(), asset: asset || ((s) => s), helpers };
   for (const st of space.stations || []) {
     const built = buildStation(st, ctx);
     scene.add(built.group);
     stations.set(st.id, { def: st, pos: new Vector3(...st.pos), built });
     for (const [id, p] of built.anchors) anchors.set(String(id), p);
+    for (const [name, api] of built.named) forms.set(name, api);
   }
   for (const [id, s] of byId) if (anchors.has(id)) s.pos = anchors.get(id).clone();
   const firstStation = space.stations?.[0]?.id ?? null;
@@ -479,6 +481,8 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     // build again what stands at the station the pose is at (the `c` key)
     assemble() { return startAssembly(atStation); },
     record(id) { return byId.get(String(id)) || null; },
+    // the number the object named `name` shows now (its builder's api.value()), or null
+    value(name) { const v = forms.get(String(name))?.value?.(); return Number.isFinite(v) ? v : null; },
     state(id) { return byId.get(String(id)) || null; },   // Startertalk's name for record()
     // pose: { at: <station id | record id | named pose | [x,y,z]>, dist?, yaw?, pitch?, sway? }
     setPose(p, { immediate = false } = {}) {

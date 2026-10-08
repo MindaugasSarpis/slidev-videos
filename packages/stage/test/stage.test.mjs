@@ -6,6 +6,7 @@ import { CORE_TYPES, PLUGIN_TYPES, anchorIds } from '../stage/types.js';
 import { resolvePalette, PALETTES, DEFAULT_PALETTE, hexToRgb, rgbTriplet, paletteVars, definePalette } from '../stage/palette.js';
 import { checkStage, readStageConfig, deckPoses } from '../bin/check.mjs';
 import { parseSlides } from '../bin/shots.mjs';
+import { formatCount } from '../stage/count.js';
 
 const here = (p) => new URL(p, import.meta.url);
 const exampleSpace = JSON.parse(readFileSync(here('../example/public/data/space.json'), 'utf8'));
@@ -202,6 +203,24 @@ test('plugin and deck-own types are accepted when named', () => {
   assert.ok(checkStage({ space, plugins: ['nope'] }).problems.some((p) => p.includes('unknown plugin: nope')));
   // with records given, an object standing for a record must find it
   assert.ok(checkStage({ space, plugins: ['hadron'], extraTypes: ['beacon'], records: { states: [] } }).problems.some((p) => p.includes('no record with id theta')));
+});
+
+// ---- the counter ---------------------------------------------------------------------------
+test('a count is written the way its language writes numbers', () => {
+  const nb = '\u202f';
+  assert.equal(formatCount(55000, { lang: 'lt' }), `55${nb}000`);
+  assert.equal(formatCount(1844, { lang: 'lt' }), '1844');
+  assert.equal(formatCount(9999, { lang: 'lt', span: 55000 }), `9${nb}999`);   // a count that ends grouped is grouped throughout
+  assert.equal(formatCount(12.345, { lang: 'lt', decimals: 1 }), '12,3');
+  assert.equal(formatCount(1234567.891, { lang: 'lt-LT', decimals: 2 }), `1${nb}234${nb}567,89`);
+  assert.equal(formatCount(1844, { lang: 'en' }), '1,844');
+  assert.equal(formatCount(1234567.891, { lang: 'en', decimals: 2 }), '1,234,567.89');
+  assert.equal(formatCount(2026, { lang: 'en', plain: true }), '2026');
+  assert.equal(formatCount(20260, { lang: 'lt', plain: true }), '20260');
+  assert.equal(formatCount(-0.2), '0');
+  assert.equal(formatCount(-12000, { lang: 'lt' }), `-12${nb}000`);
+  assert.equal(formatCount(799.6), '800');
+  assert.equal(formatCount(5, { lang: 'fr' }), '5');   // what is not lt is written the English way
 });
 
 test('an empty space is a problem, not a crash', () => {
