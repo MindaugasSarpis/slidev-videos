@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { CORE_TYPES, PLUGIN_TYPES, anchorIds } from '../stage/types.js';
 import { resolvePalette, PALETTES, DEFAULT_PALETTE, hexToRgb, rgbTriplet, paletteVars, definePalette } from '../stage/palette.js';
 import { checkStage, readStageConfig, deckPoses } from '../bin/check.mjs';
-import { parseSlides } from '../bin/shots.mjs';
+import { parseSlides, parseArgs, detectBase, clicksFor, frameName, parseProcLocks, problemsOf, split, serve } from '../bin/shots.mjs';
 
 const here = (p) => new URL(p, import.meta.url);
 const exampleSpace = JSON.parse(readFileSync(here('../example/public/data/space.json'), 'utf8'));
@@ -176,4 +176,88 @@ test('slide ranges', () => {
   assert.deepEqual(parseSlides('3-1, 3', 10), [1, 2, 3]);
   assert.deepEqual(parseSlides(null, 3), [1, 2, 3]);
   assert.deepEqual(parseSlides('x, 2', 5), [2]);
+});
+
+test('options', () => {
+  const o = parseArgs(['dist', 'out', '--slides', '2-4', '--clicks', 'all', '--settle', '4', '--wait', '9000', '--burst', '3', '--every', '0.5', '--no-halo', '--no-lock', '--draft', '--jobs', '2']);
+  assert.deepEqual(o.errors, []);
+  assert.equal(o.dist, 'dist'); assert.equal(o.out, 'out');
+  assert.equal(o.clicks, 'all'); assert.equal(o.settle, 4); assert.equal(o.wait, 9000);
+  assert.equal(o.burst, 3); assert.equal(o.every, 0.5); assert.equal(o.halo, false); assert.equal(o.lock, null);
+  assert.equal(o.draft, true); assert.equal(o.jobs, 2);
+  assert.deepEqual(parseArgs(['d', 'o']).size, [1600, 900]);
+  assert.equal(parseArgs(['d', 'o']).lock, '/tmp/slidev-stage-shots.lock');
+  // the older click map and --click-wait still parse
+  const old = parseArgs(['d', 'o', '--clicks', '{"9":3}', '--click-wait', '45000']);
+  assert.deepEqual(old.clickMap, { 9: 3 }); assert.equal(old.wait, 45000);
+  // --dev takes the deck; the one positional is the out dir
+  const dev = parseArgs(['--dev', 'deck.md', 'shots']);
+  assert.equal(dev.dev, 'deck.md'); assert.equal(dev.out, 'shots'); assert.equal(dev.dist, null);
+  assert.equal(parseArgs(['--base', 'repo/talk', 'd', 'o']).base, '/');
+  assert.equal(parseArgs(['--base', '/repo/talk', 'd', 'o']).base, '/repo/talk/');
+});
+
+test('bad options are errors, not positionals', () => {
+  assert.match(parseArgs(['d', 'o', '--frobnicate']).errors.join(), /unknown option --frobnicate/);
+  assert.match(parseArgs(['d', 'o', '--clicks', 'some']).errors.join(), /--clicks/);
+  assert.match(parseArgs(['d', 'o', '--size', '1600']).errors.join(), /--size/);
+  assert.match(parseArgs(['d', 'o', '--gl', 'metal']).errors.join(), /--gl/);
+  assert.match(parseArgs(['d']).errors.join(), /usage/);
+  assert.deepEqual(parseArgs(['--help']).errors, []);
+});
+
+test('the base a deck was built for', () => {
+  assert.equal(detectBase('<script type="module" crossorigin src="/assets/index-a.js"></script>'), '/');
+  assert.equal(detectBase('<script type="module" crossorigin src="/cern_outreach_talks/2026_10_00_OpenData/assets/index-a.js"></script>'), '/cern_outreach_talks/2026_10_00_OpenData/');
+  assert.equal(detectBase('<link rel="stylesheet" href="./assets/index-a.css">'), '/');
+  assert.equal(detectBase('<html></html>'), '/');
+});
+
+test('which clicks a slide is photographed at', () => {
+  assert.deepEqual(clicksFor({ clicks: 'none' }, 3, 2), [0]);
+  assert.deepEqual(clicksFor({ clicks: 'last' }, 3, 2), [2]);
+  assert.deepEqual(clicksFor({ clicks: 'last' }, 3, 0), [0]);
+  assert.deepEqual(clicksFor({ clicks: 'all' }, 3, 2), [0, 1, 2]);
+  assert.deepEqual(clicksFor({ clickMap: { 9: 3 } }, 9, 0), [0, 1, 2, 3]);
+  assert.deepEqual(clicksFor({ clickMap: { 9: 3 } }, 4, 5), [0]);
+  assert.equal(frameName(3), '03'); assert.equal(frameName(12, 2), '12-c2'); assert.equal(frameName(4, 0, 1), '04-b1');
+});
+
+test('the shared lock is read off /proc/locks', () => {
+  const locks = parseProcLocks([
+    '5: FLOCK  ADVISORY  WRITE 1014497 08:30:1176715 0 EOF',
+    '5: -> FLOCK  ADVISORY  WRITE 1022143 08:30:1176715 0 EOF',
+    '6: POSIX  ADVISORY  READ 2201 00:1a:42 0 EOF',
+  ].join('\n'));
+  assert.deepEqual(locks, [
+    { waiting: false, kind: 'FLOCK', pid: 1014497, inode: 1176715 },
+    { waiting: true, kind: 'FLOCK', pid: 1022143, inode: 1176715 },
+    { waiting: false, kind: 'POSIX', pid: 2201, inode: 42 },
+  ]);
+});
+
+test('what makes a run exit 3', () => {
+  assert.deepEqual(problemsOf({ settled: true, overflowPx: -10, overflowRightPx: 1, pageErrors: [], httpErrors: [{ status: 404, local: false }] }), []);
+  assert.deepEqual(problemsOf({ settled: false }), ['not settled']);
+  assert.deepEqual(problemsOf({ overflowPx: 12 }), ['runs 12px off the bottom']);
+  assert.deepEqual(problemsOf({ pageErrors: ['x'], httpErrors: [{ status: 404, local: true }] }), ['1 page error(s)', '1 failed request(s)']);
+  assert.deepEqual(problemsOf({ error: 'timeout' }), ['failed: timeout']);
+});
+
+test('slides are split into contiguous runs, one per page', () => {
+  assert.deepEqual(split([1, 2, 3, 4, 5], 2), [[1, 2, 3], [4, 5]]);
+  assert.deepEqual(split([1, 2], 4), [[1], [2]]);
+  assert.deepEqual(split([1, 2, 3], 1), [[1, 2, 3]]);
+});
+
+test('a deck is served under the base it was built for', async () => {
+  const dist = new URL('../example/public', import.meta.url).pathname;   // any directory with files
+  const { server, port } = await serve(dist, { base: '/repo/talk/' });
+  try {
+    const at = (p) => fetch(`http://127.0.0.1:${port}${p}`).then((r) => r.status);
+    assert.equal(await at('/repo/talk/data/space.json'), 200);
+    assert.equal(await at('/data/space.json'), 404);           // outside the base
+    assert.equal(await at('/repo/talk/data/missing.json'), 404);
+    assert.equal(await at('/repo/talk/../../etc/passwd'), 404);
+  } finally { server.close(); }
 });
