@@ -180,6 +180,7 @@ function onError() {
 // departure: each step after an await checks it, so a presenter stepping
 // through quickly never has a stale step start a clip on a slide already left.
 const FADE_MS = 450          // picture dissolve, and the sheet's hand-over to the <video>
+const INSTANT_MS = 200       // the picture going under a leaving sheet (.video-instant)
 // `videos.dustMs: [arrive, leave]` sets the two; the arrival is a gathering and then a flight to the frame
 const DUST_MS = Array.isArray(CFG.dustMs) ? CFG.dustMs.map(Number) : []
 const DUST_ENTER_MS = DUST_MS[0] > 0 ? DUST_MS[0] : 1900
@@ -355,9 +356,11 @@ async function exit() {
     v.muted = true
     try { v.currentTime = 0 } catch {}
   }
-  // The clip plays on, unseen, while its sound fades; then it rests.
+  // The clip plays on, unseen, while its sound fades; then it rests. It rests
+  // only once the picture has gone: back at its first frame while it still
+  // showed, an ended or muted clip flashed that frame under the sheet.
   if (video && wasShown && !video.paused && !video.muted) rampVolume(video, 0, AUDIO_OUT_MS, rest)
-  else setTimeout(rest, handle ? 0 : FADE_MS)
+  else setTimeout(rest, handle ? INSTANT_MS : FADE_MS)
 }
 
 function syncTransition() {
