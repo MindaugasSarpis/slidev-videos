@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { LOOKS, PALETTES, resolveLook, liftGround, definePalette, paletteVars } from '../stage/palette.js';
+import { LOOKS, PALETTES, resolveLook, resolvePalette, liftGround, definePalette, paletteVars } from '../stage/palette.js';
 import { parseArgs as recordArgs } from '../bin/record.mjs';
 import { parseArgs as safeArgs, judge, RULES } from '../bin/safe.mjs';
 import { detectBase, normaliseBase, parseSlides, parseSize } from '../bin/lib/record-serve.mjs';
@@ -45,12 +45,34 @@ test('definePalette may bring a look', () => {
   assert.deepEqual(resolveLook('test-plain'), {});
 });
 
-test('the ground is lifted toward the accent, in its own hue', () => {
-  assert.equal(liftGround(PALETTES.blue, LOOKS.broadcast.lift).bg, '#090f1e');
+test('the ground is lifted in its own hue, whatever the accent', () => {
+  const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  assert.equal(liftGround(PALETTES.blue, LOOKS.broadcast.lift).bg, '#090f1d');
   assert.equal(liftGround(PALETTES.blue, 0), PALETTES.blue);
   assert.equal(liftGround(PALETTES.blue, undefined), PALETTES.blue);
-  assert.equal(liftGround(PALETTES.blue, 1).bg, PALETTES.blue.accent);
-  assert.equal(liftGround(PALETTES.blue, 0.07).accent, PALETTES.blue.accent);
+  assert.equal(liftGround(PALETTES.blue, 1).bg, '#ffffff');
+  assert.equal(liftGround(PALETTES.blue, 0.06).accent, PALETTES.blue.accent);
+  // a gold accent and violet dust over blue's ground: the ground stays blue
+  const gold = resolvePalette({ base: 'blue', accent: '#ffc05a', dust: '#5b4fd6', nebula: '#3a2a9e', nebulaAlt: '#0f6e86' });
+  const up = rgb(liftGround(gold, LOOKS.broadcast.lift).bg);
+  assert.equal(liftGround(gold, LOOKS.broadcast.lift).bg, liftGround(PALETTES.blue, LOOKS.broadcast.lift).bg);
+  assert.ok(up[2] > up[1] && up[1] > up[0], `still blue: ${up}`);
+  for (const k of [0.06, 0.12, 0.3]) {
+    const [r, g, b] = rgb(liftGround(gold, k).bg);
+    assert.ok(b > g && g > r, `blue at ${k}: ${[r, g, b]}`);
+  }
+  // a warm ground stays warm, a near-neutral one near-neutral
+  const [er, eg, eb] = rgb(liftGround(PALETTES.ember, 0.06).bg);
+  assert.ok(er > eg && eg > eb, `ember: ${[er, eg, eb]}`);
+  const c = rgb(liftGround(PALETTES.classic, 0.06).bg);
+  assert.ok(Math.max(...c) - Math.min(...c) <= 5, `classic: ${c}`);
+  // lifted further, lighter
+  let last = 0;
+  for (const k of [0.03, 0.06, 0.12, 0.5, 0.9]) {
+    const y = rgb(liftGround(gold, k).bg).reduce((s, v) => s + v, 0);
+    assert.ok(y > last, `${k}`);
+    last = y;
+  }
   const vars = paletteVars(PALETTES.blue);
   assert.equal(vars['--stage-dust'], PALETTES.blue.dust);
   assert.equal(vars['--stage-nebula'], PALETTES.blue.nebula);

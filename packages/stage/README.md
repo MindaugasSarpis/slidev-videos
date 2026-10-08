@@ -73,7 +73,7 @@ distance and ease in and out.
 | `halo` | `true` | the dust borders; `haloOn: '.card, .halo'` picks what gets one |
 | `dim` | `0.6` | the content-slide scrim; `layoutDim: { cover: 0.15, … }` per layout |
 | `hud` | — | `{ kicker, fields: [...] }` for the default stop panel |
-| `options` | — | engine numbers: `nebula` (far clouds in the palette's colours, 0–1), `streak` (grains drawn out along their path while the camera flies, 0–2, default 1), `reach` (a pose within this of a station is *at* it, default 12), `bloom`, `vignette`, `grain`, `aberration`, `exposure`, `density`, `dustSize`, `dustGain`, `gather`, `fov`, `flight: [min, max]`, `maxBufferWidth`, `twinkle` (how far a form's grains swell as they shine, 0–1), `guard` (`false`: no frame-rate guard), `lift` (the ground mixed this far toward the accent, 0–1) |
+| `options` | — | engine numbers: `nebula` (far clouds in the palette's colours, 0–1), `streak` (grains drawn out along their path while the camera flies, 0–2, default 1), `reach` (a pose within this of a station is *at* it, default 12), `bloom`, `vignette`, `grain`, `aberration`, `exposure`, `density`, `dustSize`, `dustGain`, `gather`, `fov`, `flight: [min, max]`, `maxBufferWidth`, `twinkle` (how far a form's grains swell as they shine, 0–1), `guard` (`false`: no frame-rate guard), `lift` (the ground's lightness raised this far toward white, its hue kept, 0–1) |
 | `auto` | `true` | `false`: the deck mounts `<Stage>` itself from its `global-bottom.vue`, to fill the `#hud` slot |
 
 ### Palettes and looks
@@ -224,7 +224,7 @@ channel's logo, name supers and clock in the corners.
 | `flight` | 1.4–4.5 s | 2.5–5 s |
 | `twinkle` | 1 | 0.35 |
 | `guard` | on | off: a slow moment never drops the resolution mid-take |
-| `lift` | 0 | 0.07: the ground is mixed toward the accent, off near-black (blue's `#03050d` becomes `#090f1e`); the scrim and the cards take their dark from it too |
+| `lift` | 0 | 0.06: the ground is lifted off near-black in its own hue, whatever the accent (blue's `#03050d` becomes `#090f1d`, a warm ground stays warm); the scrim and the cards take their dark from it too |
 | halo, paper texture | on | off (`halo: true` brings the halo back) |
 | CSS kit | | no line under 16 canvas px (about 31 px in a 1080p frame), the source line included; edge-placed pieces 5% in from the edges |
 
@@ -237,7 +237,8 @@ broadcast.
 The lift was measured on the example's content slide (the scrim at 0.7
 over the ring), recorded and then encoded with x264 at 2.5 Mbit/s: of the
 16 × 16 blocks that hold a smooth gradient, 8% came out flattened into
-bands with no lift, 4.5% at 0.07 and 2% at 0.12, which greys the ground.
+bands on blue's own `#03050d`, 4.5% with the ground at `#090f1e` (a lift
+of 0.06 gives `#090f1d`) and 2% at `#0e162a`, which looks grey.
 
 `options` in the headmatter still win: `look: broadcast` with
 `options: { nebula: 0.5 }` keeps the clouds. `html[data-stage-look]` names

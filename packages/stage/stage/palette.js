@@ -85,7 +85,8 @@ export const LOOKS = {
     grain: 0, aberration: 0,
     density: 0.6, dustSize: 2.85,   // 1.5 × the default 1.9: a grain still reads at 720p
     streak: 0.4, bloom: 0.45, flight: [2.5, 5],
-    twinkle: 0.35, guard: false, halo: false, lift: 0.07,
+    twinkle: 0.35, guard: false, halo: false,
+    lift: 0.06,                     // blue's #03050d → #090f1d, the ground the banding was measured on
     max: { nebula: 0.3 },
   },
 };
@@ -146,15 +147,54 @@ export function hexToRgb(hex) {
 // '#7dd3fc' → '125, 211, 252', for rgba(var(--stage-accent-rgb), a)
 export const rgbTriplet = (hex) => hexToRgb(hex).map((v) => Math.round(v * 255)).join(', ');
 
-// The ground mixed `amount` (0..1) of the way toward the accent: off
-// near-black, in the palette's own hue. Blue's #03050d at 0.07 is #090f1d.
-// The page, the scrim and the cards all take their dark from `bg`, so all of
-// them are lifted together.
+// sRGB (0..1) ↔ OKLab, Björn Ottosson's: L is the lightness as seen, a and b
+// the colour.
+const toLinear = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+const fromLinear = (c) => (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055);
+function toOklab(rgb) {
+  const [r, g, b] = rgb.map(toLinear);
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [
+    0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s,
+  ];
+}
+function fromOklab([L, a, b]) {
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.2914855480 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s,
+  ].map(fromLinear);
+}
+
+// The ground raised `amount` (0..1) of the way to white in lightness, its
+// hue and saturation kept: the same colour under more light, whatever the
+// accent and the dust are. Blue's #03050d at 0.06 is #090f1d; a near-neutral
+// ground stays near-neutral, a warm one warm. Near white the colour would
+// leave sRGB, and gives up as much of its colour as it must to stay in (at 1
+// the ground is white). The page, the scrim and the cards all take their
+// dark from `bg`, so all of them are lifted together.
 export function liftGround(p, amount) {
   const k = Math.min(1, Math.max(0, Number(amount) || 0));
   if (!k) return p;
-  const [a, b] = [hexToRgb(p.bg), hexToRgb(p.accent)];
-  const hex = a.map((v, i) => Math.round((v + (b[i] - v) * k) * 255).toString(16).padStart(2, '0')).join('');
+  const [L, a, b] = toOklab(hexToRgb(p.bg));
+  const L2 = L + (1 - L) * k;
+  // a and b grow with L (the colour's share of its lightness held), unless
+  // that falls outside sRGB
+  const fits = (c) => fromOklab([L2, a * c, b * c]).every((v) => v > -1e-6 && v < 1 + 1e-6);
+  let c = L > 1e-6 ? L2 / L : 0;
+  if (!fits(c)) {
+    let lo = 0, hi = c;
+    for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid; }
+    c = lo;
+  }
+  const hex = fromOklab([L2, a * c, b * c]).map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0')).join('');
   return { ...p, bg: `#${hex}` };
 }
 
