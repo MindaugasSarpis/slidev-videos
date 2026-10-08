@@ -202,13 +202,23 @@ Names changed when the outreach decks moved onto the library (2026-09-08):
     slidev-videos encode && slidev-videos publish
     slidev-videos check          # manifest vs slides vs raw/web (and dust clips without a strip)
     slidev-videos frames         # frame strips for the dust transition -> public/video-frames/ (commit them)
-    slidev-videos preflight      # what will the deployed deck actually serve?
+    slidev-videos preflight      # probe what the deck will really play (--mode remote-first: the deployed deck)
     slidev-videos pull           # restore local web copies from the release
     slidev-videos discover "cloud chamber" lhc --source cds,nasa   # find new clips; prints [[videos]] snippets
     slidev-videos doctor         # CLI version and install, the ffmpeg in use, gh, rclone, the deck's addon versions
 
 Run from anywhere inside a project (`videos.toml` is found by walking up), or
 pass `--project <dir>`, before or after the subcommand.
+
+`preflight` follows the player's chain for each clip: the local HQ copy only
+when the clip opts into `hq`, then the local web copy, the talk's release and
+the shared release; local copies first by default (dev, the venue bundle),
+releases first with `--mode remote-first`. It probes `--jobs` clips at once
+(default 6) and caches each probe and loudness reading in
+`~/.cache/slidev-videos/probe.json` under the file's path and mtime or the
+release asset's version, so a re-run reads only what changed. A track that
+measures `-inf` LUFS is reported as silent (use the `silent-loop` profile),
+not as a loudness miss.
 
 `check`, `preflight`, `frames` and `doctor` take `--json`: one JSON object on
 stdout, the usual text on stderr. Exit codes: 0 when all is well, 1 when

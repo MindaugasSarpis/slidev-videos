@@ -46,6 +46,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import tomllib
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -779,8 +780,9 @@ def cmd_encode(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 def _remote_assets(tag: str, repo: str | None = None) -> dict[str, dict] | None:
-    """{asset_name: {"size": bytes, "url": download_url}} for a release,
-    or None if the release doesn't exist / gh fails."""
+    """{asset_name: {"size": bytes, "url": download_url, "version": stamp}} for
+    a release, or None if the release doesn't exist / gh fails. `version`
+    changes whenever the asset is replaced (a re-upload is a new asset id)."""
     listing = subprocess.run(
         ["gh", "release", "view", tag, *(["--repo", repo] if repo else GH_REPO_ARGS), "--json", "assets"],
         capture_output=True, text=True,
@@ -789,7 +791,8 @@ def _remote_assets(tag: str, repo: str | None = None) -> dict[str, dict] | None:
         return None
     try:
         return {
-            a["name"]: {"size": a.get("size", -1), "url": a.get("url", "")}
+            a["name"]: {"size": a.get("size", -1), "url": a.get("url", ""),
+                        "version": f"{a.get('id', '')}@{a.get('updatedAt', '')}"}
             for a in json.loads(listing.stdout).get("assets", [])
         }
     except (ValueError, KeyError):
@@ -1709,19 +1712,107 @@ def cmd_clean(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# The player's fallback chain
+# ---------------------------------------------------------------------------
+#
+# VideoPlayer tries, for one clip: the local HQ copy (only when `hq` is on for
+# that clip, by its tag or the headmatter's `videos.hq`), the local web copy,
+# the talk's release, the shared release. Local copies come first in dev and
+# in a VITE_VIDEOS_LOCAL_FIRST=1 build (the venue bundle); a deployed build
+# tries the releases first. resolve_chain() is that order, limited to copies
+# that exist, so preflight, frames and venue look at the file the deck plays.
+
+CHAIN_MODES = ("local-first", "remote-first")
+
+HQ_HEADMATTER_RE = re.compile(r"^videos:[ \t]*\n(?:[ \t]+.*\n|[ \t]*\n)*?[ \t]+hq:[ \t]*true\b", re.M)
+TAG_HQ_RE = re.compile(r'(?<=\s)(:|v-bind:)?hq(?:="([^"]*)")?(?=[\s/>])')
+
+
+def _tag_hq(tag: str) -> bool | None:
+    """A tag's own `hq`: None when it has none (the headmatter decides)."""
+    m = TAG_HQ_RE.search(tag)
+    if not m:
+        return None
+    if m.group(1):   # :hq="..." is an expression
+        return {"true": True, "false": False}.get((m.group(2) or "").strip())
+    # Vue casts a present Boolean attribute to true, and keeps any other
+    # static value as a (truthy) string: hq, hq="", hq="false" all mean on.
+    return True
+
+
+def hq_refs_in(text: str) -> dict[str, bool]:
+    """{clip: hq} for one deck file, resolved as VideoPlayer resolves `hq`."""
+    deck_wide = bool(HQ_HEADMATTER_RE.search(text))
+    out: dict[str, bool] = {}
+    for tag in VIDEO_TAG_RE.findall(text):
+        src = TAG_SRC_RE.search(tag)
+        if not src:
+            continue
+        own = _tag_hq(tag)
+        out[src.group(1)] = out.get(src.group(1), False) or (deck_wide if own is None else own)
+    return out
+
+
+def _hq_references() -> dict[str, bool]:
+    refs: dict[str, bool] = {}
+    for md in _deck_markdown(SLIDES_DIR):
+        try:
+            text = md.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        for name, hq in hq_refs_in(text).items():
+            refs[name] = refs.get(name, False) or hq
+    return refs
+
+
+def _release_assets(defaults: dict, shared_defaults: dict) -> tuple[dict | None, dict | None]:
+    """(talk, shared) release listings, None where gh or the release is missing."""
+    if not shutil.which("gh"):
+        return None, None
+    shared_tag = shared_defaults.get("release_tag")
+    if shared_tag == defaults["release_tag"]:
+        talk = _remote_assets(defaults["release_tag"])
+        return talk, talk
+    if not shared_tag:
+        return _remote_assets(defaults["release_tag"]), None
+    # Two gh calls of about half a second each: list both releases at once.
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        talk = pool.submit(_remote_assets, defaults["release_tag"])
+        shared = pool.submit(_remote_assets, shared_tag, shared_defaults.get("repo"))
+        return talk.result(), shared.result()
+
+
+def resolve_chain(name: str, mode: str, *, hq: bool = False,
+                  talk_assets: dict | None = None, shared_assets: dict | None = None) -> list[tuple[str, str]]:
+    """[(tier, local path or URL)] VideoPlayer would try for `name`, in its
+    order for `mode` (local-first | remote-first), keeping copies that exist."""
+    paths = ([("local-hq", HQ_DIR / name)] if hq else []) + [("local-web", WEB_DIR / name)]
+    local = [(tier, str(path)) for tier, path in paths if path.is_file()]
+    remote = [(tier, assets[name]["url"])
+              for tier, assets in (("talk-release", talk_assets), ("shared-release", shared_assets))
+              if assets and name in assets and assets[name].get("url")]
+    chain = local + remote if mode == "local-first" else remote + local
+    return [c for i, c in enumerate(chain) if i == 0 or c[1] != chain[i - 1][1]]
+
+
+# ---------------------------------------------------------------------------
 # preflight — venue playback lint for everything the deck references
 # ---------------------------------------------------------------------------
 #
 # The Yaga talk (2026-07-18) froze twice on clips that individually looked
 # fine: HQ-tier HEVC at venue-native resolution (a 148 Mbps raw hard-link,
 # a 2880x1600 master). preflight resolves what VideoPlayer will ACTUALLY
-# serve for each deck reference — local HQ, local web, talk release, shared
-# release, in that order — ffprobes it (https URLs included) and flags
-# anything that history says can freeze a venue machine or ambush the
-# audio level.
+# serve for each deck reference (resolve_chain), ffprobes it (https URLs
+# included) and flags anything that history says can freeze a venue machine
+# or ambush the audio level. Clips are probed in parallel, and each probe and
+# loudness reading is cached in ~/.cache/slidev-videos/probe.json under the
+# file's path or URL plus its size and mtime (local) or asset version
+# (release), so a re-run only reads what changed.
 
 BROWSER_SAFE_VIDEO = frozenset({"h264", "vp8", "vp9", "av1"})
 PREFLIGHT_MAX_MBPS = 10.0
+PREFLIGHT_JOBS = 6
+PROBE_CACHE_VERSION = 1
 
 
 def _probe_media(src: str) -> dict | None:
@@ -1739,54 +1830,150 @@ def _probe_media(src: str) -> dict | None:
         return None
 
 
+def _probe_cache_path() -> Path:
+    return _tools_mod.cache_dir() / "probe.json"
+
+
+def _load_probe_cache() -> dict:
+    try:
+        data = json.loads(_probe_cache_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict) or data.get("version") != PROBE_CACHE_VERSION:
+        return {}
+    entries = data.get("entries")
+    return entries if isinstance(entries, dict) else {}
+
+
+def _save_probe_cache(new: dict) -> None:
+    """Merge `new` into the cache file; older versions of the same file go."""
+    if not new:
+        return
+    entries = _load_probe_cache()   # re-read: another run may have written since
+    srcs = {e["src"] for e in new.values()}
+    entries = {k: e for k, e in entries.items() if e.get("src") not in srcs}
+    entries.update(new)
+    path = _probe_cache_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f".probe.{os.getpid()}.json")
+        tmp.write_text(json.dumps({"version": PROBE_CACHE_VERSION, "entries": entries}) + "\n",
+                       encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
+def _probe_key(tier: str, src: str, assets: tuple[dict | None, dict | None]) -> str | None:
+    """Cache key for one copy: path + size + mtime, or URL + asset version."""
+    if tier.startswith("local"):
+        try:
+            st = Path(src).stat()
+        except OSError:
+            return None
+        return f"{src}|{st.st_size}|{st.st_mtime_ns}"
+    listing = assets[0] if tier == "talk-release" else assets[1]
+    for a in (listing or {}).values():
+        if a.get("url") == src:
+            return f"{src}|{a.get('size')}|{a.get('version', '')}"
+    return None
+
+
+def _preflight_one(src: str, key: str | None, cache: dict, measure: bool) -> dict:
+    """Probe (and measure) one served copy, from the cache where it can.
+
+    Returns {probe, loudness, cached, new}; `new` is the (key, entry) to
+    cache. A failed probe or loudness reading is never cached.
+    """
+    hit = (cache.get(key) or {}) if key else {}
+    probe = hit.get("probe")
+    if probe is not None and (not measure or "loudness" in hit):
+        return {"probe": probe, "loudness": hit.get("loudness"), "cached": True, "new": None}
+    if probe is None:
+        probe = _probe_media(src)
+        if probe is None:
+            return {"probe": None, "loudness": None, "cached": False, "new": None}
+        entry = {"probe": probe}
+    else:
+        entry = dict(hit)   # the probe is cached, the loudness is not yet
+    entry["src"] = src
+    if measure:
+        if not any(st.get("codec_type") == "audio" for st in probe.get("streams", [])):
+            entry["loudness"] = None
+        else:
+            measured = _measure_loudness(src)
+            if measured is not None:
+                entry["loudness"] = measured
+    return {"probe": probe, "loudness": entry.get("loudness"), "cached": False,
+            "new": (key, entry) if key else None}
+
+
 def cmd_preflight(args: argparse.Namespace) -> int:
+    report = _report(args)
     defaults, _ = load_manifest()
     shared_defaults, _shared = load_shared_manifest()
     refs = sorted(_slide_references())
     if getattr(args, "only", None):
         wanted = set(args.only)
         refs = [r for r in refs if r in wanted]
+    mode = getattr(args, "mode", None) or "local-first"
+    report.update({"mode": mode, "clips": [], "total": len(refs)})
     if not refs:
         print("No VideoPlayer references in the deck.")
+        report.update({"flagged": 0, "unreadable": 0, "not_served": 0})
         return 0
 
-    has_gh = bool(shutil.which("gh"))
-    talk_assets = _remote_assets(defaults["release_tag"]) if has_gh else None
-    shared_tag = shared_defaults.get("release_tag")
-    if shared_tag == defaults["release_tag"]:
-        shared_assets = talk_assets
-    else:
-        shared_assets = _remote_assets(shared_tag, shared_defaults.get("repo")) if (shared_tag and has_gh) else None
-
-    def served(name: str) -> tuple[str, str] | None:
-        """(tier_label, local path or https URL) VideoPlayer would win with."""
-        hq = HQ_DIR / name
-        if hq.is_file():
-            return "local-hq", str(hq)
-        web = WEB_DIR / name
-        if web.is_file():
-            return "local-web", str(web)
-        for label, assets in (("talk-release", talk_assets), ("shared-release", shared_assets)):
-            if assets and name in assets and assets[name]["url"]:
-                return label, assets[name]["url"]
-        return None
-
+    started = time.monotonic()
+    assets = _release_assets(defaults, shared_defaults)
+    hq_by_name = _hq_references()
     web_cap = int(defaults.get("web_long_edge_px", 1920))
     max_mbps = args.max_mbps or float(defaults.get("preflight_max_mbps", PREFLIGHT_MAX_MBPS))
     measure = not args.no_loudness
+    jobs = max(1, int(getattr(args, "jobs", None) or PREFLIGHT_JOBS))
+    tools = _tools()
+    https_ok = bool(tools.chosen and tools.chosen.https)
+    cache = _load_probe_cache()
 
-    flagged = 0
+    served: dict[str, list[tuple[str, str]]] = {
+        name: resolve_chain(name, mode, hq=hq_by_name.get(name, False),
+                            talk_assets=assets[0], shared_assets=assets[1])
+        for name in refs
+    }
+    results: dict[str, dict] = {}
+    with ThreadPoolExecutor(max_workers=min(jobs, len(refs))) as pool:
+        futures = {
+            pool.submit(_preflight_one, chain[0][1],
+                        _probe_key(chain[0][0], chain[0][1], assets), cache, measure): name
+            for name, chain in served.items() if chain
+        }
+        for fut in as_completed(futures):
+            results[futures[fut]] = fut.result()
+    _save_probe_cache(dict(r["new"] for r in results.values() if r["new"]))
+
+    flagged = unreadable = not_served = from_cache = 0
     for name in refs:
-        src = served(name)
-        if src is None:
+        chain = served[name]
+        clip = {"name": name, "hq": hq_by_name.get(name, False), "chain": [list(c) for c in chain],
+                "tier": None, "src": None, "flagged": True, "problems": [], "notes": [], "cached": False}
+        report["clips"].append(clip)
+        if not chain:
             print(f"  FLAG  {name}: NOT SERVED — no local copy, no release asset (deck shows an error box)")
+            clip["problems"].append("not served: no local copy, no release asset")
             flagged += 1
+            not_served += 1
             continue
-        tier, url = src
-        info = _probe_media(url)
+        tier, url = chain[0]
+        res = results[name]
+        clip.update(tier=tier, src=url, cached=res["cached"])
+        from_cache += res["cached"]
+        info = res["probe"]
         if info is None:
-            print(f"  FLAG  {name} [{tier}]: ffprobe can't read it")
+            hint = ("" if https_ok or not url.startswith("https://")
+                    else " (this ffprobe crashes on HTTPS; see `slidev-videos doctor`)")
+            print(f"  FLAG  {name} [{tier}]: ffprobe can't read it{hint}")
+            clip["problems"].append(f"ffprobe can't read it{hint}")
             flagged += 1
+            unreadable += 1
             continue
         vstreams = [s for s in info.get("streams", []) if s.get("codec_type") == "video"]
         astreams = [s for s in info.get("streams", []) if s.get("codec_type") == "audio"]
@@ -1800,7 +1987,7 @@ def cmd_preflight(args: argparse.Namespace) -> int:
         except (TypeError, ValueError):
             mbps = 0.0
 
-        problems = []
+        problems = clip["problems"]
         if vcodec not in BROWSER_SAFE_VIDEO:
             problems.append(f"video codec {vcodec} — not browser-safe (HEVC froze the Yaga venue)")
         if long_edge > web_cap:
@@ -1810,19 +1997,29 @@ def cmd_preflight(args: argparse.Namespace) -> int:
         if acodec and acodec not in BROWSER_SAFE_AUDIO:
             problems.append(f"audio codec {acodec} — Chrome plays it SILENT")
         lufs_txt = "no audio" if not acodec else "-"
-        if acodec and measure:
-            measured = _measure_loudness(url)
-            if measured is not None:
-                try:
-                    lufs = float(measured["input_i"])
-                    lufs_txt = f"{lufs:.1f} LUFS"
-                    if abs(lufs - LOUDNORM_I) > LOUDNESS_TOLERANCE_LU:
-                        problems.append(
-                            f"loudness {lufs:.1f} LUFS off target {LOUDNORM_I:g} "
-                            f"(±{LOUDNESS_TOLERANCE_LU:g} LU) — re-encode to normalize"
-                        )
-                except (KeyError, ValueError):
-                    pass
+        lufs_value = None
+        measured = res["loudness"]
+        if acodec and measure and measured is not None:
+            try:
+                lufs = float(measured["input_i"])
+            except (KeyError, TypeError, ValueError):
+                lufs = None
+            if lufs is not None and not lufs > -70.0:
+                # -inf: the track is digital silence. Re-encoding cannot
+                # normalize it; the clip wants the silent-loop profile.
+                lufs_txt = "silent track"
+                clip["notes"].append("silent audio track — profile silent-loop drops it")
+            elif lufs is not None:
+                lufs_value = round(lufs, 1)
+                lufs_txt = f"{lufs:.1f} LUFS"
+                if abs(lufs - LOUDNORM_I) > LOUDNESS_TOLERANCE_LU:
+                    problems.append(
+                        f"loudness {lufs:.1f} LUFS off target {LOUDNORM_I:g} "
+                        f"(±{LOUDNESS_TOLERANCE_LU:g} LU) — re-encode to normalize"
+                    )
+        clip.update(video={"codec": vcodec, "width": width, "height": height},
+                    mbps=round(mbps, 2), audio=acodec, lufs=lufs_value,
+                    silent_track=lufs_txt == "silent track", flagged=bool(problems))
 
         desc = f"{vcodec} {width}x{height}, {mbps:.1f} Mbps, audio={acodec or 'none'}, {lufs_txt}"
         if problems:
@@ -1832,7 +2029,12 @@ def cmd_preflight(args: argparse.Namespace) -> int:
                 print(f"          - {p}")
         else:
             print(f"  ok    {name} [{tier}]  {desc}")
+        for note in clip["notes"]:
+            print(f"          ~ {note}")
 
+    elapsed = time.monotonic() - started
+    report.update({"flagged": flagged, "unreadable": unreadable, "not_served": not_served,
+                   "from_cache": from_cache, "seconds": round(elapsed, 2), "ffprobe": tools.ffprobe})
     print()
     if flagged:
         print(f"{flagged} of {len(refs)} clip(s) flagged — fix or consciously accept before the venue.")
@@ -2567,6 +2769,9 @@ def main(argv: list[str] | None = None) -> int:
     p_pf.add_argument("--only", nargs="+", metavar="NAME", help="limit to named clip(s)")
     p_pf.add_argument("--no-loudness", action="store_true", help="skip the R128 loudness measurement (much faster)")
     p_pf.add_argument("--max-mbps", type=float, default=None, help="bitrate ceiling to flag (default 10, or [defaults].preflight_max_mbps)")
+    p_pf.add_argument("--mode", choices=CHAIN_MODES, default="local-first",
+                      help="the player's order: local-first (dev, venue bundle; default) or remote-first (a deployed deck)")
+    p_pf.add_argument("--jobs", type=int, default=PREFLIGHT_JOBS, help=f"clips probed at once (default {PREFLIGHT_JOBS})")
     p_pf.set_defaults(func=cmd_preflight)
 
     p_venue = add("venue", help="one-shot offline bundle: pull --include-shared -> preflight -> build:portable -> zip")
