@@ -1,6 +1,6 @@
 // The object types of the general stage and the fields each must carry.
 // Plain data, no three.js: the validator (bin/check.mjs) reads it under node.
-// builders.js registers these same types; test/types.test.mjs holds the two
+// builders.js registers these same types; test/stage.test.mjs holds the two
 // in step.
 export const CORE_TYPES = {
   page: ['src', 'pos', 'width', 'height'],
@@ -35,3 +35,11 @@ export function anchorIds(o) {
   if (o.type === 'spheres') for (const id of o.ids || []) ids.push(String(id));
   return ids;
 }
+
+// The keys of a headmatter `stage:` block (what Stage.vue, StageHalo,
+// StageCount and the global layers read), of `stage.options` (the engine's
+// DEFAULTS in space.js, plus `poses` and `hero`), and of a slide's `space:`.
+// The tests hold each list to the code that reads it.
+export const STAGE_KEYS = ['space', 'records', 'palette', 'plugins', 'hero', 'sound', 'humAt', 'videos', 'options', 'auto', 'halo', 'haloOn', 'dim', 'layoutDim', 'hud', 'tint', 'lang'];
+export const OPTION_KEYS = ['fov', 'pose', 'gather', 'pulseKick', 'stopOffset', 'maxBufferWidth', 'bloom', 'vignette', 'grain', 'aberration', 'exposure', 'dustSize', 'dustGain', 'density', 'nebula', 'streak', 'reach', 'flight', 'poses', 'hero'];
+export const SPACE_KEYS = ['at', 'dist', 'yaw', 'pitch', 'sway', 'stops', 'dim', 'asof'];

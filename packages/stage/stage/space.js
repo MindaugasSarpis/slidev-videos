@@ -34,7 +34,7 @@ import { resolvePalette, hexToRgb } from './palette.js';
 const FIELD_BOUNDS = new Vector3(30, 30, 30);   // ambient field wrap box (half extents; a cube so the camera never sits at a face)
 const MAX_DT = 1 / 12;   // frame-time clamp: real time down to 12 fps (flights and the assembly keep their pace on a slow GPU)
 const D2R = Math.PI / 180;
-const DEFAULTS = {
+export const DEFAULTS = {   // the keys of `stage.options` (types.js OPTION_KEYS lists them for the validator)
   fov: 50,
   pose: { dist: 9, yaw: -20, pitch: 6 },
   gather: 0.25,          // the field's pull toward the active station; a station may set its own
