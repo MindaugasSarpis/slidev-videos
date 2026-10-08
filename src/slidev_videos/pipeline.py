@@ -33,6 +33,11 @@ Subcommands:
     clean          delete local files whose remote copy is verified (dry-run default)
     preflight      venue lint: probe served codec/resolution/bitrate/audio/loudness
     venue          one-shot offline bundle: pull -> preflight -> build:portable -> zip
+    doctor         CLI install, the ffmpeg in use, gh, rclone, the deck's addon versions
+    contact-sheet  one PNG of a clip's frames, to judge candidate footage
+
+check, preflight, frames and doctor take --json (one object on stdout).
+Exit codes: 0 ok, 1 problems found, 2 usage or setup error.
 """
 from __future__ import annotations
 
@@ -2908,7 +2913,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="project directory (default: walk up from cwd for videos.toml)")
     common.add_argument("--json", action="store_true", default=argparse.SUPPRESS,
                         help=f"one JSON object on stdout, the text on stderr ({', '.join(JSON_COMMANDS)})")
-    parser = _Parser(prog="slidev-videos", description=__doc__, parents=[common])
+    parser = _Parser(prog="slidev-videos", description=__doc__, parents=[common],
+                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--version", action=_Version)
     sub = parser.add_subparsers(dest="cmd", required=True)
     add = functools.partial(sub.add_parser, parents=[common])
