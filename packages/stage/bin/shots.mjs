@@ -397,6 +397,7 @@ function pageInit(cfg) {
       dpr: read(() => p.dpr, null),
       guard: read(() => p.guardStage, null),
       dust: g ? Math.min(g.drawRange.count, g.attributes.position.count) : null,
+      dustTotal: g ? g.attributes.position.count : null,
       total: s.total ?? (nv ? Number(nv.total) : null),
       clicksTotal: s.clicksTotal ?? (nv ? Number(nv.clicksTotal) : null),
       probe: st ? 'stage' : p ? 'handles' : 'none',
@@ -716,7 +717,7 @@ async function shootFrame(deck, o, rec, { sec = null } = {}) {
   return {
     ...rec, png, station: s.station, at: s.at, atStation: s.atStation, renderer: deck.renderer,
     settled: st.settled, settleMs: st.settleMs, shotMs: Date.now() - t1, engineSec: st.engineSec, engineTime: +s.elapsed.toFixed(3),
-    flying: s.flying, assembled: s.assembled, dpr: s.dpr, dust: s.dust, probe: s.probe,
+    flying: s.flying, assembled: s.assembled, dpr: s.dpr, dust: s.dust, dustTotal: s.dustTotal, probe: s.probe,
     ...m, ...deck.drain(),
   };
 }

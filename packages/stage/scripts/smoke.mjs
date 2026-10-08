@@ -11,10 +11,17 @@
 //   6. a form of grains gathers when the camera arrives at its station, and
 //      not for a pose out in the open dust; grains streak during a flight
 //      and only then; the dust takes a leaving clip's colour and lets it go;
-//   7. nothing on the page threw.
+//   7. window.__stage publishes the deck and settles;
+//   8. nothing on the page threw;
+//   9. slidev-stage-shots settles each frame: the camera has landed, the form
+//      has gathered, the guard kept the full pixel ratio and dust, and a clean
+//      deck exits 0.
 // Every assertion polls for the state it expects, so a slow runner is only slow.
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { chromium } from 'playwright-chromium'
-import { serve, GL_ARGS } from '../bin/shots.mjs'
+import { serve, GL_ARGS, shoot, parseArgs } from '../bin/shots.mjs'
 
 const DIST = new URL('../example/dist', import.meta.url).pathname
 const { server, port } = await serve(DIST)
@@ -174,9 +181,39 @@ await page.evaluate(() => {
 s = await until((s) => s.frames > f1 + 3)
 check('a video transition stirs the dust', s.frames > f1 + 3, `frames ${f1} → ${s.frames}`)
 
+// --- the probe -------------------------------------------------------------------------
+const probe = await page.evaluate(() => {
+  const s = window.__stage?.state()
+  return s ? { version: window.__stage.version, total: s.total, aliases: !!window.__stage.space && !!window.__stage.probe } : null
+})
+check('window.__stage publishes the deck', probe?.version === 1 && probe.total === 6 && probe.aliases, JSON.stringify(probe))
+await goto(3)
+await until((s) => s.at === 'marks')
+const ct = await page.evaluate(() => window.__stage.state().clicksTotal)
+check('window.__stage counts a slide\'s clicks', ct === 2, `clicksTotal=${ct}`)
+const settled = await page.evaluate(() => window.__stage.settle({ min: 0.5, max: 90 }))
+check('window.__stage.settle resolves once the world stands still', settled.settled && settled.engineSec >= 0, JSON.stringify(settled))
+
 check('nothing on the page threw', errors.length === 0, errors.join(' | '))
 
 await browser.close()
 server.close()
+
+// --- slidev-stage-shots ------------------------------------------------------------------
+// the two slides whose forms gather on arrival, from a cold start
+const out = await mkdtemp(join(tmpdir(), 'stage-shots-'))
+const res = await shoot(parseArgs([DIST, out, '--slides', '2,4', '--no-lock']), () => {})
+const recs = res.records.filter((r) => r.png)
+const brief = recs.map((r) => `${r.frame}: settled=${r.settled} ${r.settleMs} ms ${r.engineSec} engine-s flying=${r.flying} assembled=${r.assembled} dpr=${r.dpr} dust=${r.dust}/${r.dustTotal}`).join(' | ')
+check('shots photographs both slides', recs.length === 2 && !res.fatal, res.fatal || brief)
+check('shots settles every frame', recs.every((r) => r.settled), brief)
+check('shots waits for the camera to land and the form to gather', recs.every((r) => !r.flying && r.assembled && r.station), brief)
+check('shots lets --settle engine-seconds pass after the change', recs.every((r) => r.engineSec >= 6), brief)
+check('shots keeps the full pixel ratio and dust', recs.every((r) => r.dpr === 1 && r.dust > 0 && r.dust === r.dustTotal), brief)
+check('shots settles in seconds', recs.every((r) => r.settleMs < 20000), brief)
+check('shots reads the text on screen', recs.every((r) => r.wordsOnScreen > 0 && r.textBoxes.every((b) => b.fontPx > 0 && b.lumMean != null)), brief)
+check('shots exits 0 on a clean deck', res.code === 0, JSON.stringify(res.problems))
+console.log(`     renderer: ${res.renderer}`)
+await rm(out, { recursive: true, force: true })
 if (failures) { console.error(`${failures} smoke failure(s)`); process.exit(1) }
 console.log('STAGE SMOKE PASS')

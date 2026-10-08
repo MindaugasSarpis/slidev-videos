@@ -315,7 +315,7 @@ run goes (a crash keeps what was photographed):
 | `renderer` | the WebGL renderer string |
 | `settled`, `settleMs`, `engineSec`, `engineTime` | did it settle, in how long, over how many engine-seconds, at what engine time |
 | `shotMs` | finishing, measuring and photographing |
-| `flying`, `assembled`, `dpr`, `dust` | the world's state in the picture (`dust`: grains drawn) |
+| `flying`, `assembled`, `dpr`, `dust`, `dustTotal` | the world's state in the picture (`dust`: grains drawn, of `dustTotal`) |
 | `probe` | `stage` (window.__stage), `handles` (an older engine's canvas.__space) or `none` |
 | `overflowPx`, `overflowRightPx` | how far the slide's content runs past its bottom and right edges (negative: inside) |
 | `textBoxes` | `[{ text, x, y, w, h, fontPx, lumMean, lumVar, white }]`: every visible box of text on the slide and in the stop HUD, in screen px; luminance (0–1) of its area in the picture, and the share of clipped white |
