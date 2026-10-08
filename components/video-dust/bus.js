@@ -110,6 +110,28 @@ export function brightness(image) {
 }
 export const DARK = 0.07;   // below this a frame is black to the eye: a clip still fading in
 
+// Whether a frame shows anything: lit on the whole (brightness at least DARK),
+// or a small lit subject on black, as an animation that opens on one figure in
+// the dark (at least 0.2 % of the pixels clearly lit, read at 64x36 so a small
+// figure is not averaged away). A frame still fading in from black is neither.
+export function isLit(image) {
+  try {
+    const c = document.createElement('canvas');
+    c.width = 64; c.height = 36;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(image, 0, 0, 64, 36);
+    const d = g.getImageData(0, 0, 64, 36).data;
+    let sum = 0, lit = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const v = Math.max(d[i], d[i + 1], d[i + 2]);
+      sum += v;
+      if (v > 64) lit++;
+    }
+    const n = d.length / 4;
+    return sum / n / 255 >= DARK || lit / n >= 0.002;
+  } catch { return false; }
+}
+
 // The first lit tile of a clip's strip within its first `within` seconds, with
 // the time it stands for; null when the strip has none (or there is no strip).
 // A clip that opens on black gives the grains nothing to gather into.
@@ -119,7 +141,7 @@ export async function firstLitFrame(src, within = 12) {
   const last = Math.min(entry.count - 1, Math.floor(within / entry.interval));
   for (let i = 0; i <= last; i++) {
     const f = await stripFrame(src, i * entry.interval);
-    if (f && brightness(f.image) >= DARK) return { ...f, time: i * entry.interval };
+    if (f && isLit(f.image)) return { ...f, time: i * entry.interval };
   }
   return null;
 }

@@ -27,7 +27,7 @@ function setSessionVolume(v) {
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useIsSlideActive, useNav, useSlideContext, configs } from '@slidev/client'
-import { getOverlay, announce, warmStrip, stripFrame, liveFrame, fitPicture, meanColor, brightness, firstLitFrame, DARK } from './video-dust/bus.js'
+import { getOverlay, announce, warmStrip, stripFrame, liveFrame, fitPicture, meanColor, isLit, firstLitFrame } from './video-dust/bus.js'
 
 // Config resolution (headmatter beats env beats built-ins):
 //   videos:                       VITE_VIDEO_REPO
@@ -239,7 +239,7 @@ async function sheetFrame(kind, time) {
   const live = liveFrame(videoRef.value)
   if (kind !== 'enter') return live || await stripFrame(props.src, time)
   startAt = 0
-  if (live && (!FROM_LIT || brightness(live.image) >= DARK)) return live
+  if (live && (!FROM_LIT || isLit(live.image))) return live
   if (FROM_LIT) {
     const lit = await firstLitFrame(props.src)
     if (lit) { startAt = lit.time; return lit }

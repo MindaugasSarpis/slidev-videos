@@ -85,8 +85,9 @@ mounts itself (its `global-top.vue`; plain WebGL2, created on first use), so
 the deck must load the package as an addon, not symlink its `components/`.
 While a clip is slow to arrive the assembled sheet holds its first frame. A
 clip that opens on black gives the grains nothing to gather into, so its
-sheet is made of the first lit frame of its opening twelve seconds and the
-clip plays from that moment (`videos.dustFrom: start` keeps the opening).
+sheet is made of the first lit frame of its opening twelve seconds (lit on
+the whole, or a small lit subject on black) and the clip plays from that
+moment (`videos.dustFrom: start` keeps the opening).
 By default (`dustStyle: frame`) the grains arrive spread over the whole frame,
 in the picture's own colours, and condense in place into the full-bleed clip;
 leaving, the picture breaks up where it stands and its grains are thrown past
