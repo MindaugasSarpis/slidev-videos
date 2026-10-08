@@ -14,6 +14,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { SIM_VERT, COPY_FRAG, VEL_FRAG, POS_FRAG, RENDER_VERT, RENDER_FRAG } from './shaders/passes.glsl.js';
 import { NOISE } from './shaders/noise.glsl.js';
+import { createPhotoPlace } from './photo-place.js';
 import { buildStation, helpers } from './builders.js';
 import { shell } from './materials.js';
 import { resolvePalette, hexToRgb } from './palette.js';
@@ -178,6 +179,14 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   const byId = new Map((records || []).filter((s) => s && s.id != null).map((s) => [String(s.id), { ...s }]));
   const stations = new Map();
   const anchors = new Map();
+  // places a page adds (StagePhoto mode="place"): id → { pos: Vector3, look: { dist, yaw, pitch, sway, still } }
+  const places = new Map();
+  const dropPlace = (id) => {
+    const p = places.get(String(id));
+    if (!p) return;
+    if (p.place) { scene.remove(p.place.object); p.place.dispose(); }
+    places.delete(String(id));
+  };
   const ctx = { records: byId, states: byId, palette: pal, anisotropy: renderer.capabilities.getMaxAnisotropy(), asset: asset || ((s) => s), helpers, twinkle: Math.max(0, num(opt.twinkle, 1)) };
   for (const st of space.stations || []) {
     const built = buildStation(st, ctx);
@@ -269,7 +278,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   // at → { target, dist, yaw, pitch, station }; `at` is [x,y,z], a station id, a record / anchor id or a named pose
   const resolve = (p) => {
     let at = p.at;
-    const out = { target: new Vector3(), station: null, dist: p.dist, yaw: p.yaw, pitch: p.pitch, sway: p.sway };
+    const out = { target: new Vector3(), station: null, dist: p.dist, yaw: p.yaw, pitch: p.pitch, sway: p.sway, still: p.still };
     let offset = null;
     if (typeof at === 'string' && NAMED[at] && !stations.has(at)) {
       const n = NAMED[at]; out.dist ??= n.dist; out.yaw ??= n.yaw; out.pitch ??= n.pitch; out.sway ??= n.sway; offset = n.offset || null;
@@ -280,6 +289,12 @@ export function createSpace(canvas, container, { space, records = [], palette, o
       const { def, pos } = stations.get(at); const look = def.look || {};
       out.target.copy(pos); if (offset) out.target.add(new Vector3(...offset)); else if (look.target) out.target.add(new Vector3(...look.target));
       out.dist ??= look.dist; out.yaw ??= look.yaw; out.pitch ??= look.pitch; out.sway ??= look.sway; out.station = at;
+    } else if (places.has(String(at))) {
+      // a photo's place: its front pose unless the slide says otherwise, held still
+      const { pos, look } = places.get(String(at));
+      out.target.copy(pos);
+      out.dist ??= look.dist; out.yaw ??= look.yaw; out.pitch ??= look.pitch; out.sway ??= look.sway; out.still ??= look.still;
+      out.station = nearestStation(out.target);
     } else if (anchors.has(String(at))) {
       out.target.copy(anchors.get(String(at))).add(stopOffset);
       out.station = nearestStation(out.target);
@@ -295,10 +310,12 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   };
   const applyPose = (p, elapsed) => {
     const r = resolve(p);
-    const dist = r.dist * (1 + 0.02 * Math.sin(elapsed / 31 * Math.PI * 2));
+    // `still`: no breathing, no wobble (a photo's front pose, where the flat cloud must meet the <img>)
+    const idle = r.still ? 0 : 1;
+    const dist = r.dist * (1 + idle * 0.02 * Math.sin(elapsed / 31 * Math.PI * 2));
     // idle sway about the pose's yaw: 2.5° by default; a look may ask for more (the hero slowly circles)
-    const yaw = (r.yaw + (r.sway ?? 2.5) * Math.sin(elapsed / 46 * Math.PI * 2)) * D2R;
-    const pitch = (r.pitch + 1.2 * Math.sin(elapsed / 57 * Math.PI * 2 + 2)) * D2R;
+    const yaw = (r.yaw + idle * (r.sway ?? 2.5) * Math.sin(elapsed / 46 * Math.PI * 2)) * D2R;
+    const pitch = (r.pitch + idle * 1.2 * Math.sin(elapsed / 57 * Math.PI * 2 + 2)) * D2R;
     goalLook.copy(r.target);
     goalPos.set(r.target.x + dist * Math.sin(yaw) * Math.cos(pitch), r.target.y + dist * Math.sin(pitch), r.target.z + dist * Math.cos(yaw) * Math.cos(pitch));
     activeStation = r.station;
@@ -475,9 +492,23 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     get hero() { return heroId; },
     get atStation() { return atStation; },
     get flying() { return flightT0 >= 0; },
+    get flightProgress() { return flightT0 >= 0 ? flightU : 1; },   // 0..1 in time through the flight, 1 when parked
     get paused() { return paused; },
     get stationIds() { return [...stations.keys()]; },
-    has(at) { return Array.isArray(at) || stations.has(at) || anchors.has(String(at)) || !!NAMED[at]; },
+    has(at) { return Array.isArray(at) || stations.has(at) || places.has(String(at)) || anchors.has(String(at)) || !!NAMED[at]; },
+    get camera() { return camera; },
+    // A photograph as a place (StagePhoto mode="place"): its grain cloud in the
+    // scene, and a pose target `id` whose look is the photo's front view.
+    // image, depth: loaded <img> elements. → the cloud's handle (set, dispose, front).
+    addPhotoPlace(id, { image, depth, at, yaw = 0, width = 4, cols, relief = 1, depthScale, screenAspect = 16 / 9 }) {
+      dropPlace(id);
+      const pos = new Vector3(num(at?.[0], 0), num(at?.[1], 0), num(at?.[2], 0));
+      const place = createPhotoPlace({ image, depth, pos: pos.toArray(), yaw, width, cols, relief, depthScale });
+      scene.add(place.object);
+      places.set(String(id), { pos, look: { dist: place.front(num(opt.fov, 50), screenAspect).dist, yaw, pitch: 0, sway: 0, still: true }, place });
+      return place;
+    },
+    removePhotoPlace(id) { dropPlace(id); },
     // build again what stands at the station the pose is at (the `c` key)
     assemble() { return startAssembly(atStation); },
     record(id) { return byId.get(String(id)) || null; },
@@ -502,7 +533,8 @@ export function createSpace(canvas, container, { space, records = [], palette, o
       }
       const d = fromPos.distanceTo(goalPos) + 0.5 * fromLook.distanceTo(goalLook);
       const [lo, hi2] = opt.flight;
-      flightDur = Math.min(hi2, Math.max(lo, 1.1 + d / 12));
+      // a slide's own `flight` (seconds) beats the rule from the distance
+      flightDur = num(pose.flight, 0) > 0 ? num(pose.flight, 0) : Math.min(hi2, Math.max(lo, 1.1 + d / 12));
       flightT0 = elapsed; flightU = 0; arrived = false;
       onEvent?.('flight', { seconds: flightDur, distance: d, to: currentTarget });
     },
@@ -542,6 +574,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
       if (p) cancelAnimationFrame(raf); else { getDelta(); frame(); }
     },
     dispose() {
+      for (const id of [...places.keys()]) dropPlace(id);
       if (disposed) return;
       disposed = true;
       cancelAnimationFrame(raf);

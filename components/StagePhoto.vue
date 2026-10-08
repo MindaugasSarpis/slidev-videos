@@ -49,6 +49,20 @@ const props = defineProps({
   // after the slide comes up, so the flight there shows in the gap; a slide
   // with no flight arrives at once).
   arrive: { type: String, default: 'enter' },
+  // `place`: the photo is a place in the world, a grain cloud at `at`
+  // ([x, y, z]) facing `yaw`, `size` world units wide, each pixel at its depth
+  // from the depth map (`depth`, default <src>.depth.png; `slidev-videos
+  // depth`). The slide's pose names it: `space: { at: <place-id> }` flies the
+  // camera to its front view; there the cloud flattens and hands over to the
+  // sharp image. Leaving, it rises back into relief, dimmer, and stays.
+  mode:    { type: String, default: 'screen' },
+  placeId: { type: String, default: '' },
+  at:      { type: Array, default: () => [0, 0, 0] },
+  size:    { type: Number, default: 4 },
+  yaw:     { type: [Number, String], default: 0 },
+  depth:   { type: [String, Boolean], default: true },
+  relief:  { type: Number, default: 0.35 },   // depth range as a share of the width
+  grains:  { type: Number, default: 600 },    // columns of grains; rows follow the aspect
 })
 const CAMERA_WAIT_MS = 3000
 const SLOT_IN_MS = 300
@@ -56,7 +70,7 @@ const SLOT_OUT_MS = 250
 
 const STYLES = ['frame', 'flight', 'none']
 const REDUCED_MOTION = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
-const mode = computed(() => {
+const dustStyle = computed(() => {
   const m = String(props.dust || CFG.dustStyle || 'frame').toLowerCase()
   return STYLES.includes(m) ? m : 'frame'
 })
@@ -71,7 +85,7 @@ const isActive = useIsSlideActive()
 const { isPrintMode } = useNav()
 const { $renderContext } = useSlideContext()
 // grains only on the audience's slide
-const moving = computed(() => mode.value !== 'none' && !REDUCED_MOTION && $renderContext.value === 'slide' && !isPrintMode?.value)
+const moving = computed(() => dustStyle.value !== 'none' && !REDUCED_MOTION && $renderContext.value === 'slide' && !isPrintMode?.value)
 
 const rootRef = ref(null)
 const imgRef = ref(null)
@@ -123,18 +137,111 @@ function loaded() {
 
 const holding = computed(() => moving.value && props.holdText)
 
-// Resolves when the stage camera has landed: at once if it is not flying a
-// frame after the slide came up (no pose change), else on its arrival or after
-// CAMERA_WAIT_MS.
-function cameraLanded() {
+// ---- place --------------------------------------------------------------------
+const isPlace = computed(() => props.mode === 'place')
+const placeId = computed(() => props.placeId || props.src.split('/').pop().replace(/\.[^.]+$/, ''))
+const depthSrc = computed(() => typeof props.depth === 'string' ? props.depth : props.src.replace(/\.[^.\/]+$/, '.depth.png'))
+const PLACE_DIM = 0.5                 // a place already visited, seen again in the distance
+const visited = (globalThis.__stagePhotoVisited ??= new Set())
+let place = null                      // the cloud's handle, once built
+let tween = 0
+
+function whenSpace(ms = 10000) {
+  return new Promise((resolve) => {
+    const t0 = performance.now()
+    const look = () => {
+      const sp = document.querySelector('.stage')?.__space
+      if (sp && sp.addPhotoPlace) return resolve(sp)
+      if (performance.now() - t0 > ms) return resolve(null)
+      requestAnimationFrame(look)
+    }
+    look()
+  })
+}
+function loadImage(src) {
+  return new Promise((resolve) => {
+    const im = new Image()
+    im.onload = () => resolve(im); im.onerror = () => resolve(null)
+    im.src = src
+  })
+}
+async function buildPlace() {
+  if (!isPlace.value || !moving.value || place) return place
+  const [sp, ok, dm] = await Promise.all([whenSpace(), loaded(), props.depth === false ? null : loadImage(depthSrc.value)])
+  if (!sp || !ok || !dm || place) return place
+  place = sp.addPhotoPlace(placeId.value, {
+    image: imgRef.value, depth: dm, at: props.at, yaw: Number(props.yaw) || 0, width: props.size,
+    cols: props.grains, depthScale: props.size * props.relief,
+  })
+  place?.set({ dim: visited.has(placeId.value) ? PLACE_DIM : 1 })
+  return place
+}
+// relief and dim to their targets over ms, on the page clock
+function animatePlace(to, ms) {
+  cancelAnimationFrame(tween)
+  if (!place) return Promise.resolve()
+  const from = { relief: place.relief, dim: to.dimFrom ?? null }
+  const t0 = performance.now()
+  return new Promise((resolve) => {
+    const step = (now) => {
+      const u = Math.min(1, (now - t0) / ms), e = u * u * (3 - 2 * u)
+      place.set({ relief: from.relief + (to.relief - from.relief) * e,
+                  dim: to.dim != null ? (to.dimFrom ?? 1) + (to.dim - (to.dimFrom ?? 1)) * e : undefined })
+      if (u < 1) tween = requestAnimationFrame(step); else resolve()
+    }
+    tween = requestAnimationFrame(step)
+  })
+}
+
+async function enterPlace(id) {
+  // the camera flies to the place's front view (the slide's pose); there the
+  // relief flattens into the picture plane and the sharp image takes over
+  await cameraLanded(6000)
+  if (id !== run) return
+  place.set({ dim: 1 })
+  await animatePlace({ relief: 0 }, 700)
+  if (id !== run) return
+  // the flat cloud is the picture: the sharp image takes over at once (a fade
+  // would show the hero's dark ground between them)
+  try { await imgRef.value?.decode?.() } catch {}
+  if (id !== run) return
+  instant.value = true
+  revealed.value = true
+  requestAnimationFrame(() => requestAnimationFrame(() => { if (id === run) instant.value = false }))
+  slotOn.value = true
+  shown = true
+  visited.add(placeId.value)
+}
+function leavePlace() {
+  if (holding.value) slotOn.value = false
+  leaving.value = true            // the image goes in 0.2 s; the flat cloud under it is the picture
+  revealed.value = false
+  animatePlace({ relief: 1, dim: PLACE_DIM, dimFrom: 1 }, 1400)
+}
+
+// Resolves when the stage camera is all but there: at once if it is not
+// flying a frame after the slide came up (no pose change), else when the
+// flight is LANDING_AT through its time (the smootherstep has covered ~98 % of
+// the way by then; the last stretch only settles), on its arrival, or after `cap`.
+const LANDING_AT = 0.85
+function cameraLanded(cap = CAMERA_WAIT_MS) {
   return new Promise((resolve) => {
     requestAnimationFrame(() => {
       const space = document.querySelector('.stage')?.__space
       if (!space || !space.flying) return resolve()
-      let timer = 0
-      const done = () => { window.removeEventListener('slidev-stage:arrive', done); clearTimeout(timer); resolve() }
+      let timer = 0, raf = 0, over = false
+      const done = () => {
+        if (over) return
+        over = true
+        window.removeEventListener('slidev-stage:arrive', done); clearTimeout(timer); cancelAnimationFrame(raf); resolve()
+      }
+      const watch = () => {
+        if (!space.flying || (space.flightProgress ?? 0) >= LANDING_AT) return done()
+        raf = requestAnimationFrame(watch)
+      }
       window.addEventListener('slidev-stage:arrive', done)
-      timer = setTimeout(done, CAMERA_WAIT_MS)
+      timer = setTimeout(done, cap)
+      watch()
     })
   })
 }
@@ -150,6 +257,11 @@ async function enter() {
   instant.value = false
   const ok = await loaded()
   if (id !== run) return
+  if (isPlace.value && ok && await buildPlace()) {
+    if (id !== run) return
+    return enterPlace(id)
+  }
+  if (id !== run) return
   if (props.arrive === 'camera') {
     await cameraLanded()
     if (id !== run) return
@@ -159,7 +271,7 @@ async function enter() {
   let handle = null
   if (overlay && g) {
     announce('transition', { phase: 'enter', mode: 'dust', src: props.src, duration: ms.value.enter })
-    handle = overlay.enter({ image: imgRef.value, rect: g.rect, uv: g.uv, dust: grainColor.value, style: mode.value,
+    handle = overlay.enter({ image: imgRef.value, rect: g.rect, uv: g.uv, dust: grainColor.value, style: dustStyle.value,
                              duration: ms.value.enter, source: 'image' })
   }
   if (id !== run) { handle?.cancel(); return }
@@ -182,6 +294,7 @@ function leave() {
   const wasShown = shown
   shown = false
   if (!moving.value || !wasShown) { revealed.value = true; slotOn.value = !holding.value; return }
+  if (place) { leavePlace(); return }
   // The words go first: the sheet comes up over the picture at once (the deck
   // may take the slide away any moment) and holds it whole while they fade,
   // then breaks up.
@@ -189,7 +302,7 @@ function leave() {
   const overlay = getOverlay()
   const g = geometry()
   const handle = overlay && g
-    ? overlay.leave({ image: imgRef.value, rect: g.rect, uv: g.uv, dust: grainColor.value, style: mode.value,
+    ? overlay.leave({ image: imgRef.value, rect: g.rect, uv: g.uv, dust: grainColor.value, style: dustStyle.value,
                       duration: ms.value.leave, source: 'image', hold: holding.value ? SLOT_OUT_MS : 0 })
     : null
   // the world takes the picture's colour, as it does a clip's
@@ -205,12 +318,14 @@ function leave() {
 watch(isActive, (on) => { on ? enter() : leave() })
 // a slide that is not up yet waits with its words hidden, so they cannot show
 // before its arrival runs (a preloaded slide, the deck's fade)
-onMounted(() => { if (isActive.value) enter(); else if (holding.value) slotOn.value = false })
-onUnmounted(() => { run++; sheet?.cancel(); sheet = null })
+// a place stands in the world from the start, so earlier and later poses see it
+onMounted(() => { if (isActive.value) enter(); else { if (holding.value) slotOn.value = false; if (isPlace.value && moving.value) { revealed.value = false; buildPlace() } } })
+// the cloud stays in the world when its slide is unmounted; only the tween stops
+onUnmounted(() => { run++; sheet?.cancel(); sheet = null; cancelAnimationFrame(tween) })
 </script>
 
 <template>
-  <div ref="rootRef" class="hero stage-photo" :class="{ 'stage-photo-moving': moving, 'stage-photo-held': !revealed, 'stage-photo-instant': instant, 'stage-photo-leaving': leaving }"
+  <div ref="rootRef" class="hero stage-photo" :class="{ 'stage-photo-moving': moving, 'stage-photo-held': !revealed, 'stage-photo-instant': instant, 'stage-photo-leaving': leaving, 'stage-photo-place': isPlace && moving }"
        :style="{ '--focus': focus }" :data-photo-phase="revealed ? 'shown' : 'held'">
     <img ref="imgRef" :src="src" :alt="alt" :class="{ contain: fit === 'contain' }" decoding="async" />
     <div class="stage-photo-slot" :class="{ 'stage-photo-slot-off': !slotOn }"><slot /></div>
@@ -242,4 +357,7 @@ html .stage-photo.stage-photo-held::after { opacity: 0; }
 html .stage-photo.stage-photo-moving::after { transition: opacity 450ms ease; }
 html .stage-photo.stage-photo-instant > img { transition: none; }
 html .stage-photo.stage-photo-leaving > img { transition: opacity 200ms ease; }
+/* a place has no ground of its own: the flat cloud behind is the picture, so a
+   frame in which the <img> is not painted yet shows it, not black */
+html .stage-photo.stage-photo-place { background: transparent; }
 </style>

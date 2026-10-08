@@ -82,8 +82,11 @@ crop's `object-position`), `dust` (`frame` | `flight` | `none`, default
 `videos.dustStyle`), `color` (default `videos.dust`), `dust-ms` (a number or
 `[arrive, leave]`, default `videos.dustMs`), `fit` (`cover` | `contain`),
 `arrive` (`enter`: the grains condense as the slide comes up; `camera`: they
-wait for the stage camera to land at the slide's pose, at most 3 s, so the
-flight there shows; a slide without a flight arrives at once). Dispersed
+wait for the stage camera to reach the slide's pose, 85 % through the
+flight's time, at most 3 s, so the flight there shows; a slide without a
+flight arrives at once). A slide's pose may set its own flight time,
+`space: { at: …, flight: 1.6 }` (seconds), instead of the rule from the
+distance. Dispersed
 grains (photos and clips, `frame` style) are capped at luminance 0.62 and
 only about a third of them show, thinning toward the frame's edges, so a pale
 picture never veils the frame and the world shows through; they reach their
@@ -98,6 +101,28 @@ hidden while the grains gather, fades in over 300 ms once the sharp image is
 up, and on leave fades out in 250 ms while the grains hold the picture whole,
 before it breaks up. `:hold-text="false"` leaves the slot to the deck's own
 transition.
+
+**StagePhoto as a place** (`mode="place"`): the photo stands in the world as
+a grain cloud, one grain per pixel cell (`grains` columns, default 600; rows
+follow the aspect), each at its depth from the photo's depth map (`depth`,
+default `<src>.depth.png`, see below), as a relief (`relief`: the depth range
+as a share of the width, default 0.35):
+
+    <StagePhoto mode="place" place-id="stumpe" :at="[92, 0, 0]" :size="3" :yaw="90" src="/figures/stumpe.jpg">…</StagePhoto>
+
+    space: { at: stumpe, dim: 0 }      # the slide's pose: the photo's front view
+
+`at` is its centre in the world, `yaw` the way it faces (the pose `{ at, yaw }`
+looks at it square-on), `size` its width in world units. Naming the place in
+the slide's pose flies the camera to its front view (at the distance where the
+photo covers the frame, held still: no sway or breathing); as the camera gets
+there the relief flattens into the picture and the sharp image takes over, then
+the slot fades in. Leaving, the image goes, the cloud rises back into relief,
+dimmer, and stays in the world, so later poses see it in the distance. Grains
+in relief are capped at luminance 0.62. The presenter window, the overview,
+print and reduced motion show the plain image; without its depth map or the
+stage, a place arrives as grains on the screen instead. The photo should be
+full bleed (`fit: cover`), as a place's front view is the whole frame.
 
 **Depth maps:** `slidev-videos depth public/figures/a.jpg …` writes
 `a.depth.png` beside each image: 8-bit grey, white = near, the image's aspect,
