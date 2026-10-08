@@ -62,7 +62,9 @@ link the addons to your checkout in a /tmp copy of outreach_talks. Tested on
          "slidev-addon-stage": "link:<SV>/packages/stage" } }
 
    then `cd $W/ot && pnpm install`. In every talk of the copy,
-   `node_modules/slidev-addon-*` are now symlinks into `$SV`.
+   `node_modules/slidev-addon-*` are now symlinks into `$SV`. The install
+   also makes `$SV/packages/stage/bin/*` executable; a branch cut before
+   they were committed executable then shows them as changed.
 2. If the talk imports three itself (builders in `setup/`), add
    `resolve: { dedupe: ['three'] }` to its `vite.config.ts` (create it if
    missing), e.g.
@@ -98,8 +100,10 @@ Pin a tag only at release.
 checkout's editable install, not your worktree. Wrap headless browser runs
 (smoke, shots) in `flock /tmp/slidev-stage-shots.lock <cmd>` and keep them to
 a few slides: other sessions run headless WebGL on the same CPU. Commit bins
-executable (`git update-index --chmod=+x`); pnpm install sets the bit, and
-git would show a change that release.py refuses.
+executable (`git update-index --chmod=+x`): linking a checkout into a talk
+(the dev loop's `link:` override) sets the bit on `packages/stage/bin/*`,
+and git would then show a change that release.py refuses. A `pnpm install`
+in this repo leaves the bits as they are.
 
 ## Machine gotchas
 
