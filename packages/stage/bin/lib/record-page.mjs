@@ -114,7 +114,10 @@ export function recorderHooks() {
         let sameOrigin = true;
         try { sameOrigin = !src || new URL(src, location.href).origin === location.origin; } catch {}
         const s = media.get(v);
-        return { src, sameOrigin, duration: Number.isFinite(v.duration) ? v.duration : null, loop: v.loop, playing: !!(s && s.playing), t: time.get.call(v) };
+        // a Chromium built without the proprietary codecs cannot decode H.264 (most .mp4 clips)
+        const type = /\.webm(\?|$)/i.test(src) ? 'video/webm; codecs="vp9"' : /\.mp4(\?|$)/i.test(src) ? 'video/mp4; codecs="avc1.640028"' : '';
+        const decodable = !type || v.canPlayType(type) !== '';
+        return { src, sameOrigin, decodable, duration: Number.isFinite(v.duration) ? v.duration : null, loop: v.loop, playing: !!(s && s.playing), t: time.get.call(v) };
       }) : [];
       return {
         slide: Number((/^#\/(\d+)/.exec(location.hash) || [])[1]) || null,

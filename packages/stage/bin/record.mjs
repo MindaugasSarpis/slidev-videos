@@ -143,11 +143,16 @@ async function recordSegment({ page, cdp }, n, k, o, ff, enc) {
       const s = await look(page, n);
       last = s;
       clip = s.clips.find((c) => c.src) || clip;
-      // a clip from another origin cannot be stepped: hand the editor the source instead
-      if (clip && !clip.sameOrigin) {
+      // a clip this browser cannot decode, or one from another origin, cannot be
+      // stepped: hand the editor the source instead
+      const undecodable = s.clips.find((c) => c.src && !c.decodable);
+      if (undecodable || (clip && !clip.sameOrigin)) {
         pipe?.kill(); platePipe?.kill();
         await rm(file, { force: true }); await rm(plateFile, { force: true });
-        return { slide: n, clicks: k, skipped: true, note: 'the clip comes from another origin and cannot be stepped frame by frame: cut in the source clip', clip: { src: clip.src }, at: s.at, station: s.station };
+        const note = undecodable
+          ? 'this browser cannot decode the clip: cut in the source clip, or record with --chromium pointing at a build that can'
+          : 'the clip comes from another origin and cannot be stepped frame by frame: cut in the source clip';
+        return { slide: n, clicks: k, skipped: true, note, clip: { src: (undecodable || clip).src }, at: s.at, station: s.station };
       }
       if (s.seeking) await seeked(page);
       if (!pipe) {
