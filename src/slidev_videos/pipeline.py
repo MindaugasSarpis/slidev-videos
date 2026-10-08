@@ -2293,6 +2293,10 @@ def main(argv: list[str] | None = None) -> int:
     if raw_argv[:1] == ["discover"]:
         from . import discover
         return discover.main(raw_argv[1:])
+    # `depth` works on image paths and needs no project either
+    if raw_argv[:1] == ["depth"]:
+        from . import depth
+        return depth.main(raw_argv[1:])
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("discover", help="search open archives (CDS/NASA/ESO/Hubble/Webb/NOIRLab/Commons) for clips; prints [[videos]] snippets")
 
@@ -2368,6 +2372,9 @@ def main(argv: list[str] | None = None) -> int:
     p_frames.add_argument("--quality", type=int, default=5, help="JPEG quality, ffmpeg -q:v 2 (best) .. 31 (default 5)")
     p_frames.add_argument("--jobs", type=int, default=3, help="clips cut at once (default 3)")
     p_frames.set_defaults(func=cmd_frames)
+
+    from . import depth as _depth
+    _depth.add_parser(sub)
 
     p_clean = sub.add_parser("clean", help="delete local video files that are verified recoverable (dry-run by default)")
     p_clean.add_argument("--yes", action="store_true", help="actually delete (default is a dry run)")

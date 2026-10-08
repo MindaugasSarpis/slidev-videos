@@ -88,7 +88,9 @@ grains (photos and clips, `frame` style) are capped at luminance 0.62 and
 only about a third of them show, thinning toward the frame's edges, so a pale
 picture never veils the frame and the world shows through; they reach their
 true colour as they condense. slidev-stage-record waits for a StagePhoto to
-arrive before it counts a slide as still.
+arrive before it counts a slide as still. Known limit: the grains carry the bare
+photo, not a talk's `.hero` gradient over it, so the gradient's darkening
+steps in as the sheet hands over and steps out as it breaks up.
 Only the audience's slide moves: the presenter window, the overview, the
 next-slide preview, print and reduced motion show the plain image.
 The slot waits for the picture, so two headlines never show at once: it is
@@ -96,6 +98,16 @@ hidden while the grains gather, fades in over 300 ms once the sharp image is
 up, and on leave fades out in 250 ms while the grains hold the picture whole,
 before it breaks up. `:hold-text="false"` leaves the slot to the deck's own
 transition.
+
+**Depth maps:** `slidev-videos depth public/figures/a.jpg …` writes
+`a.depth.png` beside each image: 8-bit grey, white = near, the image's aspect,
+the long side at most `--size` (1024). Depth Anything V2 Small (the
+onnx-community ONNX export, Apache-2.0) runs on the CPU through onnxruntime,
+under a second per image; run it through the render slot (`pnpm talk render
+-- slidev-videos depth …`) and commit the maps; the browser only reads them.
+It needs the `depth` extra (`pip install "slidev-videos[depth]"`); the model
+(~100 MB) is fetched once into the Hugging Face cache. The map is a plain
+per-pixel depth, so it can drive both a photo's parallax and a grain cloud.
 
 **Source chain**, front to back: a production build tries the own release,
 then the shared release, then `videos/` and `videos-hq/` under the deck's
