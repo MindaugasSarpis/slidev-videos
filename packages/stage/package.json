@@ -1,6 +1,6 @@
 {
   "name": "slidev-addon-stage",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "description": "Slidev addon: one persistent 3D world under a whole deck — stations in a field of dust, a camera that flies from slide to slide, a cinematic render chain, palettes and a builder registry",
   "repository": {

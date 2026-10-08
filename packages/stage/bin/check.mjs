@@ -69,7 +69,29 @@ export function deckPoses(source) {
   return { at: at.map(unquote), stops };
 }
 
-export function checkStage({ space, records = null, deck = '', plugins = [], extraTypes = [], publicDir = null } = {}) {
+// The places a deck stands up at runtime: every <StagePhoto mode="place">,
+// by its place-id, else its image's file stem (StagePhoto's own default). A
+// slide's `space: { at: <place-id> }` flies to one; they are not in space.json.
+export function deckPlaces(...sources) {
+  const ids = [];
+  for (const src of sources) {
+    for (const m of String(src).matchAll(/<StagePhoto\b([^>]*)>/g)) {
+      const attrs = {};
+      for (const a of m[1].matchAll(/(?:^|\s)(:?[\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) attrs[a[1].replace(/^:/, '')] = a[2] ?? a[3];
+      if (attrs.mode !== 'place') continue;
+      const id = attrs['place-id'] || attrs.placeId || (attrs.src || '').split('/').pop().replace(/\.[^.]+$/, '');
+      if (id) ids.push(id);
+    }
+  }
+  return ids;
+}
+
+// The pages a deck pulls in (`src: ./pages/x.md` in a slide's frontmatter), relative to its directory.
+export function deckPages(source) {
+  return [...frontmatters(source).matchAll(/^\s*src:[ \t]*([^\n#]+)/gm)].map((m) => unquote(m[1].trim())).filter((p) => /\.md$/i.test(p));
+}
+
+export function checkStage({ space, records = null, deck = '', pages = [], plugins = [], extraTypes = [], publicDir = null } = {}) {
   const problems = [];
   const types = { ...CORE_TYPES };
   for (const p of plugins) {
@@ -115,11 +137,17 @@ export function checkStage({ space, records = null, deck = '', plugins = [], ext
     if (s != null && !Array.isArray(s) && !stations.has(String(s))) problems.push(`pose ${k}: station ${s} does not exist`);
   }
 
-  const resolves = (at) => /^\[.*\]$/.test(at) || stations.has(at) || anchors.has(at) || named.has(at);
+  const placeList = deckPlaces(deck, ...pages);
+  const places = new Set(placeList);
+  for (const id of places) {
+    if (placeList.indexOf(id) !== placeList.lastIndexOf(id)) problems.push(`StagePhoto place-id used twice: ${id} (the second replaces the first)`);
+    if (stations.has(id)) problems.push(`StagePhoto place-id is also a station id: ${id}`);
+  }
+  const resolves = (at) => /^\[.*\]$/.test(at) || stations.has(at) || anchors.has(at) || named.has(at) || places.has(at);
   const { at, stops } = deckPoses(deck);
   for (const a of at) if (!resolves(a)) problems.push(`deck space.at does not resolve: ${a}`);
   for (const s of stops) if (!anchors.has(s)) problems.push(`deck stop is not an anchor in the space: ${s}`);
-  return { problems, stations: stations.size, objects, poses: at.length, stops: stops.length };
+  return { problems, stations: stations.size, objects, places: places.size, poses: at.length, stops: stops.length };
 }
 const isVec = (v) => Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === 'number' && Number.isFinite(n));
 
@@ -159,13 +187,18 @@ export function main(argv = process.argv.slice(2)) {
     try { records = JSON.parse(readFileSync(join(publicDir, recordsRel), 'utf8')); } catch (e) { console.error(`cannot read ${recordsRel}: ${e.message}`); return 2; }
   }
   const plugins = args.plugins || (Array.isArray(cfg.plugins) ? cfg.plugins : []);
-  const r = checkStage({ space, records, deck, plugins, extraTypes: args.types, publicDir });
+  const pages = [];
+  for (const rel of deckPages(deck)) {
+    const f = resolve(dir, rel);
+    if (existsSync(f)) pages.push(readFileSync(f, 'utf8'));
+  }
+  const r = checkStage({ space, records, deck, pages, plugins, extraTypes: args.types, publicDir });
   if (r.problems.length) {
     console.error(r.problems.join('\n'));
     console.error(`\n${r.problems.length} problem(s) in the stage.`);
     return 1;
   }
-  console.log(`stage ok: ${r.stations} station(s), ${r.objects} object(s); ${r.poses} pose(s) and ${r.stops} stop(s) in the deck resolve`);
+  console.log(`stage ok: ${r.stations} station(s), ${r.objects} object(s)${r.places ? `, ${r.places} photo place(s)` : ''}; ${r.poses} pose(s) and ${r.stops} stop(s) in the deck resolve`);
   return 0;
 }
 

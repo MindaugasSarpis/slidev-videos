@@ -4,6 +4,16 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## v0.5.1 — 2026-10-08
+
+slidev-videos 0.5.1 · slidev-addon-videos 0.5.1 · slidev-addon-stage 0.2.1
+
+- `slidev-stage-check` accepts StagePhoto places as pose targets: it reads
+  every `<StagePhoto mode="place">` in the deck and the pages it pulls in
+  (`src: ./pages/x.md`), by `place-id`, else the image's file stem, and stops
+  reporting `space: { at: <place-id> }` as unresolved. A place-id used twice,
+  or one that is also a station id, is reported.
+
 ## v0.5.0 — 2026-10-08
 
 slidev-videos 0.5.0 · slidev-addon-videos 0.5.0 · slidev-addon-stage 0.2.0

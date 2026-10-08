@@ -1,10 +1,12 @@
 // node --test test/   — what can be held to account without a browser.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { CORE_TYPES, PLUGIN_TYPES, anchorIds } from '../stage/types.js';
 import { resolvePalette, PALETTES, DEFAULT_PALETTE, hexToRgb, rgbTriplet, paletteVars, definePalette } from '../stage/palette.js';
-import { checkStage, readStageConfig, deckPoses } from '../bin/check.mjs';
+import { checkStage, readStageConfig, deckPoses, deckPlaces, deckPages, main as checkMain } from '../bin/check.mjs';
 import { parseSlides } from '../bin/shots.mjs';
 
 const here = (p) => new URL(p, import.meta.url);
@@ -176,4 +178,45 @@ test('slide ranges', () => {
   assert.deepEqual(parseSlides('3-1, 3', 10), [1, 2, 3]);
   assert.deepEqual(parseSlides(null, 3), [1, 2, 3]);
   assert.deepEqual(parseSlides('x, 2', 5), [2]);
+});
+
+test('StagePhoto places are pose targets: by place-id, else the image stem; pages count', () => {
+  const space = { stations: [{ id: 'web', pos: [0, 0, 0], look: { dist: 12 } }] };
+  const deck = [
+    '---', 'space: { at: stumpe, dim: 0 }', '---',
+    '<StagePhoto mode="place" place-id="stumpe" :at="[4, 0, 0]" :size="3" src="/figures/hero_stumpe.jpg">',
+    '</StagePhoto>',
+    '---', 'space: { at: hero_pet }', '---',
+    '<StagePhoto\n  mode="place"\n  :at="[0, 0, 4]"\n  src="/figures/hero_pet.jpg"\n>',   // no place-id: the stem, over several lines
+    '</StagePhoto>',
+    '---', 'space: { at: tunnel }', '---',                                                // defined in a page
+    '---', 'space: { at: proposal }', '---',                                              // a screen StagePhoto is not a place
+    '<StagePhoto src="/figures/proposal.jpg" place-id="proposal"></StagePhoto>',
+  ].join('\n');
+  const page = '<StagePhoto mode="place" place-id="tunnel" :at="[0, 0, -4]" src="/figures/t.jpg"></StagePhoto>';
+  assert.deepEqual(deckPlaces(deck, page), ['stumpe', 'hero_pet', 'tunnel']);
+  const r = checkStage({ space, deck, pages: [page] });
+  assert.deepEqual(r.problems, ['deck space.at does not resolve: proposal']);
+  assert.equal(r.places, 3);
+  // without the page, its place is unknown
+  assert.ok(checkStage({ space, deck }).problems.includes('deck space.at does not resolve: tunnel'));
+  // a place-id twice, or the same as a station, is flagged
+  const twice = '<StagePhoto mode="place" place-id="a" src="/x.jpg"></StagePhoto><StagePhoto mode="place" place-id="a" src="/y.jpg"></StagePhoto>';
+  assert.ok(checkStage({ space, deck: twice }).problems.some((p) => p.includes('used twice: a')));
+  assert.ok(checkStage({ space, deck: '<StagePhoto mode="place" place-id="web" src="/x.jpg"></StagePhoto>' }).problems.some((p) => p.includes('also a station id: web')));
+});
+
+test('deckPages lists the md files a deck pulls in with src:', () => {
+  assert.deepEqual(deckPages('---\ntheme: x\n---\n# a\n---\nsrc: ./pages/two.md\n---\n---\nsrc: "pages/three.md"\nhide: false\n---\n'), ['./pages/two.md', 'pages/three.md']);
+});
+
+test('slidev-stage-check reads places from the deck and its pages', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'stage-check-places-'));
+  mkdirSync(join(dir, 'public/data'), { recursive: true });
+  mkdirSync(join(dir, 'pages'));
+  writeFileSync(join(dir, 'public/data/space.json'), JSON.stringify({ stations: [{ id: 'web', pos: [0, 0, 0], look: { dist: 12 } }] }));
+  writeFileSync(join(dir, 'deck.md'), '---\nstage:\n  space: data/space.json\n---\n# t\n---\nspace: { at: tunnel }\n---\nx\n---\nsrc: ./pages/p.md\n---\n');
+  writeFileSync(join(dir, 'pages/p.md'), '<StagePhoto mode="place" place-id="tunnel" :at="[0, 0, -4]" src="/figures/t.jpg"></StagePhoto>\n');
+  assert.equal(checkMain([dir]), 0);
+  rmSync(dir, { recursive: true, force: true });
 });
