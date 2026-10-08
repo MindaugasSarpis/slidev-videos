@@ -276,17 +276,23 @@ unknown. The stop HUD needs the world and is not measured.
 
 One file per slide, as the audience sees it arrive: the flight in, the forms
 building, the type rising, then `--hold` seconds (8 by default; a clip slide
-holds for the rest of its clip). Frames are stepped on a fake clock, not
-filmed: each moves the page exactly 1/fps, however long the frame takes to
-render, with `Math.random` seeded, CSS animations held to the same clock and
-clips seeked to it. Two runs on the same renderer give the same frames.
+holds for the rest of its clip). Each slide arrives from the one before it,
+at its last click and settled, with its clips played to their end, as a
+presenter who waits for a clip leaves it: a slide after a clip starts over
+that clip's last frame, and the edit list names the clip (`from`). Frames
+are stepped on a fake clock, not filmed: each moves the page exactly 1/fps,
+however long the frame takes to render, with `Math.random` seeded, CSS
+animations held to the same clock and clips seeked to it; the clock waits
+for a clip's data and for every seek, which come in real time. Two runs on
+the same renderer give the same frames (on d3d12, one take in six differed
+from the others by about a level after its first frame).
 
 | file | |
 | --- | --- |
 | `NN.mp4` | slide NN arriving (1080p50 by default, H.264, BT.709) |
 | `NN-cK.mp4` | the same slide after its K-th click (a stop), for slides with clicks |
 | `NN-plate.mp4` | with `--plate`: the same frames without the slide's text, the halo or the stop HUD, for an editor's own type. The scrim stays, so a plate and its slide cut together |
-| `index.json` | the edit list: each file's length, when it settled, where the camera stood, its frame hashes, the renderer, flash warnings, and the clips it could not record |
+| `index.json` | the edit list: each file's length, when it settled, where the camera stood, its frame hashes, the renderer, flash warnings, the clips it shows or could not record (a clip in the dist by its path there), and the clips ended before it arrived |
 
 Build the deck for it as for shots (`--base /`, or let `--base auto` read
 the base), and with `VITE_VIDEOS_LOCAL_FIRST=1` and the clips in

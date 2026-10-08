@@ -20,6 +20,11 @@
 //   index.json    the edit list: every file, its length, where the camera
 //                 stood, the clips it shows or could not record, flash warnings
 //
+// Each slide arrives from the slide before it, as a presenter's audience sees
+// it: that slide at its last click, settled, and its clips played to their
+// end (a presenter waits for a clip), so the arrival starts over the clip's
+// last frame; the edit list names those clips (`from`).
+//
 //   --hold    seconds held once a slide has settled (camera landed, forms
 //             built, type risen in); a clip slide holds for the rest of its clip
 //   --max     seconds at most per file
@@ -161,10 +166,18 @@ async function goTo(page, n, clicks = 0) {
 // deck of six.
 const shown = (page, n) => page.waitForFunction((n) => window.__rec.state(n).shown, n, { polling: 20, timeout: 5000 }).then(() => true, () => false);
 
+// Slide n's clips have their first data in, or never will. Data comes in
+// real time: a clip still loading when the clock moves on is taken up by its
+// player a varying number of frames in, and the take with it. 30 s at most.
+const loaded = (page, n, warn) => page.waitForFunction((n) => window.__rec.loaded(n), n, { polling: 50, timeout: 30000 })
+  .catch(() => warn?.(`slide ${n}: a clip had not loaded in 30 s and is taken where it stands`));
+
 // Run the world forward until slide n stands still (flown, built, type risen),
 // at 12 frames a second and without a picture. A slide under a clip counts
-// as still once the clip covers it.
-async function settle(page, n, { min = 1.5, max = 30 } = {}) {
+// as still once the clip covers it; the clock waits for the clip to load, and
+// a clip still arriving (a sheet of dust) keeps the slide from being still.
+async function settle(page, n, { min = 1.5, max = 30, warn } = {}) {
+  await loaded(page, n, warn);
   let t = 0;
   while (t < max * 1000) {
     await page.clock.fastForward(PREROLL_STEP);
@@ -172,9 +185,28 @@ async function settle(page, n, { min = 1.5, max = 30 } = {}) {
     const s = await look(page, n);
     if (s.seeking) await seeked(page);
     const clip = s.clips.some((c) => c.src);
-    if (t >= min * 1000 && s.running === 0 && ((!s.flying && s.assembled) || (clip && s.cover))) break;
+    if (t >= min * 1000 && s.running === 0 && s.clips.every((c) => c.up) && ((!s.flying && s.assembled) || (clip && s.cover))) break;
   }
   return t / 1000;
+}
+
+// The clips playing on slide n played to their end, before the recorder
+// leaves it for the next: a presenter waits for a clip, so the next slide
+// arrives over its last frame (and a slide that carries that frame on starts
+// seamlessly). The end is two seeks into the last frame (see toEnd() and
+// again() in lib/record-page.mjs), from another origin too; the recorder
+// waits until the last frame is on screen, 10 s at most. → the clips moved,
+// [{ src, duration }]
+async function clipsToEnd(page, n, warn) {
+  const moved = await page.evaluate((n) => window.__rec.toEnd(n), n);
+  if (moved.length) {
+    await seeked(page, warn);
+    await page.waitForFunction(() => window.__rec.presented(), null, { polling: 20, timeout: 10000 })
+      .catch(() => warn(`slide ${n}: a clip's last frame was not on screen after 10 s`));
+    await page.evaluate(() => window.__rec.again());
+    await seeked(page, warn);
+  }
+  return moved;
 }
 
 // Frames of the slide on screen until it has settled and held, into one file
@@ -277,20 +309,30 @@ export async function record(o, log = console.log) {
     if (o.clicks && typeof o.clicks === 'object') return Number(o.clicks[n] ?? 0);
     return total;
   };
+  // a clip the deck serves itself goes by its path in the dist: the
+  // recorder's server and its port are gone once the run ends
+  const named = (src) => (src && src.startsWith(url) ? src.slice(url.length) : src);
   let frames = 0, wall = 0;
   try {
     for (const n of parseSlides(o.slides, 500)) {
       // each slide starts fresh, from the slide before it (at its last click),
-      // settled: the arrival is the one a presenter's audience would see
+      // settled and with its clips played out: the arrival is the one a
+      // presenter's audience would see
       const from = Math.max(1, n - 1);
       const deck = await openDeck(browser, o, url, from, errors);
+      let ended = [];
       try {
         if (n > 1) {
           if (!(await shown(deck.page, from))) { log(`slide ${n} not found: the deck ends before slide ${from}`); break; }
           const before = await look(deck.page, from);
           if (before.clicksTotal) await goTo(deck.page, from, before.clicksTotal);
-          await settle(deck.page, from);
+          const warn = (w) => log(`  ${w}`);
+          await settle(deck.page, from, { warn });
+          ended = await clipsToEnd(deck.page, from, warn);
+          // slide n's own clip, preloading by now, is in before it is shown
+          await loaded(deck.page, n, warn);
           if (!(await goTo(deck.page, n))) { log(`slide ${n} not found: the deck ends at ${from}`); break; }
+          for (const c of ended) log(`slide ${from}'s clip run to its end (${c.src.split('/').pop()}, ${c.duration.toFixed(2)} s): slide ${n} arrives over its last frame`);
         }
         const first = await look(deck.page, n);
         report.look = first.look;
@@ -302,6 +344,9 @@ export async function record(o, log = console.log) {
           }
           const t0 = Date.now();
           const seg = await recordSegment(deck, n, k, o, ff, enc);
+          if (seg.clip) seg.clip.src = named(seg.clip.src);
+          // the arrival begins on the last frame of these
+          if (k === 0 && ended.length) seg.from = { slide: from, clipsEnded: ended.map((c) => named(c.src)) };
           if (!seg.skipped) {
             if (o.flash) {
               const small = await decodeSmall(ff, join(o.out, seg.file));
