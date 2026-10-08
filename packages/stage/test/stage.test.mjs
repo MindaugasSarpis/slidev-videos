@@ -51,6 +51,52 @@ test('registerBuilder wants a function', async () => {
   assert.throws(() => registerBuilder('bad', 'not a function'), TypeError);
 });
 
+// Two copies of the package on one page (a deck's pre-bundled import beside
+// the addon's own source in `slidev dev`) see one registry. A query string
+// gives node a second instance of the same module.
+test('two copies of the package share one registry', async () => {
+  const a = await import('../stage/builders.js');
+  const b = await import('../stage/builders.js?copy=2');
+  assert.notEqual(a.registerBuilder, b.registerBuilder);
+  b.registerBuilder('twin', () => ({ group: null }), { fields: ['pos', 'name'] });
+  assert.ok(a.hasBuilder('twin'));
+  assert.deepEqual(a.builderFields('twin'), ['pos', 'name']);
+  const pa = await import('../stage/palette.js');
+  const pb = await import('../stage/palette.js?copy=2');
+  pb.definePalette('test-twin', { accent: '#123456' });
+  assert.equal(pa.resolvePalette('test-twin').accent, '#123456');
+  assert.equal(pa.PALETTES, pb.PALETTES);
+  const ia = await import('../index.js');
+  const ib = await import('../index.js?copy=2');
+  let installs = 0;
+  const plugin = { name: 'twin-plugin', install() { installs++; } };
+  assert.equal(await ib.usePlugin(plugin), true);
+  assert.equal(await ia.usePlugin(plugin), true);
+  assert.equal(installs, 1);
+  assert.ok(globalThis[Symbol.for('slidev-addon-stage/registry')] instanceof Map);
+});
+
+test('a station calls its builders\' dispose and names their forms', async () => {
+  const { Group } = await import('three');
+  const { registerBuilder, buildStation, helpers } = await import('../stage/builders.js');
+  const calls = [];
+  const api = { arm() {}, assemble() {}, value: () => 7 };
+  registerBuilder('test-disposing', (o) => ({ group: new Group(), api, dispose: () => calls.push(o.name) }));
+  registerBuilder('test-broken-dispose', () => ({ group: new Group(), dispose: () => { throw new Error('boom'); } }));
+  const ctx = { palette: resolvePalette(), records: new Map(), asset: (s) => s, helpers };
+  const st = buildStation({ id: 's', pos: [0, 0, 0], objects: [
+    { type: 'test-disposing', pos: [0, 0, 0], name: 'one' },
+    { type: 'test-broken-dispose', pos: [0, 0, 0] },
+    { type: 'test-disposing', pos: [0, 0, 0], name: 'two' },
+  ] }, ctx);
+  assert.equal(st.named.get('one'), api);
+  assert.equal(st.named.get('one').value(), 7);
+  const warn = console.warn; const warned = []; console.warn = (...a) => warned.push(a.join(' '));
+  try { st.dispose(); } finally { console.warn = warn; }
+  assert.deepEqual(calls, ['one', 'two']);
+  assert.ok(warned.some((w) => w.includes('test-broken-dispose')));
+});
+
 // ---- palettes ------------------------------------------------------------------
 test('a palette resolves by name, by base and override, and falls back', () => {
   assert.deepEqual(resolvePalette(), DEFAULT_PALETTE);

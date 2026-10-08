@@ -5,18 +5,23 @@ import {
 import { makeLabel, makeText } from './labels.js';
 import { marble, shell, ball } from './materials.js';
 import { buildGalaxy, buildCollider } from './forms.js';
+import { shared } from './shared.js';
 
 // What a station is made of. A station (space.json) lists `objects`, each
 // with a `type`; the type names a *builder* registered here. A builder is
 //
-//   (object, ctx) => { group, labels?, anchors?, update?(t, camPos), api?, pixelRatio? }
+//   (object, ctx) => { group, labels?, anchors?, update?(t, camPos), api?, pixelRatio?, dispose? }
 //
 //   group       a three.js Object3D, placed by the builder at object.pos
 //   labels      sprites that fade with the scrim (setDim)
 //   anchors     Map<id, Vector3> relative to the object: places a pose or a stop can name
 //   update      called every frame with the world clock and the camera position
-//   api         { arm(), assemble(now, onDone) }: a thing that builds itself on arrival
+//   api         { arm(), assemble(now, onDone), value?() }: a thing that builds itself on
+//               arrival; value() is the number it shows now, which <StageCount for="name">
+//               reads when the object has a `name`
 //   pixelRatio  a { value } uniform the engine keeps at the drawing buffer's ratio
+//   dispose     called when the world is torn down, before the engine disposes every
+//               geometry and material under group: for what else the builder holds
 //
 //   ctx         { palette, records: Map, anisotropy, asset(src), helpers }
 //
@@ -24,8 +29,9 @@ import { buildGalaxy, buildCollider } from './forms.js';
 // registerBuilder (from its setup/main.ts), or takes a shipped plugin
 // (`stage.plugins: [hadron]`).
 
-const registry = new Map();
-const required = new Map();
+// one registry per page, shared by every copy of the package (shared.js)
+const registry = shared('registry', () => new Map());
+const required = shared('required', () => new Map());
 
 // fields: the keys an object of this type must carry (used by the validator)
 export function registerBuilder(type, fn, { fields = ['pos'] } = {}) {
@@ -404,7 +410,8 @@ registerBuilder('collider', buildCollider, { fields: ['pos', 'radius'] });
 export function buildStation(station, ctx) {
   const group = new Group(); group.position.copy(v3(station.pos));
   const anchors = new Map([[station.id, v3(station.pos)]]);
-  const labels = []; const updaters = []; const apis = []; const prs = [];
+  const labels = []; const updaters = []; const apis = []; const prs = []; const disposers = [];
+  const named = new Map();   // name → api, for what reads a form's value (StageCount)
   for (const o of station.objects || []) {
     const b = registry.get(o.type);
     if (!b) { console.warn(`stage: no builder for object type "${o.type}" (station ${station.id}); registered: ${builderTypes().join(', ')}`); continue; }
@@ -414,15 +421,20 @@ export function buildStation(station, ctx) {
     group.add(r.group); labels.push(...(r.labels || []));
     if (r.update) updaters.push(r.update);
     if (r.api) apis.push(r.api);
+    if (r.api && o.name != null) named.set(String(o.name), r.api);
     if (r.pixelRatio) prs.push(r.pixelRatio);
+    if (typeof r.dispose === 'function') disposers.push([o.type, r.dispose]);
     if (r.anchors) for (const [id, p] of r.anchors) anchors.set(id, p.clone().add(v3(o.pos)).add(v3(station.pos)));
   }
   return {
-    group, anchors, apis,
+    group, anchors, apis, named,
     update(t, camPos) { for (const u of updaters) u(t, camPos); },
     setPixelRatio(d) { for (const u of prs) u.value = d; },
     setDim(k) { const op = 0.9 * Math.max(0, 1 - k / 0.85); for (const l of labels) { l.material.opacity = op; l.userData.dimOp = op; } },
-    dispose() { group.traverse((o) => { o.geometry?.dispose?.(); o.material?.map?.dispose?.(); o.material?.dispose?.(); }); },
+    dispose() {
+      for (const [type, d] of disposers) { try { d(); } catch (e) { console.warn(`stage: builder "${type}" failed to dispose in station ${station.id}:`, e); } }
+      group.traverse((o) => { o.geometry?.dispose?.(); o.material?.map?.dispose?.(); o.material?.dispose?.(); });
+    },
   };
 }
 

@@ -1,4 +1,5 @@
 import { CanvasTexture, LinearFilter, Sprite, SpriteMaterial, SRGBColorSpace } from 'three';
+import { shared } from './shared.js';
 
 // Text sprites for the stage. Both draw to a canvas once and hang the texture
 // on a Sprite (always camera-facing, drawn without depth so a label never
@@ -7,11 +8,13 @@ import { CanvasTexture, LinearFilter, Sprite, SpriteMaterial, SRGBColorSpace } f
 // How a label's text is cut into runs. The default is one plain run; a plugin
 // may install its own (the hadron plugin sets particle names' flavours as
 // subscripts: Λb⁰, Σc⁺, Pc(4312)⁺). A run is { t: string, sub: boolean }.
-let segmenter = (text) => [{ t: String(text ?? ''), sub: false }];
-export function setLabelSegmenter(fn) { segmenter = typeof fn === 'function' ? fn : segmenter; }
-
-let FONT = '"Space Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-export function setLabelFont(family) { if (family) FONT = family; }
+// Both settings are one per page, shared by every copy of the package (shared.js).
+const style = shared('labels', () => ({
+  segmenter: (text) => [{ t: String(text ?? ''), sub: false }],
+  font: '"Space Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+}));
+export function setLabelSegmenter(fn) { if (typeof fn === 'function') style.segmenter = fn; }
+export function setLabelFont(family) { if (family) style.font = family; }
 
 // One-line, uppercase, tracked label (axis ticks, station names, track ends).
 // worldH: sprite height in world units.
@@ -19,7 +22,7 @@ export function makeLabel(text, { px = 44, color = '#8b97a6', weight = 600, worl
   const c = document.createElement('canvas');
   const ctx = c.getContext('2d');
   // subscripts are drawn smaller and lower, the rest tracked with hair spaces
-  const segs = segmenter(upper ? String(text).toUpperCase() : String(text))
+  const segs = style.segmenter(upper ? String(text).toUpperCase() : String(text))
     .map((g) => ({ t: g.sub ? g.t : g.t.split('').join(String.fromCharCode(8202)), sub: g.sub }));
   const total = segs.reduce((w, g) => w + measure(ctx, g, px, weight), 0);
   const w = Math.ceil(total * (1 + letterSpacing * 0.5)) + px;
@@ -40,7 +43,7 @@ export function makeText(text, { height = 0.5, color = '#f2f5f9', weight = 500, 
   const lines = String(text).split('\n');
   const c = document.createElement('canvas');
   const ctx = c.getContext('2d');
-  const segLines = lines.map((l) => segmenter(l));
+  const segLines = lines.map((l) => style.segmenter(l));
   const w = Math.ceil(Math.max(...segLines.map((segs) => segs.reduce((acc, g) => acc + measure(ctx, g, px, weight), 0)))) + px;
   c.width = w; c.height = Math.ceil(px * lineHeight * lines.length + px * 0.5);
   ctx.fillStyle = color; ctx.textBaseline = 'top';
@@ -59,7 +62,7 @@ const SUB_SCALE = 0.64;        // subscript glyph size, as a fraction of the mai
 const SUB_DROP = 0.28;         // how far below the main baseline the subscript sits, in main-size units
 
 function measure(ctx, g, px, weight) {
-  ctx.font = `${weight} ${g.sub ? Math.round(px * SUB_SCALE) : px}px ${FONT}`;
+  ctx.font = `${weight} ${g.sub ? Math.round(px * SUB_SCALE) : px}px ${style.font}`;
   return ctx.measureText(g.t).width;
 }
 
@@ -67,7 +70,7 @@ function measure(ctx, g, px, weight) {
 function drawSegments(ctx, segs, x, y, px, weight, baseline = 'middle') {
   for (const g of segs) {
     const size = g.sub ? Math.round(px * SUB_SCALE) : px;
-    ctx.font = `${weight} ${size}px ${FONT}`;
+    ctx.font = `${weight} ${size}px ${style.font}`;
     const dy = g.sub ? px * (baseline === 'top' ? SUB_DROP + (1 - SUB_SCALE) * 0.55 : SUB_DROP) : 0;
     ctx.fillText(g.t, x, y + dy);
     x += ctx.measureText(g.t).width;

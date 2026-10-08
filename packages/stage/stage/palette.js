@@ -10,7 +10,9 @@
 // the label inks. The same values reach CSS as --stage-* custom properties on
 // <html>, so slide styles, panels and the halo layer stay in step.
 
-export const PALETTES = {
+import { shared } from './shared.js';
+
+const SHIPPED = {
   // Startertalk's: near-black ground, cyan accent, dust from dim cyan to white.
   classic: {
     bg: '#050507',
@@ -63,6 +65,11 @@ export const PALETTES = {
     nebulaAlt: '#8a2f4f',
   },
 };
+
+// One table per page, shared by every copy of the package (shared.js): a
+// deck's definePalette lands where the engine looks.
+export const PALETTES = shared('palettes', () => ({}));
+for (const [name, p] of Object.entries(SHIPPED)) PALETTES[name] ??= p;
 
 // What goes with a palette besides its colours: engine options a deck gets
 // with the name unless it sets them itself (`stage.options`). The classic
