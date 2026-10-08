@@ -79,6 +79,15 @@ export function parseSlides(spec, total) {
   return [...out].sort((x, y) => x - y);
 }
 
+// --slides as typed: slides and ranges, "2-5,8". A part that is neither, or a
+// list with no slide in it, is a usage error, not a run that does nothing.
+export function checkSlides(spec) {
+  const s = String(spec ?? '');
+  const ok = s.split(',').every((part) => /^\s*\d+\s*(?:-\s*\d+\s*)?$/.test(part)) && parseSlides(s, 500).length > 0;
+  if (!ok) throw new Error(`--slides wants slides and ranges from 1 to 500, e.g. 2-5,8 (got ${spec})`);
+  return s;
+}
+
 // '1920x1080' → [1920, 1080]
 export function parseSize(spec) {
   const m = /^(\d+)x(\d+)$/.exec(String(spec || ''));

@@ -19,11 +19,11 @@
 // canvasWidth is scaled to it), so they read against the CSS kit. The world
 // is not drawn (WebGL is off: only the type is looked at), so the stop HUD
 // panels, which need the world, are not checked. Exit 0 clean, 1 problems,
-// 2 the deck could not be checked.
+// 2 the deck could not be checked (a wrong or unknown option included).
 import { resolve } from 'node:path';
 import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { serve, normaliseBase, parseSlides, parseSize } from './lib/record-serve.mjs';
+import { serve, normaliseBase, parseSlides, checkSlides, parseSize } from './lib/record-serve.mjs';
 import { loadChromium } from './lib/record-browser.mjs';
 
 const USAGE = 'usage: slidev-stage-safe <dist> [--broadcast] [--json] [--slides 1-12] [--size 1920x1080] [--base auto]';
@@ -39,19 +39,24 @@ export const RULES = {
   },
 };
 
+// A malformed or unknown option throws: the run would check the wrong thing
+// (a typo of --broadcast checks the hall rules), so it is a usage error.
 export function parseArgs(argv) {
   const o = { dist: null, broadcast: false, json: false, slides: null, size: [1920, 1080], base: 'auto' };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
+    const value = () => { const v = argv[++i]; if (v === undefined || v.startsWith('--')) throw new Error(`${a} wants a value`); return v; };
     if (a === '--broadcast') o.broadcast = true;
     else if (a === '--json') o.json = true;
-    else if (a === '--slides') o.slides = argv[++i];
-    else if (a === '--size') o.size = parseSize(argv[++i]);
-    else if (a === '--base') o.base = argv[++i];
+    else if (a === '--slides') o.slides = checkSlides(value());
+    else if (a === '--size') o.size = parseSize(value());
+    else if (a === '--base') o.base = value();
     else if (a === '-h' || a === '--help') o.help = true;
+    else if (a.startsWith('-')) throw new Error(`unknown option ${a}`);
     else rest.push(a);
   }
+  if (rest.length > 1) throw new Error(`one deck at a time (got ${rest.join(', ')})`);
   [o.dist] = rest;
   return o;
 }
@@ -167,7 +172,8 @@ export async function check(o) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
-  const o = parseArgs(argv);
+  let o;
+  try { o = parseArgs(argv); } catch (e) { console.error(`${e.message}\n${USAGE}`); return 2; }
   if (o.help || !o.dist) { console.log(USAGE); return o.help ? 0 : 2; }
   let r;
   try { r = await check(o); } catch (e) { console.error(e.message || e); return 2; }

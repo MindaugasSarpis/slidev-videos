@@ -263,8 +263,8 @@ flags lines under 16 px, text outside the safe box (x 98–882, y 55–408 of
 the 980 × 551 canvas: room for a squeeze-back and a lower third) and text in
 the logo corner (top right), the name super (bottom left) or the clock
 (bottom right); ask the broadcaster where theirs actually sit. Exit 0 clean,
-1 problems, 2 the deck could not be checked. The stop HUD needs the world
-and is not measured.
+1 problems, 2 the deck could not be checked or an option is wrong or
+unknown. The stop HUD needs the world and is not measured.
 
 ### Recording: slidev-stage-record
 

@@ -6,9 +6,9 @@ import { readFileSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LOOKS, PALETTES, resolveLook, resolvePalette, liftGround, definePalette, paletteVars } from '../stage/palette.js';
-import { parseArgs as recordArgs } from '../bin/record.mjs';
-import { parseArgs as safeArgs, judge, RULES } from '../bin/safe.mjs';
-import { detectBase, normaliseBase, parseSlides, parseSize } from '../bin/lib/record-serve.mjs';
+import { parseArgs as recordArgs, main as recordMain } from '../bin/record.mjs';
+import { parseArgs as safeArgs, main as safeMain, judge, RULES } from '../bin/safe.mjs';
+import { detectBase, normaliseBase, parseSlides, checkSlides, parseSize } from '../bin/lib/record-serve.mjs';
 import { findFlashes } from '../bin/lib/record-flash.mjs';
 import { ffmpegCandidates } from '../bin/lib/record-ffmpeg.mjs';
 
@@ -99,6 +99,26 @@ test('record arguments', () => {
   assert.equal(recordArgs(['d', 'o', '--clicks', 'none']).clicks, 'none');
   assert.throws(() => recordArgs(['d', 'o', '--fps', '0']));
   assert.throws(() => recordArgs(['d', 'o', '--size', '1920']));
+});
+
+test('a record or safe command line that cannot mean what it says is a usage error', async () => {
+  for (const bad of [['--slides', 'x'], ['--slides', '0'], ['--slides', '2-4,x'], ['--slides'], ['--platee'], ['--gl', 'vulkan'],
+    ['--encoder', 'hevc'], ['--clicks', 'some'], ['--clicks', '[1]'], ['--clicks', '{"3":-1}'], ['--fps'], ['--seed', 'x'], ['extra']]) {
+    assert.throws(() => recordArgs(['d', 'o', ...bad]), undefined, bad.join(' '));
+  }
+  for (const bad of [['--size', '1920'], ['--size'], ['--broadcst'], ['--slides', 'x'], ['--base', '--json'], ['extra']]) {
+    assert.throws(() => safeArgs(['d', ...bad]), undefined, bad.join(' '));
+  }
+  assert.equal(checkSlides('2-5, 8'), '2-5, 8');
+  assert.deepEqual(recordArgs(['d', 'o', '--slides', '99', '--seed', '-3']).slides, '99');   // in range for the parser; the deck says if it is there
+  // exit 2, before any browser is started
+  const quiet = console.error;
+  console.error = () => {};
+  try {
+    assert.equal(await safeMain(['d', '--size', '1920']), 2);
+    assert.equal(await safeMain(['d', '--broadcst']), 2);
+    assert.equal(await recordMain(['d', 'o', '--slides', 'x']), 2);
+  } finally { console.error = quiet; }
 });
 
 test('a deck is served under the base it was built for', () => {

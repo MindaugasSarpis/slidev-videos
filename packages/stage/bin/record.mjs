@@ -38,7 +38,7 @@ import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { serve, normaliseBase, parseSlides, parseSize } from './lib/record-serve.mjs';
+import { serve, normaliseBase, parseSlides, checkSlides, parseSize } from './lib/record-serve.mjs';
 import { loadChromium, launchBrowser } from './lib/record-browser.mjs';
 import { resolveFfmpeg, pickEncoder, encoder, decodeSmall } from './lib/record-ffmpeg.mjs';
 import { seedRandom, recorderHooks } from './lib/record-page.mjs';
@@ -48,31 +48,49 @@ const USAGE = "usage: slidev-stage-record <dist> <out-dir> [--fps 50] [--size 19
 const PREROLL_STEP = 83;     // ms: the engine's own frame-time clamp (12 fps), so the world gets there in the fewest frames
 const NOISE = /Wake Lock/;   // page errors that say nothing about the deck
 
+// A malformed or unknown option throws (a usage error, exit 2): a typo would
+// otherwise record something other than what was asked.
 export function parseArgs(argv) {
   const o = { dist: null, out: null, fps: 50, size: [1920, 1080], slides: null, plate: false, hold: 8, max: 40, clicks: 'all', base: 'auto', seed: 1, flash: false, gl: 'auto', chromium: '', encoder: 'auto' };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--fps') o.fps = Number(argv[++i]);
-    else if (a === '--size') o.size = parseSize(argv[++i]);
-    else if (a === '--slides') o.slides = argv[++i];
+    const value = () => { const v = argv[++i]; if (v === undefined || v.startsWith('--')) throw new Error(`${a} wants a value`); return v; };
+    const oneOf = (...names) => { const v = value(); if (!names.includes(v)) throw new Error(`${a} wants ${names.join(', ')} (got ${v})`); return v; };
+    if (a === '--fps') o.fps = Number(value());
+    else if (a === '--size') o.size = parseSize(value());
+    else if (a === '--slides') o.slides = checkSlides(value());
     else if (a === '--plate') o.plate = true;
-    else if (a === '--hold') o.hold = Number(argv[++i]);
-    else if (a === '--max') o.max = Number(argv[++i]);
-    else if (a === '--clicks') { const v = argv[++i]; o.clicks = v === 'all' || v === 'none' ? v : JSON.parse(v); }
-    else if (a === '--base') o.base = argv[++i];
-    else if (a === '--seed') o.seed = Number(argv[++i]);
+    else if (a === '--hold') o.hold = Number(value());
+    else if (a === '--max') o.max = Number(value());
+    else if (a === '--clicks') o.clicks = parseClicks(value());
+    else if (a === '--base') o.base = value();
+    else if (a === '--seed') o.seed = Number(value());
     else if (a === '--flash') o.flash = true;
-    else if (a === '--gl') o.gl = argv[++i];
-    else if (a === '--chromium') o.chromium = argv[++i];
-    else if (a === '--encoder') o.encoder = argv[++i];
+    else if (a === '--gl') o.gl = oneOf('auto', 'gl', 'swiftshader');
+    else if (a === '--chromium') o.chromium = value();
+    else if (a === '--encoder') o.encoder = oneOf('auto', 'nvenc', 'x264');
     else if (a === '-h' || a === '--help') o.help = true;
+    else if (a.startsWith('-')) throw new Error(`unknown option ${a}`);
     else rest.push(a);
   }
+  if (rest.length > 2) throw new Error(`one deck and one out-dir (got ${rest.join(', ')})`);
   [o.dist, o.out] = rest;
   if (!(o.fps > 0 && o.fps <= 120)) throw new Error('--fps wants a number of frames a second, 1-120');
   if (!(o.hold >= 0) || !(o.max > 0)) throw new Error('--hold and --max want seconds');
+  if (!Number.isFinite(o.seed)) throw new Error('--seed wants a number');
   return o;
+}
+
+// 'all' | 'none' | '{"3":1}' (slide → how many of its clicks)
+function parseClicks(v) {
+  if (v === 'all' || v === 'none') return v;
+  let m;
+  try { m = JSON.parse(v); } catch { m = null; }
+  if (!m || typeof m !== 'object' || Array.isArray(m) || !Object.entries(m).every(([k, n]) => /^\d+$/.test(k) && Number.isInteger(n) && n >= 0)) {
+    throw new Error(`--clicks wants all, none or a map of slide to clicks, e.g. '{"3":1}' (got ${v})`);
+  }
+  return m;
 }
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -279,7 +297,7 @@ export async function record(o, log = console.log) {
 
 export async function main(argv = process.argv.slice(2)) {
   let o;
-  try { o = parseArgs(argv); } catch (e) { console.error(e.message); console.log(USAGE); return 2; }
+  try { o = parseArgs(argv); } catch (e) { console.error(`${e.message}\n${USAGE}`); return 2; }
   if (o.help || !o.dist || !o.out) { console.log(USAGE); return o.help ? 0 : 2; }
   let r;
   try { r = await record(o); } catch (e) { console.error(e.message || e); return 1; }
