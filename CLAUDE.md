@@ -122,6 +122,15 @@ in this repo leaves the bits as they are.
 
 ## Releasing
 
+v0.5.0 is tagged by hand, before chore/release-tooling is merged: merge
+PR #2 (feat/effects-v2) on its own, tag that merge commit
+(`git tag -a v0.5.0 -m 'slidev-videos v0.5.0' <merge>`) and push the tag;
+the release notes are CHANGELOG.md's v0.5.0 section. There
+`git diff 640eaa5 v0.5.0 -- packages/` is empty, as the talks' pin bump
+needs (chore/release-tooling also changes the bins' file modes).
+release.py starts with v0.6.0; it refuses while a version in CHANGELOG.md
+has no tag.
+
 1. The owner merges what goes in (merge commits) and pulls main.
 2. Make CHANGELOG.md's `## Unreleased` match what landed. Branches add
    entries there and leave version strings to release.py
