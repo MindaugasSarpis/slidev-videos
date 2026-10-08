@@ -110,6 +110,9 @@ branch that did not land. release.py leaves every comment out. -->
 - No shader calls `smoothstep` with its edges reversed, which GLSL leaves
   undefined.
 <!-- fix/stage-addon -->
+- The README's `setup/main.ts` example builds (it imported
+  `defineAppSetup` from `@slidev/types`, which a deck cannot resolve).
+<!-- fix/stage-addon -->
 - `pnpm stage:smoke:dev` (in `test:all` and CI) runs the example deck,
   which now registers a builder of its own, under `slidev dev`.
 
@@ -147,10 +150,11 @@ branch that did not land. release.py leaves every comment out. -->
 - `slidev-videos contact-sheet <file|url>`: a candidate clip tiled into
   one PNG.
 <!-- fix/cli-hardening -->
-- The NVENC web profiles match libx264 `slow` at the same crf on SSIM and
-  XPSNR in smaller files: `cq` 27, 30, 28 and 25 (standard,
-  standard-tight, silent-loop, high-motion) with `-multipass fullres
-  -rc-lookahead 20`. A clip picks this up when it is next encoded.
+- The NVENC web profiles make smaller files (0.69-0.83x the old size on
+  the test cuts) that still match libx264 `slow` at the same crf on SSIM
+  and XPSNR: `cq` 27, 30, 28 and 25 (standard, standard-tight,
+  silent-loop, high-motion) with `-multipass fullres -rc-lookahead 20`. A
+  clip picks this up when it is next encoded.
 
 ### repo
 
