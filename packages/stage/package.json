@@ -21,7 +21,7 @@
     "slidev-stage-check": "bin/check.mjs",
     "slidev-stage-shots": "bin/shots.mjs"
   },
-  "files": ["components", "stage", "styles", "bin", "index.js", "global-top.vue", "global-bottom.vue", "README.md"],
+  "files": ["components", "stage", "styles", "bin", "index.js", "global-top.vue", "global-bottom.vue", "vite.config.js", "README.md"],
   "scripts": {
     "build:example": "slidev build example/slides.md --out dist --base /",
     "check:example": "node bin/check.mjs example",
