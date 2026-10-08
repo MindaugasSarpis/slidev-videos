@@ -95,7 +95,7 @@ export const LOOKS = {
 // (the Stage component lays them on last).
 export function resolveLook(palette, look) {
   const name = typeof palette === 'string' ? palette : (palette && typeof palette === 'object' ? palette.base : null);
-  const out = { ...(LOOKS[name] || {}) };
+  const { max: _, ...out } = LOOKS[name] || {};
   const named = typeof look === 'string' ? LOOKS[look] : null;
   if (named) {
     const { max, ...set } = named;
