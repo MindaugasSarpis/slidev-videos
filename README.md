@@ -106,7 +106,10 @@ transition.
 a grain cloud, one grain per pixel cell (`grains` columns, default 600; rows
 follow the aspect), each at its depth from the photo's depth map (`depth`,
 default `<src>.depth.png`, see below), as a relief (`relief`: the depth range
-as a share of the width, default 0.35):
+as a share of the width, default 0.2; raise it for a deep scene such as a
+tunnel). In relief the grains are off their lattice by up to half a cell, vary
+a little in size, are soft and round, and blur with distance from the picture's
+plane, so the relief reads as a scene made of light; flat, they close the picture:
 
     <StagePhoto mode="place" place-id="stumpe" :at="[92, 0, 0]" :size="3" :yaw="90" src="/figures/stumpe.jpg">…</StagePhoto>
 

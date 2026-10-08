@@ -61,7 +61,7 @@ const props = defineProps({
   size:    { type: Number, default: 4 },
   yaw:     { type: [Number, String], default: 0 },
   depth:   { type: [String, Boolean], default: true },
-  relief:  { type: Number, default: 0.35 },   // depth range as a share of the width
+  relief:  { type: Number, default: 0.2 },    // depth range as a share of the width (raise it for deep scenes)
   grains:  { type: Number, default: 600 },    // columns of grains; rows follow the aspect
 })
 const CAMERA_WAIT_MS = 3000
