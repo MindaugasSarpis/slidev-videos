@@ -210,6 +210,8 @@ export function recorderHooks() {
         clicksTotal: st ? Number(st.dataset.clicksTotal || 0) : 0,
         look: document.documentElement.dataset.stageLook || null,
         cover: cover && cover.covered ? cover.src || true : null,
+        // StagePhotos still gathering (or waiting for the camera): the slide is not still yet
+        photosHeld: page ? page.querySelectorAll('.stage-photo[data-photo-phase="held"]').length : 0,
         clips,
       };
     },

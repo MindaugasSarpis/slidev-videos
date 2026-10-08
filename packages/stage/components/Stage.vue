@@ -198,7 +198,11 @@ async function boot() {
       palette,
       options: { ...OPTIONS, hero: CFG.hero },
       asset,
-      onArrive: () => { arrived.value = true },
+      onArrive: (target) => {
+        arrived.value = true
+        // for whoever waits on the camera (StagePhoto's arrive="camera")
+        try { window.dispatchEvent(new CustomEvent('slidev-stage:arrive', { detail: { target } })) } catch {}
+      },
       // what builds itself at the hero does so on arrival; the cover's title
       // waits for it (the CSS kit keys on html[data-space-assembled])
       onEvent: (e, detail) => {

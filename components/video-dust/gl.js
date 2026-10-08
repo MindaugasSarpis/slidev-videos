@@ -85,7 +85,9 @@ void main() {
   // behind the plane when arriving, thrown at the camera when leaving
   float a = aSeed.y * 6.2831853, b = aSeed.w * 2.0 - 1.0;
   vec3 out3 = vec3(cos(a) * sqrt(1.0 - b * b), sin(a) * sqrt(1.0 - b * b), b) * (1.3 + 2.9 * aSeed.z);
-  out3.z = uLeave < 0.5 ? -abs(out3.z) * 1.2 - 0.4 : abs(out3.z) * 1.5 + 2.2;
+  out3.z = uLeave < 0.5 ? -abs(out3.z) * 1.2 - 0.4
+        : (uFlight < 0.5 ? (aSeed.z > 0.6 ? min(abs(out3.z), 0.9) : -abs(out3.z) * 1.3 - 0.3)   // frame: mostly back into the world, none at the lens
+                         : abs(out3.z) * 1.5 + 2.2);
   float turn = (0.7 + 1.2 * aSeed.w) * fly * fly * (aSeed.x > 0.5 ? 1.0 : -1.0);
   float c = cos(turn), s = sin(turn);
   vec3 drift = out3 * fly;
@@ -98,7 +100,7 @@ void main() {
     // shows on screen, so it is scaled by its depth. Then home along a swirl
     // about the frame's centre that unwinds as the grain lands.
     vec2 spot = vec2((hash(aSeed, 1.0) * 2.0 - 1.0) * A, hash(aSeed, 2.0) * 2.0 - 1.0) * 1.08;
-    float z = (hash(aSeed, 3.0) - 0.5) * 2.4;
+    float z = mix(-2.4, 0.5, hash(aSeed, 3.0));   // mostly behind the picture: a grain at the lens is a bright blur
     vec3 from = vec3(mix(home.xy, spot, 0.92) * (F - z) / F, z);
     vec3 d = (from - home) * fly;
     float w = (0.15 + 0.3 * aSeed.w) * fly * (aSeed.x > 0.5 ? 1.0 : -1.0);
@@ -121,7 +123,7 @@ void main() {
   float flying = mix(0.34, 0.7, aSeed.z);
   float size = uCellPx * persp * mix(flying, 1.3, smoothstep(0.55, 1.0, p));
   float blur = smoothstep(1.5, 5.0, persp) * fly;
-  gl_PointSize = clamp(size * (1.0 + 1.6 * blur), 1.5, 96.0);
+  gl_PointSize = clamp(size * (1.0 + 1.6 * blur), 1.5, frame ? 28.0 : 96.0);
 
   vec3 pix = texture(uTex, uUv.xy + aCell * uUv.zw).rgb;
   vec3 dust = uDust * (0.55 + 0.9 * aSeed.x);
@@ -149,6 +151,22 @@ void main() {
   // picture at a strip's resolution, and put up all at once over a sharp
   // frame it showed as a drop in quality before anything had moved.
   alpha *= uLeave < 0.5 ? smoothstep(0.0, 0.10, uU) : smoothstep(0.0, 1.0, uUp);
+  if (frame) {
+    // Dispersed, a grain is never brighter than luminance 0.62 (a pale photo
+    // must not turn the frame into a white veil) and takes its true colour
+    // only as it condenses. Only about a third of the grains show while
+    // dispersed, fewer toward the frame's edges, so the world and the camera's
+    // flight show through; the rest come in as the picture closes.
+    float lumC = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    vec3 capped = col * min(1.0, 0.62 / max(lumC, 1e-3));
+    col = mix(capped, col, smoothstep(0.75, 1.0, p));
+    float h5 = hash(aSeed, 5.0);
+    float keepFrac = mix(0.32, 1.0, smoothstep(0.45, 0.95, p));
+    float vis = smoothstep(h5 - 0.06, h5 + 0.06, keepFrac);
+    vec2 sp = gl_Position.xy / max(gl_Position.w, 1e-3);
+    float edge = smoothstep(0.35, 1.15, length(sp));
+    alpha *= vis * mix(1.0, 1.0 - 0.6 * edge, smoothstep(0.1, 0.6, fly)) * mix(1.0, 0.8, smoothstep(0.3, 0.9, fly));
+  }
   vColor = vec4(col, alpha);
   vLanded = smoothstep(0.94, 1.0, p);   // square only on the last step home: a square in flight reads as confetti
   if (uGlow > 0.5) {
@@ -157,7 +175,7 @@ void main() {
     float on = step(0.75, fract(aSeed.x * 7.0 + aSeed.y * 3.0));
     float airborne = smoothstep(0.0, 0.25, fly) * (1.0 - smoothstep(0.85, 1.0, fly) * 0.5);
     gl_PointSize = min(uCellPx * (3.2 + 3.0 * aSeed.z) * persp, 72.0) * on;
-    vColor = vec4(mix(col, dust, 0.35), alpha * 0.14 * airborne * on);
+    vColor = vec4(mix(col, dust, 0.35), alpha * (frame ? 0.08 : 0.14) * airborne * on);
     vLanded = 0.0;
   }
 }`;

@@ -80,7 +80,15 @@ hands over to the sharp `<img>`; on leave it breaks back into grains, and the
 stage takes its colour as it does a clip's. Props: `src`, `alt`, `focus` (the
 crop's `object-position`), `dust` (`frame` | `flight` | `none`, default
 `videos.dustStyle`), `color` (default `videos.dust`), `dust-ms` (a number or
-`[arrive, leave]`, default `videos.dustMs`), `fit` (`cover` | `contain`).
+`[arrive, leave]`, default `videos.dustMs`), `fit` (`cover` | `contain`),
+`arrive` (`enter`: the grains condense as the slide comes up; `camera`: they
+wait for the stage camera to land at the slide's pose, at most 3 s, so the
+flight there shows; a slide without a flight arrives at once). Dispersed
+grains (photos and clips, `frame` style) are capped at luminance 0.62 and
+only about a third of them show, thinning toward the frame's edges, so a pale
+picture never veils the frame and the world shows through; they reach their
+true colour as they condense. slidev-stage-record waits for a StagePhoto to
+arrive before it counts a slide as still.
 Only the audience's slide moves: the presenter window, the overview, the
 next-slide preview, print and reduced motion show the plain image.
 The slot waits for the picture, so two headlines never show at once: it is

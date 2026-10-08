@@ -44,7 +44,13 @@ const props = defineProps({
   // 250 ms before the picture breaks up; so two headlines never show at once.
   // `false` leaves the slot to the deck's own transition.
   holdText: { type: Boolean, default: true },
+  // When the grains condense: `enter` (at once, as the slide comes up) or
+  // `camera` (when the stage camera lands at the slide's pose, at most 3 s
+  // after the slide comes up, so the flight there shows in the gap; a slide
+  // with no flight arrives at once).
+  arrive: { type: String, default: 'enter' },
 })
+const CAMERA_WAIT_MS = 3000
 const SLOT_IN_MS = 300
 const SLOT_OUT_MS = 250
 
@@ -117,6 +123,22 @@ function loaded() {
 
 const holding = computed(() => moving.value && props.holdText)
 
+// Resolves when the stage camera has landed: at once if it is not flying a
+// frame after the slide came up (no pose change), else on its arrival or after
+// CAMERA_WAIT_MS.
+function cameraLanded() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      const space = document.querySelector('.stage')?.__space
+      if (!space || !space.flying) return resolve()
+      let timer = 0
+      const done = () => { window.removeEventListener('slidev-stage:arrive', done); clearTimeout(timer); resolve() }
+      window.addEventListener('slidev-stage:arrive', done)
+      timer = setTimeout(done, CAMERA_WAIT_MS)
+    })
+  })
+}
+
 async function enter() {
   const id = ++run
   shown = false
@@ -128,6 +150,10 @@ async function enter() {
   instant.value = false
   const ok = await loaded()
   if (id !== run) return
+  if (props.arrive === 'camera') {
+    await cameraLanded()
+    if (id !== run) return
+  }
   const overlay = getOverlay()
   const g = ok && geometry()
   let handle = null

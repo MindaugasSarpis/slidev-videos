@@ -185,7 +185,7 @@ async function settle(page, n, { min = 1.5, max = 30, warn } = {}) {
     const s = await look(page, n);
     if (s.seeking) await seeked(page);
     const clip = s.clips.some((c) => c.src);
-    if (t >= min * 1000 && s.running === 0 && s.clips.every((c) => c.up) && ((!s.flying && s.assembled) || (clip && s.cover))) break;
+    if (t >= min * 1000 && s.running === 0 && !s.photosHeld && s.clips.every((c) => c.up) && ((!s.flying && s.assembled) || (clip && s.cover))) break;
   }
   return t / 1000;
 }
@@ -254,7 +254,7 @@ async function recordSegment({ page, cdp }, n, k, o, ff, enc) {
         await platePipe.write(plain);
       }
       i++;
-      if (settledAt < 0 && s.running === 0 && ((!s.flying && s.assembled && !clip) || (clip && s.cover))) {
+      if (settledAt < 0 && s.running === 0 && !s.photosHeld && ((!s.flying && s.assembled && !clip) || (clip && s.cover))) {
         settledAt = i;
         // a clip that plays to its end holds for the rest of it
         if (clip && !clip.loop && clip.duration) holdFrames = Math.max(1, Math.ceil((clip.duration - clip.t) * o.fps));
