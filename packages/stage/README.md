@@ -74,6 +74,7 @@ distance and ease in and out.
 | `hud` | — | `{ kicker, fields: [...] }` for the default stop panel |
 | `options` | — | engine numbers: `nebula` (far clouds in the palette's colours, 0–1), `streak` (grains drawn out along their path while the camera flies, 0–2, default 1), `reach` (a pose within this of a station is *at* it, default 12), `bloom`, `vignette`, `grain`, `aberration`, `exposure`, `density`, `dustSize`, `dustGain`, `gather`, `fov`, `flight: [min, max]`, `maxBufferWidth` |
 | `auto` | `true` | `false`: the deck mounts `<Stage>` itself from its `global-bottom.vue`, to fill the `#hud` slot |
+| `lang` | — | how `<StageCount>` writes numbers: `lt` or `en` (else the deck's `htmlAttrs.lang`) |
 
 ### Palettes and looks
 
@@ -150,11 +151,10 @@ with their flavour as a subscript (Λb⁰, Σc⁺, Pc(4312)⁺).
 
 From the deck's `setup/main.ts`:
 
-    import { defineAppSetup } from '@slidev/types'
-    import { registerBuilder, definePalette, usePlugin, helpers } from 'slidev-addon-stage'
+    import { registerBuilder, definePalette, helpers } from 'slidev-addon-stage'
     import { Group, Mesh, BoxGeometry } from 'three'
 
-    export default defineAppSetup(() => {
+    export default () => {
       definePalette('venue', { accent: '#ff5c8a', dust: '#b03060', dustBright: '#ffe3ec' })
 
       registerBuilder('beacon', (o, ctx) => {
@@ -164,11 +164,23 @@ From the deck's `setup/main.ts`:
         group.position.copy(helpers.v3(o.pos))
         return { group, update: (t) => { m.rotation.y = t * 0.4 } }
       }, { fields: ['pos'] })
-    })
+    }
 
-A builder returns `{ group, labels?, anchors?, update?(t, camPos), api?, pixelRatio? }`
-(see `stage/builders.js`). A plugin is a module exporting `name` and
-`install({ registerBuilder, setLabelSegmenter, setLabelFont, definePalette, helpers })`.
+A plain function: Slidev calls it with `{ app, router }`. Do not import
+`defineAppSetup` from `@slidev/types`: it is the identity, and under pnpm
+`@slidev/types` is not a package the deck can resolve, so the build fails.
+`three` is a dependency of the deck as well (`pnpm add three`). Then
+`palette: venue` in the headmatter, and `{ "type": "beacon", "pos": [4, 0, 0] }`
+in a station.
+
+What the deck registers reaches the world in `slidev dev` too: the addon
+ships its own `vite.config.js` (Slidev merges one from every addon), which
+keeps the package and three.js out of Vite's pre-bundle, and its registries
+are one per page however many copies of the package load. A deck needs no
+`vite.config.ts` for this.
+
+A plugin is a module exporting `name` and `install({ registerBuilder,
+setLabelSegmenter, setLabelFont, definePalette, helpers })`.
 
 The palette reaches CSS as `--stage-bg`, `--stage-fg`, `--stage-dim`,
 `--stage-accent` (and `-rgb` triplets) on `<html>`. The base CSS kit
@@ -177,32 +189,103 @@ hero's type, `.src`, `.quote-hero`, `.world-caption`, `.plate`, `.row` +
 `.col-40…60`) is keyed on `html[data-stage]`; override any of it from the
 deck's own `styles/index.css`.
 
+### Custom builders
+
+A builder is `(object, ctx) => parts`, called once per object of its type
+when the world is built. `object` is the entry from space.json, `ctx` is
+`{ palette, records, anisotropy, asset(src), helpers }`.
+
+| part | |
+| --- | --- |
+| `group` | a three.js Object3D; the builder places it at `object.pos` (relative to its station). Required |
+| `update(t, camPos)` | every frame, with the world clock and the camera's position |
+| `api` | `{ arm(), assemble(now, onDone), value?() }`: for something that builds itself on arrival |
+| `dispose()` | when the world is torn down, before the engine disposes every geometry and material under `group`: for what else the builder holds (listeners, timers, its own textures) |
+| `labels` | sprites that fade with the scrim |
+| `anchors` | `Map<id, Vector3>` relative to the object: places a pose or a stop can name |
+| `pixelRatio` | a `{ value }` uniform the engine keeps at the drawing buffer's pixel ratio (for `gl_PointSize`) |
+
+`registerBuilder(type, builder, { fields })`: `fields` are the keys an object
+of the type must carry, for `slidev-stage-check`.
+
+**The clock.** `t` is the world's own time in seconds. It advances at most
+1/12 s a frame, so flights and assemblies keep their pace on a slow GPU and
+in a headless browser, and it stands still while a clip covers the slide.
+Animate from `t`, not from `performance.now()`, and what a builder does
+stays in step with the camera.
+
+**Building on arrival.** When the camera sets out from elsewhere for a pose
+*at* a station, the engine calls `arm()` on every api there that has
+`assemble`: scatter, hide, start from nothing. When it lands it calls
+`assemble(now, onDone)` with the world clock (and so for the station the
+deck opens on); call `onDone` once, when the form stands. `c` calls
+`assemble` again. Give the object a `name` and an `api.value()` returning
+the number the form shows now, and `<StageCount for="<name>">` counts with
+it (see `example/setup/tally.js`).
+
+**Readiness.** What a headless tool or a deck's own script can wait on:
+
+| | set |
+| --- | --- |
+| `html[data-space-assembled]` | while no assembly runs (and always without WebGL): the cover's title waits for it |
+| `.stage[data-space-at]` | the pose the slide asked for (`11.5,-2.6,0` for a point) |
+| `.stage[data-space-station]`, `[data-space-at-station]` | the nearest station; the station the pose stands *at* (empty out in the open dust) |
+| `.stage[data-space-paused]` | `1` while the renderer rests (a clip covers the slide, the tab is hidden) |
+| `.stage[data-flights]`, `[data-assemblies]` | counters, one up per flight and per assembly started |
+| `html[data-space-stop]` | while a stop's record is shown |
+
 ## Components
 
-- `Stage` — the world. Mounted for you; mount it yourself (`auto: false`) for the `#hud` slot: `<Stage><template #hud="{ record, figure, rows }">…</template></Stage>`.
+- `Stage` — the world. Mounted for you; mount it yourself (`auto: false`) for the `#hud` slot: `<Stage><template #hud="{ record, figure, rows }">…</template></Stage>`. `static-ground` draws the static gradient only.
+- `StageCount` — a number that counts when its slide arrives: `<StageCount :to="55000" />`. Props: `to` (required), `from` (0), `ms` (2600) and `delay` (350), `decimals` (0), `lang`, `plain`, `for`. `lang: lt` sets groups of three apart with a narrow no-break space from five digits up (1844, 55 000) and takes a decimal comma; `en` writes 1,844 and a decimal point; the default is `stage.lang`, else the deck's `htmlAttrs.lang`, else `en`. `plain` never groups (years). `for="<name>"` shows the value of the object of that `name` while the slide is up (its builder's `api.value()`), so the count cannot run ahead of the form; without one it keeps its own clock. Printed, exported, in the overview and under reduced motion it shows `to`.
 - `StagePanel` — a translucent panel with a `kicker`, haloed.
 - `StageHalo` — the dust borders. Mounted for you.
 - `StageHero` — a full-bleed hero slide with its own live scene, for a deck without the persistent world: `<StageHero mode="galaxy" kicker="Part I" title="Line one|line two" sound counter />`, modes `proton | galaxy | collider`.
 
 ## Tools
 
-    slidev-stage-check [deck-dir] [--plugins hadron] [--types beacon]
+    slidev-stage-check [deck-dir] [--plugins hadron] [--types beacon] [--json]
     slidev-stage-shots <dist> <out-dir> [--slides 1-12] [--clicks '{"9":3}'] [--wait 4200]
 
-`check` validates the space file and that every `space.at` and stop in the
-deck resolves; run it after editing either. `shots` photographs a built deck
-slide by slide in a headless browser (WebGL on SwiftShader) and reports
-content running off a slide, where the camera stood, and page errors. It
-needs `playwright-chromium` in the deck (`pnpm add -D playwright-chromium`,
-then `pnpm exec playwright install chromium`); nothing else in the addon does.
+`check` validates the space file, the headmatter's `stage:` block and every
+slide's `space:`; run it after editing any. It finds the types the deck
+registers in its `setup/*.{js,ts}` (`registerBuilder('lineup', buildLineup,
+{ fields: [...] })` gives the type and its fields), and palettes it defines
+there; `--types` adds names it cannot find. Each problem names its slide, as
+Slidev counts them, and a code:
+
+| code | |
+| --- | --- |
+| `unknown-type` `missing-field` | an object's type has no builder; an object lacks a field its type needs |
+| `unknown-station` `unknown-pose` | a slide's `at` (or `space.hero`, or a named pose's station) names nothing; `unknown-pose` when the nearest name is a named pose. A close name is suggested |
+| `missing-anchor` | a stop that is no anchor in the space |
+| `unknown-palette` `bad-colour` | `stage.palette`, its `base` or a key of it is no palette; a colour is not `#rgb`/`#rrggbb` |
+| `unknown-option` | a `stage.options` key the engine does not read |
+| `bad-pose` `bad-vector` | a slide's `dist`, `pitch`, `dim` … out of range; a position that is not `[x, y, z]` |
+| `camera-inside-form` | warning: a slide's camera stands inside an object's `radius` (every grain is drawn across the screen) |
+| `unknown-key` | warning: a key of `stage:` or of a slide's `space:` that nothing reads |
+
+Also `duplicate-station`, `missing-look`, `bad-src`, `missing-file`,
+`unknown-record`, `unknown-plugin`, `no-stations`. Errors exit 1, warnings
+do not. `--json` prints `{ ok, problems: [{ slide, line, station, code,
+level, msg }], stats }`.
+
+`shots` photographs a built deck slide by slide in a headless browser
+(WebGL on SwiftShader) and reports content running off a slide, where the
+camera stood, and page errors. It needs `playwright-chromium` in the deck
+(`pnpm add -D playwright-chromium`, then `pnpm exec playwright install
+chromium`); nothing else in the addon does.
 
 ## Develop
 
     pnpm install
     pnpm --filter slidev-addon-stage test            # node --test
     pnpm --filter slidev-addon-stage build:example
-    pnpm --filter slidev-addon-stage smoke           # Playwright, headless
+    pnpm --filter slidev-addon-stage smoke           # Playwright, headless, on the built example
+    pnpm --filter slidev-addon-stage smoke:dev       # the example under `slidev dev`, and its export
 
 Without WebGL2 float render targets, or under `prefers-reduced-motion`, the
-stage draws its static gradient and the deck stays readable; the overview and
-PDF export have no world.
+stage draws its static gradient and the deck stays readable. Printed and
+exported (`slidev export`, `/print`, the browser exporter) every page draws
+that gradient too and opens no WebGL context; the overview shows the slides
+without the world. The presenter window draws a world of its own, silent.
