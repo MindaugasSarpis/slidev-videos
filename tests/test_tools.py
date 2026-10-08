@@ -1,57 +1,19 @@
 """tools.resolve(): which ffmpeg/ffprobe pair the CLI runs.
 
-Fake builds are shell scripts: a "static" one kills itself with SIGSEGV on
-the HTTPS probe, as the real static Linux builds do; a sound one fails the
-probe the ordinary way. Every run is logged so the cache can be checked.
+The fake builds (conftest.py) crash on the HTTPS probe or fail it the
+ordinary way, as real static and conda builds do.
 """
 import os
-import stat
 from pathlib import Path
 
-import pytest
-
 from slidev_videos import config, pipeline, tools
-
-SCRIPT = """#!/bin/sh
-echo "$(basename "$0") $*" >> "{log}"
-case "$*" in
-  *-version*) echo "ffmpeg version {version} Copyright (c) the FFmpeg developers"; exit 0 ;;
-  *-encoders*) {encoders} exit 0 ;;
-  *localhost:9*) {https} ;;
-esac
-exit 0
-"""
-
-
-def fake_build(d: Path, log: Path, *, crash=False, nvenc=False, version="9.9", https_rc=1) -> Path:
-    d.mkdir(parents=True, exist_ok=True)
-    https = 'kill -SEGV $$' if crash else f"exit {https_rc}"
-    encoders = 'echo " V....D h264_nvenc   NVIDIA NVENC H.264 encoder";' if nvenc else ""
-    for name in ("ffmpeg", "ffprobe"):
-        p = d / name
-        p.write_text(SCRIPT.format(log=log, version=version, encoders=encoders, https=https))
-        p.chmod(p.stat().st_mode | stat.S_IXUSR)
-    return d
-
-
-@pytest.fixture
-def machine(tmp_path, monkeypatch):
-    """A HOME with no envs, an empty PATH and a private cache."""
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    monkeypatch.setenv("PATH", "")
-    monkeypatch.delenv("CONDA_PREFIX", raising=False)
-    monkeypatch.delenv(tools.ENV_DIR, raising=False)
-    return home
 
 
 def runs(log: Path) -> list[str]:
     return log.read_text().splitlines() if log.exists() else []
 
 
-def test_static_build_first_on_path_is_passed_over(machine, tmp_path, monkeypatch):
+def test_static_build_first_on_path_is_passed_over(machine, tmp_path, monkeypatch, fake_build):
     log = tmp_path / "log"
     static = fake_build(tmp_path / "local-bin", log, crash=True, version="7.0.2-static")
     env = fake_build(machine / "micromamba" / "envs" / "talks" / "bin", log, nvenc=True, version="8.0.1")
@@ -63,7 +25,7 @@ def test_static_build_first_on_path_is_passed_over(machine, tmp_path, monkeypatc
     assert bad.crashed and not bad.https
 
 
-def test_an_ordinary_failure_code_is_not_a_crash(machine, tmp_path, monkeypatch):
+def test_an_ordinary_failure_code_is_not_a_crash(machine, tmp_path, monkeypatch, fake_build):
     # ffmpeg 7+ exits with its error code: 145 is -ECONNREFUSED, not a signal
     good = fake_build(tmp_path / "bin", tmp_path / "log", https_rc=145)
     monkeypatch.setenv("PATH", str(good))
@@ -72,14 +34,14 @@ def test_an_ordinary_failure_code_is_not_a_crash(machine, tmp_path, monkeypatch)
     assert t.chosen.https and not t.chosen.crashed
 
 
-def test_a_shell_reported_segfault_is_a_crash(machine, tmp_path, monkeypatch):
+def test_a_shell_reported_segfault_is_a_crash(machine, tmp_path, monkeypatch, fake_build):
     bad = fake_build(tmp_path / "bad", tmp_path / "log", https_rc=139)
     good = fake_build(tmp_path / "good", tmp_path / "log")
     monkeypatch.setenv("PATH", os.pathsep.join([str(bad), str(good)]))
     assert tools.resolve().ffmpeg == str(good / "ffmpeg")
 
 
-def test_the_env_dir_wins_over_a_discovered_nvenc_build(machine, tmp_path, monkeypatch):
+def test_the_env_dir_wins_over_a_discovered_nvenc_build(machine, tmp_path, monkeypatch, fake_build):
     log = tmp_path / "log"
     mine = fake_build(tmp_path / "mine", log)
     fake_build(machine / "micromamba" / "envs" / "talks" / "bin", log, nvenc=True)
@@ -89,7 +51,7 @@ def test_the_env_dir_wins_over_a_discovered_nvenc_build(machine, tmp_path, monke
     assert t.chosen.source == "env"
 
 
-def test_a_crashing_env_dir_is_rejected(machine, tmp_path, monkeypatch):
+def test_a_crashing_env_dir_is_rejected(machine, tmp_path, monkeypatch, fake_build):
     log = tmp_path / "log"
     mine = fake_build(tmp_path / "mine", log, crash=True)
     other = fake_build(tmp_path / "other", log)
@@ -98,7 +60,7 @@ def test_a_crashing_env_dir_is_rejected(machine, tmp_path, monkeypatch):
     assert tools.resolve().ffmpeg == str(other / "ffmpeg")
 
 
-def test_discovered_builds_prefer_nvenc(machine, tmp_path, monkeypatch):
+def test_discovered_builds_prefer_nvenc(machine, tmp_path, monkeypatch, fake_build):
     log = tmp_path / "log"
     plain = fake_build(tmp_path / "plain", log)
     gpu = fake_build(tmp_path / "gpu", log, nvenc=True)
@@ -106,7 +68,7 @@ def test_discovered_builds_prefer_nvenc(machine, tmp_path, monkeypatch):
     assert tools.resolve().ffmpeg == str(gpu / "ffmpeg")
 
 
-def test_when_every_build_crashes_the_first_is_still_used(machine, tmp_path, monkeypatch, capsys):
+def test_when_every_build_crashes_the_first_is_still_used(machine, tmp_path, monkeypatch, capsys, fake_build):
     static = fake_build(tmp_path / "static", tmp_path / "log", crash=True)
     monkeypatch.setenv("PATH", str(static))
     t = tools.resolve()
@@ -115,7 +77,7 @@ def test_when_every_build_crashes_the_first_is_still_used(machine, tmp_path, mon
     assert "crashes on HTTPS" in capsys.readouterr().err
 
 
-def test_a_directory_without_ffprobe_is_skipped(machine, tmp_path, monkeypatch):
+def test_a_directory_without_ffprobe_is_skipped(machine, tmp_path, monkeypatch, fake_build):
     half = fake_build(tmp_path / "half", tmp_path / "log")
     (half / "ffprobe").unlink()
     monkeypatch.setenv("PATH", str(half))
@@ -123,7 +85,7 @@ def test_a_directory_without_ffprobe_is_skipped(machine, tmp_path, monkeypatch):
     assert t.ffmpeg is None and t.chosen is None
 
 
-def test_the_verdict_is_cached_until_the_binary_changes(machine, tmp_path, monkeypatch):
+def test_the_verdict_is_cached_until_the_binary_changes(machine, tmp_path, monkeypatch, fake_build):
     log = tmp_path / "log"
     b = fake_build(tmp_path / "bin", log)
     monkeypatch.setenv("PATH", str(b))
@@ -139,7 +101,7 @@ def test_the_verdict_is_cached_until_the_binary_changes(machine, tmp_path, monke
     assert len(runs(log)) > first           # new mtime: probed again
 
 
-def test_videos_toml_ffmpeg_dir_feeds_the_pipeline(machine, tmp_path, monkeypatch):
+def test_videos_toml_ffmpeg_dir_feeds_the_pipeline(machine, tmp_path, monkeypatch, fake_build):
     mine = fake_build(tmp_path / "mine", tmp_path / "log")
     fake_build(tmp_path / "other", tmp_path / "log", nvenc=True)
     monkeypatch.setenv("PATH", str(tmp_path / "other"))
@@ -153,7 +115,7 @@ def test_videos_toml_ffmpeg_dir_feeds_the_pipeline(machine, tmp_path, monkeypatc
     assert pipeline._tools().chosen.source == "videos.toml"
 
 
-def test_encoder_choice_still_asks_the_chosen_binary(machine, tmp_path, monkeypatch):
+def test_encoder_choice_still_asks_the_chosen_binary(machine, tmp_path, monkeypatch, fake_build):
     # resolve() picks the binary; whether it encodes h264_nvenc is still the
     # runtime test encode on that binary, exactly as before
     log = tmp_path / "log"

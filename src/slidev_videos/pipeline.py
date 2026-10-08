@@ -2206,6 +2206,21 @@ def cmd_venue(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# doctor — what this machine and project will run with
+# ---------------------------------------------------------------------------
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    from . import doctor
+    defaults: dict = {}
+    if _PROJECT is not None:
+        try:
+            defaults, _ = load_manifest()
+        except (OSError, tomllib.TOMLDecodeError):
+            defaults = dict(_PROJECT.defaults)
+    return doctor.run(_report(args), _PROJECT, defaults, _tools(), nvenc_available, cli_version())
+
+
+# ---------------------------------------------------------------------------
 # encode-hq — ffmpeg raw -> videos/hq/ (visually-lossless venue masters)
 # ---------------------------------------------------------------------------
 
@@ -2558,6 +2573,9 @@ def main(argv: list[str] | None = None) -> int:
     p_venue.add_argument("--dry-run", action="store_true")
     p_venue.add_argument("--skip-pull", action="store_true", help="assume local web tier is already complete")
     p_venue.set_defaults(func=cmd_venue)
+
+    p_doctor = add("doctor", help="CLI version and install, the ffmpeg in use, gh, rclone, the deck's addon versions")
+    p_doctor.set_defaults(func=cmd_doctor)
 
     p_build = add("build", help="one-shot: (sync) -> encode -> encode-hq -> check")
     p_build.add_argument("--sync", action="store_true", help="rclone raws from Drive first")

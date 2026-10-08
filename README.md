@@ -6,7 +6,7 @@ takes the ones it wants.
 
 | tool | where | what it is |
 | --- | --- | --- |
-| **`slidev-videos`** | `src/` (Python ≥3.11, stdlib only) | manifest-driven CLI: `fetch · sync · encode · encode-hq · publish · publish-hq · pull · pull-hq · check · shared-check · frames · clean · preflight · venue · build · discover`. Web tier is 1080p H.264 with EBU R128 loudness normalisation; clips are hosted as GitHub Release assets |
+| **`slidev-videos`** | `src/` (Python ≥3.11, stdlib only) | manifest-driven CLI: `fetch · sync · encode · encode-hq · publish · publish-hq · pull · pull-hq · check · shared-check · frames · clean · preflight · venue · build · discover · doctor`. Web tier is 1080p H.264 with EBU R128 loudness normalisation; clips are hosted as GitHub Release assets |
 | **`slidev-addon-videos`** | repo root | the full-bleed `VideoPlayer`: a local → own-release → shared-release fallback chain, slide-driven playback, look-ahead preload, `cut` / `fade` / `dust` transitions, native auto-hide controls, keyboard volume |
 | **`slidev-addon-stage`** | [`packages/stage`](packages/stage/README.md) | one persistent 3D world under a whole deck: stations in a field of dust, a camera that flies from slide to slide, palettes, a builder registry, halo borders, a validator and a screenshot tool |
 | **the shared clip library** | `src/slidev_videos/shared.toml` | the registry, with the encodes on this repo's `videos-shared` Release |
@@ -157,7 +157,8 @@ it finds on its own it prefers one with NVENC. Each build is probed once; the
 result is cached in `~/.cache/slidev-videos/tools.json` until the binary
 changes. Choosing a binary does not change how it encodes: `encode` still
 test-encodes `h264_nvenc` on the chosen ffmpeg to decide between NVENC and
-libx264.
+libx264. `slidev-videos doctor` shows the pair in use, the ones passed over
+and why.
 
 Manifest (`videos/manifest.toml`) entries:
 
@@ -204,6 +205,7 @@ Names changed when the outreach decks moved onto the library (2026-09-08):
     slidev-videos preflight      # what will the deployed deck actually serve?
     slidev-videos pull           # restore local web copies from the release
     slidev-videos discover "cloud chamber" lhc --source cds,nasa   # find new clips; prints [[videos]] snippets
+    slidev-videos doctor         # CLI version and install, the ffmpeg in use, gh, rclone, the deck's addon versions
 
 Run from anywhere inside a project (`videos.toml` is found by walking up), or
 pass `--project <dir>`, before or after the subcommand.
