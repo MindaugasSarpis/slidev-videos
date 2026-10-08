@@ -99,9 +99,11 @@ leaving the tile at the moment the presenter moved on. Where the clip is
 same-origin (dev mode, venue and portable builds) the frame on screen is read
 directly instead. No strip, no overlay, no WebGL2 or `prefers-reduced-motion`:
 the clip fades. `check` lists the `dust` clips that have no strip. `frames`
-cuts from the local copy if there is one, else from the release; where
-ffmpeg cannot read HTTPS (the static Linux builds crash on it) the clip is
-downloaded, cut and removed.
+cuts from the web tier, which a deployed deck plays: the local web copy, else
+the talk's release, else the shared release (a local HQ copy only as a last
+resort). Where the ffmpeg in use cannot read HTTPS the clip is downloaded
+into a temporary directory outside the deck, cut and removed; a run stopped
+with SIGTERM (`timeout`) removes its downloads too and exits 143.
 
 Other addons can follow along on `window`: `slidev-videos:transition`
 `{ phase: 'enter' | 'leave', mode, src, duration, color }` and

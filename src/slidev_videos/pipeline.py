@@ -43,8 +43,10 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import tomllib
@@ -2142,40 +2144,78 @@ def frames_tile_size(width: int, height: int, tile_w: int = FRAMES_TILE_W) -> tu
 
 
 def _frames_source(name: str, talk_assets, shared_assets) -> tuple[str, str] | None:
-    """(tier, path or URL) to cut the strip from — the copy the deck will play."""
-    for label, path in (("local-web", WEB_DIR / name), ("local-hq", HQ_DIR / name)):
-        if path.is_file():
-            return label, str(path)
-    for label, assets in (("talk-release", talk_assets), ("shared-release", shared_assets)):
-        if assets and name in assets and assets[name].get("url"):
-            return label, assets[name]["url"]
-    return None
+    """(tier, path or URL) to cut the strip from.
+
+    Strips matter where a clip is cross-origin, in a deployed deck, which
+    plays the web tier: resolve_chain() without HQ gives the local web copy,
+    then the talk's release, then the shared release. A local HQ copy (not
+    trimmed like the web tier) is the last resort.
+    """
+    chain = resolve_chain(name, "local-first", hq=False, talk_assets=talk_assets, shared_assets=shared_assets)
+    if chain:
+        return chain[0]
+    hq = HQ_DIR / name
+    return ("local-hq", str(hq)) if hq.is_file() else None
+
+
+# Set when frames is interrupted: downloads in worker threads stop at their
+# next chunk, so the scratch directory can go.
+_STOP = threading.Event()
+
+
+class _Terminated(Exception):
+    """SIGTERM, raised in the main thread so `finally` blocks run."""
+
+
+@contextlib.contextmanager
+def _sigterm_raises():
+    """Turn SIGTERM into _Terminated while the block runs.
+
+    `timeout` and process supervisors stop a command with SIGTERM, whose
+    default action skips every `finally`, leaving half-downloaded clips.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+
+    def handler(signum, frame):
+        raise _Terminated(signum)
+    previous = signal.signal(signal.SIGTERM, handler)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous)
 
 
 def _download(url: str, dest: Path) -> bool:
-    """Fetch url to dest (streamed). False on any failure; dest is removed then."""
+    """Fetch url to dest (streamed). False on any failure or on _STOP; dest is removed then."""
     import urllib.request
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "slidev-videos"})
         with urllib.request.urlopen(req, timeout=60) as r, dest.open("wb") as f:
-            shutil.copyfileobj(r, f, 1 << 20)
+            while chunk := r.read(1 << 20):
+                if _STOP.is_set():
+                    raise OSError("interrupted")
+                f.write(chunk)
         return dest.stat().st_size > 0
     except (OSError, ValueError):
         dest.unlink(missing_ok=True)
         return False
 
 
-def _frames_one(name: str, src: str, out_dir: Path, args: argparse.Namespace) -> tuple[str, dict | None, str]:
+def _frames_one(name: str, src: str, out_dir: Path, args: argparse.Namespace,
+                scratch: Path | None = None) -> tuple[str, dict | None, str]:
     """Cut one strip. Returns (name, index entry or None, message).
 
-    A release asset is read over HTTPS where ffmpeg can; some builds cannot
-    (the static Linux builds crash resolving a host name), so a URL that
-    ffprobe fails on is downloaded beside the strips, cut, and removed.
+    A release asset is read over HTTPS where ffmpeg can. A URL that ffprobe
+    fails on (a static Linux build crashes resolving a host name) is
+    downloaded into `scratch`, a temporary directory outside the deck, cut,
+    and removed.
     """
     fetched: Path | None = None
     info = _probe_media(src)
     if info is None and src.startswith(("http://", "https://")):
-        fetched = out_dir / f".{name}.src"
+        fetched = (scratch or Path(tempfile.gettempdir())) / f"{name}.src"
         if not _download(src, fetched):
             return name, None, "ffprobe can't read the URL and the download failed"
         src = str(fetched)
@@ -2246,8 +2286,32 @@ def _frames_current(entry: dict | None, out_dir: Path, args: argparse.Namespace)
     )
 
 
+def _sweep_frames_leftovers(out_dir: Path) -> int:
+    """Remove what an interrupted run of an older CLI left in the strip folder.
+
+    Downloads used to land in out_dir as .<name>.src; nothing writes them
+    there now. A .<name>.tmp.jpg lives only while ffmpeg writes it, so one an
+    hour old is a leftover.
+    """
+    if not out_dir.is_dir():
+        return 0
+    swept = 0
+    now = time.time()
+    for p in [*out_dir.glob(".*.src"), *out_dir.glob(".*.tmp.jpg")]:
+        try:
+            if p.suffix == ".src" or now - p.stat().st_mtime > 3600:
+                p.unlink()
+                swept += 1
+        except OSError:
+            continue
+    return swept
+
+
 def cmd_frames(args: argparse.Namespace) -> int:
     """Write frame strips for the clips the deck references."""
+    report = _report(args)
+    clips: list[dict] = []
+    report.update({"clips": clips, "cut": 0, "failed": 0, "up_to_date": 0})
     all_refs = sorted(_slide_references())
     dust = _dust_references()
     refs = all_refs if args.all else [r for r in all_refs if r in dust]
@@ -2256,8 +2320,14 @@ def cmd_frames(args: argparse.Namespace) -> int:
         refs = [r for r in all_refs if r in wanted]
         for missing in sorted(wanted - set(refs)):
             print(f"  skip  {missing}: not referenced by the deck")
+            clips.append({"name": missing, "status": "skip", "message": "not referenced by the deck"})
     out_dir = _frames_dir()
+    report["dir"] = str(out_dir)
     index = _read_frames_index(out_dir)
+    if not args.dry_run:
+        swept = _sweep_frames_leftovers(out_dir)
+        if swept:
+            print(f"  removed {swept} leftover download(s) of an interrupted run from {out_dir.relative_to(TALK)}/")
 
     if args.prune:
         keep = set(all_refs)
@@ -2265,6 +2335,7 @@ def cmd_frames(args: argparse.Namespace) -> int:
         for name in dropped:
             f = out_dir / str(index[name].get("file", ""))
             print(f"  {'would drop' if args.dry_run else 'drop'}  {name}")
+            clips.append({"name": name, "status": "would-drop" if args.dry_run else "drop"})
             if not args.dry_run:
                 f.unlink(missing_ok=True)
                 del index[name]
@@ -2284,22 +2355,18 @@ def cmd_frames(args: argparse.Namespace) -> int:
     for name in refs:
         if name not in todo:
             print(f"  ok    {name}  (up to date)")
+            clips.append({"name": name, "status": "ok", "file": index[name].get("file")})
+            report["up_to_date"] += 1
     if not todo:
         print(f"All {len(refs)} strip(s) up to date in {out_dir.relative_to(TALK)}/.")
         return 0
 
-    # Release lookups only when some clip has no local copy.
-    need_remote = [n for n in todo if not (WEB_DIR / n).is_file() and not (HQ_DIR / n).is_file()]
+    # Release lookups only when some clip has no local web copy.
     talk_assets = shared_assets = None
-    if need_remote and shutil.which("gh"):
+    if any(not (WEB_DIR / n).is_file() for n in todo):
         defaults, _ = load_manifest()
         shared_defaults, _shared = load_shared_manifest()
-        talk_assets = _remote_assets(defaults["release_tag"])
-        shared_tag = shared_defaults.get("release_tag")
-        if shared_tag == defaults["release_tag"]:
-            shared_assets = talk_assets
-        elif shared_tag:
-            shared_assets = _remote_assets(shared_tag, shared_defaults.get("repo"))
+        talk_assets, shared_assets = _release_assets(defaults, shared_defaults)
 
     jobs: list[tuple[str, str, str]] = []
     failed = 0
@@ -2307,31 +2374,60 @@ def cmd_frames(args: argparse.Namespace) -> int:
         src = _frames_source(name, talk_assets, shared_assets)
         if src is None:
             print(f"  FAIL  {name}: no local copy and no release asset to cut from")
+            clips.append({"name": name, "status": "fail", "message": "no local copy and no release asset"})
             failed += 1
             continue
         jobs.append((name, *src))
+    report["failed"] = failed
     if args.dry_run:
-        for name, tier, _src in jobs:
+        for name, tier, src in jobs:
             print(f"  would cut  {name}  [{tier}]")
+            clips.append({"name": name, "status": "would-cut", "tier": tier, "src": src})
         return 1 if failed else 0
 
     out_dir.mkdir(parents=True, exist_ok=True)
     workers = max(1, min(int(args.jobs), len(jobs) or 1))
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(_frames_one, name, src, out_dir, args): (name, tier) for name, tier, src in jobs}
-        for fut in as_completed(futures):
-            name, tier = futures[fut]
+    _STOP.clear()
+    try:
+        with _sigterm_raises(), tempfile.TemporaryDirectory(prefix="slidev-videos-frames-") as scratch, \
+                ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(_frames_one, name, src, out_dir, args, Path(scratch)): (name, tier, src)
+                       for name, tier, src in jobs}
             try:
-                _, entry, msg = fut.result()
-            except Exception as exc:  # one clip must not sink the batch
-                entry, msg = None, str(exc)
-            if entry is None:
-                print(f"  FAIL  {name} [{tier}]: {msg}")
-                failed += 1
-                continue
-            index[name] = entry
-            print(f"  cut   {name} [{tier}]  {entry['count']} tile(s) every {entry['interval']:g} s, {msg}")
+                for fut in as_completed(futures):
+                    name, tier, src = futures[fut]
+                    try:
+                        _, entry, msg = fut.result()
+                    except Exception as exc:  # one clip must not sink the batch
+                        entry, msg = None, str(exc)
+                    if entry is None:
+                        print(f"  FAIL  {name} [{tier}]: {msg}")
+                        clips.append({"name": name, "status": "fail", "tier": tier, "src": src, "message": msg})
+                        failed += 1
+                        continue
+                    index[name] = entry
+                    clips.append({"name": name, "status": "cut", "tier": tier, "src": src, "message": msg,
+                                  "file": entry["file"], "count": entry["count"], "interval": entry["interval"]})
+                    report["cut"] += 1
+                    print(f"  cut   {name} [{tier}]  {entry['count']} tile(s) every {entry['interval']:g} s, {msg}")
+            except BaseException:
+                # Stop downloads at their next chunk and drop queued clips;
+                # the pool then waits for running cuts before the scratch
+                # directory is removed.
+                _STOP.set()
+                for fut in futures:
+                    fut.cancel()
+                raise
+    except (_Terminated, KeyboardInterrupt) as e:
+        _write_frames_index(out_dir, index)
+        print(f"\ninterrupted: {report['cut']} strip(s) cut and indexed, downloads removed.", file=sys.stderr)
+        if isinstance(e, KeyboardInterrupt):
+            raise
+        return 128 + signal.SIGTERM
+    finally:
+        _STOP.clear()
     _write_frames_index(out_dir, index)
+    report["failed"] = failed
 
     total = sum((out_dir / e["file"]).stat().st_size for e in index.values() if (out_dir / e["file"]).is_file())
     print(f"\n{len(index)} strip(s) in {out_dir.relative_to(TALK)}/ ({human_size(total)}) — commit them with the deck.")
