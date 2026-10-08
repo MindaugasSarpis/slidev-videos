@@ -1949,7 +1949,11 @@ def cmd_preflight(args: argparse.Namespace) -> int:
             for name, chain in served.items() if chain
         }
         for fut in as_completed(futures):
-            results[futures[fut]] = fut.result()
+            try:
+                results[futures[fut]] = fut.result()
+            except Exception as exc:  # one clip must not sink the run
+                print(f"  ! {futures[fut]}: {exc}", file=sys.stderr)
+                results[futures[fut]] = {"probe": None, "loudness": None, "cached": False, "new": None}
     _save_probe_cache(dict(r["new"] for r in results.values() if r["new"]))
 
     flagged = unreadable = not_served = from_cache = 0
@@ -2994,7 +2998,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         project = _config.load_project(getattr(args, "project", None))
     except SystemExit as e:
-        if args.cmd not in PROJECTLESS:
+        if args.cmd not in PROJECTLESS or getattr(args, "project", None):
             return _usage_failure(str(e.code), as_json)
         project = None
     if project is not None:

@@ -84,3 +84,8 @@ def test_doctor_compares_the_decks_addon_with_the_cli(machine, tmp_path, monkeyp
     assert a["slidev-addon-stage"]["ref"] == "v0.0.1" and a["slidev-addon-stage"]["installed"] is None
     assert d["project"]["release_tag"] == "videos-t"
     assert any("slidev-addon-videos is 0.0.1" in w for w in d["warnings"])
+
+
+def test_an_explicit_project_without_videos_toml_is_an_error(tmp_path, capsys):
+    assert pipeline.main(["doctor", "--project", str(tmp_path)]) == 2
+    assert "no videos.toml" in capsys.readouterr().err
