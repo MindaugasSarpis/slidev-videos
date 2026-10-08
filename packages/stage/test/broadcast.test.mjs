@@ -1,5 +1,5 @@
-// node --test test/   — the broadcast look, and the recorder's pure parts
-// (the browser runs are in the README's verification).
+// node --test test/   — the broadcast look, the recorder's and the safe check's
+// pure parts (the browser runs are in the README's verification).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, writeFileSync } from 'node:fs';
@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LOOKS, PALETTES, resolveLook, liftGround, definePalette, paletteVars } from '../stage/palette.js';
 import { parseArgs as recordArgs } from '../bin/record.mjs';
+import { parseArgs as safeArgs, judge, RULES } from '../bin/safe.mjs';
 import { detectBase, normaliseBase, parseSlides, parseSize } from '../bin/lib/record-serve.mjs';
 import { findFlashes } from '../bin/lib/record-flash.mjs';
 import { ffmpegCandidates } from '../bin/lib/record-ffmpeg.mjs';
@@ -110,4 +111,28 @@ test('the flash check counts bursts over a quarter of the frame', () => {
   // the same flicker in one corner (an eighth of the frame) is not a flash
   const corner = Array.from({ length: 100 }, (_, i) => { const b = frame(20); if (Math.floor(i / 5) % 2) for (const p of [0, 1, 8, 9]) b.fill(230, p * 3, p * 3 + 3); return b; });
   assert.equal(findFlashes(corner, { w, h, fps }).transitions.length, 0);
+});
+
+// ---- the safe check --------------------------------------------------------------------
+test('safe arguments and rules', () => {
+  assert.deepEqual(safeArgs(['dist', '--broadcast', '--json']), { dist: 'dist', broadcast: true, json: true, slides: null, size: [1920, 1080], base: 'auto' });
+  const b = RULES.broadcast.box;
+  assert.deepEqual([Math.round(b[0] * 980), Math.round(b[2] * 980)], [98, 882]);
+  assert.deepEqual([Math.round(b[1] * 551.25), Math.round(b[3] * 551.25)], [55, 408]);
+});
+
+test('the broadcast rules flag the kit\'s small source line and kicker', () => {
+  const state = { W: 980, H: 551.25, lines: [
+    { text: 'slidev-addon-stage · packages/stage/example', tag: 'div.src', font: 12, box: [44, 513, 323, 529] },
+    { text: 'A form of grains', tag: 'h1', font: 12.5, box: [110, 300, 240, 316] },
+    { text: 'Inside and large enough', tag: 'p', font: 40, box: [120, 120, 600, 170] },
+    { text: 'Where the logo goes', tag: 'p', font: 20, box: [800, 60, 870, 80] },
+  ] };
+  const out = judge(state, RULES.broadcast);
+  const by = Object.fromEntries(out.map((p) => [p.text, p.problems.map((x) => x.kind)]));
+  assert.deepEqual(by['slidev-addon-stage · packages/stage/example'], ['small', 'outside', 'corner']);
+  assert.deepEqual(by['A form of grains'], ['small']);
+  assert.equal(by['Inside and large enough'], undefined);
+  assert.deepEqual(by['Where the logo goes'], ['corner']);
+  assert.deepEqual(judge(state, RULES.hall), []);   // in a hall, 12 px on the slide is allowed
 });
