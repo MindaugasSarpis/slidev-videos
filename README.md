@@ -64,6 +64,26 @@ the slide or taken a click on it since the clip started, the clip's end does
 nothing, and a looping clip never ends. The player also sends a
 `slidev-videos:advance` event (`{ src, from }`) as it goes on.
 
+**StagePhoto:** a full-bleed photograph that arrives and leaves like a clip
+with `transition: dust`:
+
+    <StagePhoto src="/figures/x.jpg" focus="30% 50%" class="right">
+      <div class="hero-text">…</div>
+      <div class="credit">…</div>
+    </StagePhoto>
+
+It renders the kit's `.hero` markup (a `div.hero` holding the `<img>`, with
+the slot over it), so a talk's `.hero` styles apply unchanged. On slide enter
+the picture condenses out of grains coloured from the image itself (read when
+it loads, so no strip file; the image must be served by the deck) and then
+hands over to the sharp `<img>`; on leave it breaks back into grains, and the
+stage takes its colour as it does a clip's. Props: `src`, `alt`, `focus` (the
+crop's `object-position`), `dust` (`frame` | `flight` | `none`, default
+`videos.dustStyle`), `color` (default `videos.dust`), `dust-ms` (a number or
+`[arrive, leave]`, default `videos.dustMs`), `fit` (`cover` | `contain`).
+Only the audience's slide moves: the presenter window, the overview, the
+next-slide preview, print and reduced motion show the plain image.
+
 **Source chain**, front to back: a production build tries the own release,
 then the shared release, then `videos/` and `videos-hq/` under the deck's
 `public/` (only present in a keep-videos build — the offline fallback);
