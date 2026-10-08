@@ -90,6 +90,8 @@ export function recorderHooks() {
         // a clip the browser started by itself (autoplay) is taken over where it stands
         if ((!s || !s.playing) && !pausedReal.get.call(v)) { pauseReal.call(v); s = take(v); s.playing = true; s.t0 = t; s.c0 = time.get.call(v); }
         if (!s || !s.playing) continue;
+        // a clip that has not loaded (or never will) keeps its own time, unseen
+        if (v.error || v.readyState < 1) continue;
         let at = s.c0 + (t - s.t0) / 1000 * (v.playbackRate || 1);
         const d = v.duration;
         if (Number.isFinite(d) && d > 0) {
@@ -100,9 +102,13 @@ export function recorderHooks() {
       }
       return { running, seeking };
     },
-    // Every clip set this frame has its picture.
+    // Every clip set this frame has its picture (or has failed).
     seeked() {
-      return [...document.querySelectorAll('video')].every((v) => !v.__recSeek || (!v.seeking && v.readyState >= 2 && !(v.__recSeek = false)));
+      return [...document.querySelectorAll('video')].every((v) => !v.__recSeek || ((v.error || (!v.seeking && v.readyState >= 2)) && !(v.__recSeek = false)));
+    },
+    // the clips still seeking, for a warning when one takes too long
+    seeking() {
+      return [...document.querySelectorAll('video')].filter((v) => v.__recSeek).map((v) => { v.__recSeek = false; return v.currentSrc || v.src; });
     },
     // Where the deck stands, for the recorder's settle and its report.
     state(n) {

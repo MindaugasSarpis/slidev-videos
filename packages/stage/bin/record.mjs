@@ -78,7 +78,9 @@ export function parseArgs(argv) {
 const pad = (n) => String(n).padStart(2, '0');
 const snap = (cdp) => cdp.send('Page.captureScreenshot', { format: 'png', optimizeForSpeed: true }).then((r) => Buffer.from(r.data, 'base64'));
 const look = (page, n) => page.evaluate((n) => ({ ...window.__rec.sync(), ...window.__rec.state(n) }), n);
-const seeked = (page) => page.waitForFunction(() => window.__rec.seeked(), null, { polling: 10, timeout: 30000 });
+// A seek that takes over 30 s is let go with a warning: the frame shows the clip where it stands.
+const seeked = (page, warn) => page.waitForFunction(() => window.__rec.seeked(), null, { polling: 10, timeout: 30000 })
+  .catch(async () => { const srcs = await page.evaluate(() => window.__rec.seeking()); warn?.(`a clip did not seek in 30 s: ${srcs.join(', ')}`); });
 
 // A fresh page on the deck at slide `n`, its clock paused at load: nothing
 // moves until the recorder moves it.
@@ -136,6 +138,7 @@ async function recordSegment({ page, cdp }, n, k, o, ff, enc) {
   let pipe = null, platePipe = null;
   const hash = createHash('sha1'), plateHash = createHash('sha1');
   let i = 0, settledAt = -1, holdFrames = Math.round(o.hold * o.fps), capped = false, last = null, clip = null;
+  const warnings = [];
   const t0 = Date.now();
   try {
     for (;;) {
@@ -154,7 +157,7 @@ async function recordSegment({ page, cdp }, n, k, o, ff, enc) {
           : 'the clip comes from another origin and cannot be stepped frame by frame: cut in the source clip';
         return { slide: n, clicks: k, skipped: true, note, clip: { src: (undecodable || clip).src }, at: s.at, station: s.station };
       }
-      if (s.seeking) await seeked(page);
+      if (s.seeking) await seeked(page, (w) => warnings.push(`frame ${i}: ${w}`));
       if (!pipe) {
         pipe = encoder(ff, enc, { fps: o.fps, out: file });
         // a clip is the picture itself: no plate for a clip slide
@@ -193,6 +196,7 @@ async function recordSegment({ page, cdp }, n, k, o, ff, enc) {
     clip: clip ? { src: clip.src, recorded: true } : null,
     sha1: hash.digest('hex'), plateSha1: platePipe ? plateHash.digest('hex') : null,
     secondsPerFrame: +(seconds / i).toFixed(3),
+    ...(warnings.length ? { warnings: warnings.slice(0, 10) } : {}),
   };
 }
 
@@ -250,7 +254,7 @@ export async function record(o, log = console.log) {
               seg.flash = { transitions: transitions.length, warnings };
             }
             frames += seg.frames; wall += (Date.now() - t0) / 1000;
-            log(`${seg.file}  ${seg.frames} frames  ${seg.seconds} s  settled at ${seg.settle ?? '-'} s${seg.capped ? ' (capped by --max)' : ''}  ${seg.secondsPerFrame} s/frame${seg.flash?.warnings.length ? `  FLASH: ${seg.flash.warnings.map((w) => `${w.flashes}/s at ${w.t} s`).join(', ')}` : ''}`);
+            log(`${seg.file}  ${seg.frames} frames  ${seg.seconds} s  settled at ${seg.settle ?? '-'} s${seg.capped ? ' (capped by --max)' : ''}  ${seg.secondsPerFrame} s/frame${seg.flash?.warnings.length ? `  FLASH: ${seg.flash.warnings.map((w) => `${w.flashes}/s at ${w.t} s`).join(', ')}` : ''}${seg.warnings ? `\n  ${seg.warnings.join('\n  ')}` : ''}`);
           } else log(`${pad(n)}${k ? `-c${k}` : ''}  skipped: ${seg.note} (${seg.clip.src})`);
           report.segments.push(seg);
           await save();
