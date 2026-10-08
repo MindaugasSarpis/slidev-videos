@@ -4,14 +4,19 @@
 // like the stage's (the same 50° field of view), so that over the stage it
 // reads as part of that world and not as a layer on the slide.
 //
-//   arriving   grains adrift in depth gather onto a plane that stands some
-//              way off, turned aside; as the picture comes whole the plane
-//              swings square and flies to the camera until it fills the
-//              frame, exactly where the <video> is. Grains carry the dust's
-//              colour adrift and take their pixel's colour as they land.
-//   leaving    the picture stands back a little and breaks up from its edges
-//              in, its grains thrown toward and past the camera, so the
-//              viewer goes through them. They keep the picture's colours.
+//   arriving   (style `frame`, the default) grains in the picture's own
+//              colours fill the whole frame, scattered in depth, and swirl
+//              in to condense into the picture exactly where the <video>
+//              sits: no card, no flight. (style `flight`) grains adrift in
+//              depth gather onto a plane that stands some way off, turned
+//              aside; as the picture comes whole the plane swings square and
+//              flies to the camera until it fills the frame. Its grains carry
+//              the dust's colour adrift and take their pixel's colour as
+//              they land.
+//   leaving    the picture breaks up from its edges in, its grains thrown
+//              toward and past the camera, so the viewer goes through them.
+//              They keep the picture's colours. In `flight` the picture first
+//              stands back a little, turned aside.
 //
 // Several sheets can run at once: stepping from one clip straight to the next
 // scatters the first while the second assembles.
@@ -28,6 +33,7 @@ uniform float uCellPx;  // one cell's width in px
 uniform float uU;       // 0..1 through the arrival or the leaving
 uniform float uFade, uTime, uLeave;
 uniform float uGlow;    // 1: the glow pass — the same grains again, wide and faint, added over
+uniform float uFlight;  // 1: style flight, the picture as a card off in the world; 0: frame, in place
 uniform vec3 uDust;
 out vec4 vColor;
 out float vLanded;
@@ -37,6 +43,7 @@ const float F = 2.1445;   // 1 / tan(25°): a plane at depth F with half-height 
 float ease(float x) { return x * x * x * (x * (x * 6.0 - 15.0) + 10.0); }
 vec3 turnY(vec3 v, float a) { float c = cos(a), s = sin(a); return vec3(c * v.x + s * v.z, v.y, -s * v.x + c * v.z); }
 vec3 turnX(vec3 v, float a) { float c = cos(a), s = sin(a); return vec3(v.x, c * v.y - s * v.z, s * v.y + c * v.z); }
+float hash(vec4 s, float k) { return fract(sin(dot(s, vec4(12.9898, 78.233, 37.719, 93.989)) + k) * 43758.5453); }
 
 void main() {
   float A = uCanvas.x / uCanvas.y;
@@ -53,13 +60,18 @@ void main() {
 
   float p;        // how far the grain is home: 0 adrift … 1 in its cell
   float away;     // how far the plane stands from the frame: 1 out in the world … 0 filling the frame
-  if (uLeave < 0.5) {
+  bool frame = uFlight < 0.5;
+  bool arriving = uLeave < 0.5;
+  if (arriving && frame) {
+    p = ease(clamp(uU * 1.35 - late * 0.35, 0.0, 1.0));                // the centre is home by 0.74, the corners by 1
+    away = 0.0;
+  } else if (arriving) {
     p = ease(clamp(uU / 0.64 * 1.6 - late * 0.6, 0.0, 1.0));           // gathered by 0.64
     away = 1.0 - ease(clamp((uU - 0.36) / 0.64, 0.0, 1.0));            // then the flight to the frame
   } else {
     float v = max(uU - 0.08, 0.0) / 0.92;                              // the sheet comes up first
     p = 1.0 - ease(clamp(v * 1.7 - (1.0 - late) * 0.7, 0.0, 1.0));
-    away = 0.42 * ease(clamp(v / 0.7, 0.0, 1.0));                      // it only steps back
+    away = frame ? 0.0 : 0.42 * ease(clamp(v / 0.7, 0.0, 1.0));        // flight steps back first
   }
   float fly = 1.0 - p;
 
@@ -79,7 +91,22 @@ void main() {
   drift.xy = vec2(drift.x * c - drift.y * s, drift.x * s + drift.y * c);
   // never still while adrift
   drift += fly * 0.05 * vec3(sin(uTime * 0.9 + aSeed.w * 40.0), cos(uTime * 0.7 + aSeed.z * 40.0), sin(uTime * 0.6 + aSeed.x * 40.0));
-  P += drift;
+  if (arriving && frame) {
+    // Scattered evenly over the whole frame (a little past its edges) at
+    // depths in front of and behind the picture: the spot is where the grain
+    // shows on screen, so it is scaled by its depth. Then home along a swirl
+    // about the frame's centre that unwinds as the grain lands.
+    vec2 spot = vec2((hash(aSeed, 1.0) * 2.0 - 1.0) * A, hash(aSeed, 2.0) * 2.0 - 1.0) * 1.08;
+    float z = (hash(aSeed, 3.0) - 0.5) * 2.4;
+    vec3 from = vec3(mix(home.xy, spot, 0.92) * (F - z) / F, z);
+    vec3 d = (from - home) * fly;
+    float w = (0.15 + 0.3 * aSeed.w) * fly * (aSeed.x > 0.5 ? 1.0 : -1.0);
+    float cw = cos(w), sw = sin(w);
+    d.xy = vec2(d.x * cw - d.y * sw, d.x * sw + d.y * cw);
+    P = home + vec3(0.0, 0.0, -F) + d + fly * 0.05 * vec3(sin(uTime * 0.9 + aSeed.w * 40.0), cos(uTime * 0.7 + aSeed.z * 40.0), 0.0);
+  } else {
+    P += drift;
+  }
 
   // through the camera
   float depth = -P.z;
@@ -99,9 +126,13 @@ void main() {
   vec3 dust = uDust * (0.55 + 0.9 * aSeed.x);
   // arriving, a grain takes its pixel's colour as it lands; leaving, it
   // keeps it (lifted a little, so a dark frame still leaves lit grains)
-  vec3 col = uLeave < 0.5
-    ? mix(dust, pix, smoothstep(0.30, 0.92, p))
-    : mix(pix, pix * 0.7 + dust * 0.3 + 0.05, smoothstep(0.0, 0.8, fly));
+  // In frame the scattered grains are already the picture's colours, tinted
+  // by the dust, so the screen fills with the clip's own palette.
+  vec3 col = !arriving
+    ? mix(pix, pix * 0.7 + dust * 0.3 + 0.05, smoothstep(0.0, 0.8, fly))
+    : frame
+      ? mix(mix(pix, dust, 0.12) + 0.05, pix, smoothstep(0.35, 0.95, p))
+      : mix(dust, pix, smoothstep(0.30, 0.92, p));
   float alpha = uFade * mix(0.5 + 0.4 * aSeed.y, 1.0, smoothstep(0.4, 1.0, p)) * (1.0 - 0.72 * blur);
   // Standing off in the world the picture is made of light: its dark parts
   // are see-through, or a night sky arrives as a black slab in front of the
@@ -109,6 +140,9 @@ void main() {
   // whole picture.
   float lum = max(pix.r, max(pix.g, pix.b));
   alpha *= mix(1.0, 0.12 + 0.88 * smoothstep(0.03, 0.42, lum), smoothstep(0.0, 0.55, away));
+  // Scattered over the frame, the same: a dark grain adrift is faint, and the
+  // dark parts of the picture fill in as their grains land.
+  if (arriving && frame) alpha *= mix(1.0, 0.15 + 0.85 * smoothstep(0.03, 0.42, lum), smoothstep(0.2, 0.9, fly));
   // Arriving, the grains come up out of nothing. Leaving, the sheet comes up
   // over the picture as the <video> under it goes (0.2 s): the sheet is the
   // picture at a strip's resolution, and put up all at once over a sharp
@@ -184,7 +218,7 @@ export function createDust(canvas) {
     console.warn('[slidev-addon-videos]', e.message || e);
     return null;
   }
-  loc = Object.fromEntries(['uTex', 'uRect', 'uUv', 'uCanvas', 'uCellPx', 'uU', 'uFade', 'uTime', 'uLeave', 'uGlow', 'uDust']
+  loc = Object.fromEntries(['uTex', 'uRect', 'uUv', 'uCanvas', 'uCellPx', 'uU', 'uFade', 'uTime', 'uLeave', 'uGlow', 'uFlight', 'uDust']
     .map((n) => [n, gl.getUniformLocation(prog, n)]));
 
   // One grid serves every sheet: cells are in picture fractions, so the same
@@ -278,6 +312,7 @@ export function createDust(canvas) {
       gl.uniform1f(loc.uU, u);
       gl.uniform1f(loc.uFade, s.fade);
       gl.uniform1f(loc.uLeave, s.mode === 'leave' ? 1 : 0);
+      gl.uniform1f(loc.uFlight, s.style === 'flight' ? 1 : 0);
       gl.uniform3f(loc.uDust, s.dust[0], s.dust[1], s.dust[2]);
       gl.bindTexture(gl.TEXTURE_2D, s.tex);
       gl.uniform1f(loc.uGlow, 0);
@@ -296,7 +331,7 @@ export function createDust(canvas) {
   }
 
   let onIdle = null;
-  function add(mode, { image, rect, uv = [0, 0, 1, 1], dust, duration, source = '' }) {
+  function add(mode, { image, rect, uv = [0, 0, 1, 1], dust, duration, source = '', style = 'frame' }) {
     if (disposed || gl.isContextLost()) return null;
     resize();
     const cols = Math.min(MAX_COLS, Math.max(MIN_COLS, Math.round(bufW / PX_PER_CELL)));
@@ -304,13 +339,14 @@ export function createDust(canvas) {
     let tex;
     try { buildGrid(cols, rows); tex = texture(image); } catch { return null; }
     const sheet = {
-      mode, tex, rect, uv, dust: parseColor(dust), duration,
+      mode, style: style === 'flight' ? 'flight' : 'frame', tex, rect, uv, dust: parseColor(dust), duration,
       start: performance.now(), progress: mode === 'enter' ? 0 : 1, fade: 1,
       assembled: false, releaseAt: null, releaseMs: 450,
     };
     sheets.add(sheet);
     canvas.dataset.dust = [...sheets].map((s) => s.mode).join(' ');
     canvas.dataset.dustSource = source;   // where the last sheet's colours came from: live | strip
+    canvas.dataset.dustStyle = sheet.style;
     canvas.dataset.dustCount = String(Number(canvas.dataset.dustCount || 0) + 1);
     if (!raf) raf = requestAnimationFrame(frame);
     return sheet;

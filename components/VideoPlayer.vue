@@ -40,6 +40,7 @@ import { getOverlay, announce, warmStrip, stripFrame, liveFrame, fitPicture, mea
 //     transition: cut             (cut | fade | dust — how a clip arrives and leaves)
 //     dust: '#7dd3fc'             (the colour of the grains in flight, `dust` only)
 //     dustFrom: lit               (lit | start — a clip that opens on black arrives as its first lit frame and plays from there)
+//     dustStyle: frame            (frame | flight — grains fill the frame and condense in place, or gather into a card that flies in)
 const CFG = (configs && configs.videos) || {}
 const ENV = import.meta.env
 const REPO    = CFG.repo    || ENV.VITE_VIDEO_REPO    || ''
@@ -102,6 +103,9 @@ const props = defineProps({
   transition: { type: String, default: '' },
   // Colour of the grains while they fly (`dust`). Default `videos.dust`, else #7dd3fc.
   dust:     { type: String, default: '' },
+  // How the grains move (`dust`): frame (default) fills the whole frame and
+  // condenses in place; flight gathers a card off in the world that flies in.
+  dustStyle: { type: String, default: '' },
 })
 const effHq     = computed(() => props.hq === undefined ? (CFG.hq ?? false) : props.hq)
 const effFit    = computed(() => props.fit || CFG.fit || 'cover')
@@ -114,6 +118,7 @@ const effTransition = computed(() => {
   return t === 'dust' && REDUCED_MOTION ? 'fade' : t
 })
 const effDust = computed(() => props.dust || CFG.dust || '#7dd3fc')
+const effDustStyle = computed(() => String(props.dustStyle || CFG.dustStyle || 'frame').toLowerCase() === 'flight' ? 'flight' : 'frame')
 const effVolume = computed(() => {
   const v = props.volume === undefined ? CFG.volume : props.volume
   return Number.isFinite(v) ? clamp01(v) : 1
@@ -181,7 +186,7 @@ function onError() {
 // through quickly never has a stale step start a clip on a slide already left.
 const FADE_MS = 450          // picture dissolve, and the sheet's hand-over to the <video>
 const INSTANT_MS = 200       // the picture going under a leaving sheet (.video-instant)
-// `videos.dustMs: [arrive, leave]` sets the two; the arrival is a gathering and then a flight to the frame
+// `videos.dustMs: [arrive, leave]` sets the two
 const DUST_MS = Array.isArray(CFG.dustMs) ? CFG.dustMs.map(Number) : []
 const DUST_ENTER_MS = DUST_MS[0] > 0 ? DUST_MS[0] : 1900
 const DUST_LEAVE_MS = DUST_MS[1] > 0 ? DUST_MS[1] : 1700
@@ -268,7 +273,7 @@ async function raiseSheet(kind, time) {
   if (sb && sb.width > 2 && (box.width < 2 || (Math.abs(box.width - sb.width) < 2 && Math.abs(box.height - sb.height) < 2))) box = sb
   if (box.width < 2 || box.height < 2) return null
   const { rect, uv } = fitPicture(box, frame.size, effFit.value)
-  return overlay[kind]({ image: frame.image, rect, uv, dust: effDust.value, source: frame.source, duration: kind === 'enter' ? DUST_ENTER_MS : DUST_LEAVE_MS })
+  return overlay[kind]({ image: frame.image, rect, uv, dust: effDust.value, style: effDustStyle.value, source: frame.source, duration: kind === 'enter' ? DUST_ENTER_MS : DUST_LEAVE_MS })
 }
 
 async function enter() {

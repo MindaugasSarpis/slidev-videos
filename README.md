@@ -37,6 +37,7 @@ Enable the addon and point it at your release in the deck headmatter:
       volume: 1                 # 0..1 default playback level (default 1)
       transition: cut           # cut | fade | dust (default cut)
       dust: '#7dd3fc'           # colour of the grains in flight (dust only)
+      dustStyle: frame          # frame | flight (dust only; default frame)
     ---
 
     <VideoPlayer src="clip_name.mp4" />
@@ -49,7 +50,7 @@ own-release step), `autoplay` (default `true`; `false` = the presenter starts
 the clip by hand, it still preloads), `loop`, `muted`, `controls` (default
 `true`), `autoHideControls` (default `true`: the native bar appears only while
 the pointer is over the bottom strip or for a few seconds after a click/tap),
-`hq`, `volume`, `fit`, `transition`, `dust`. Prop beats headmatter beats env
+`hq`, `volume`, `fit`, `transition`, `dust`, `dustStyle`. Prop beats headmatter beats env
 beats built-in.
 
 **Source chain**, front to back: a production build tries the own release,
@@ -86,8 +87,14 @@ While a clip is slow to arrive the assembled sheet holds its first frame. A
 clip that opens on black gives the grains nothing to gather into, so its
 sheet is made of the first lit frame of its opening twelve seconds and the
 clip plays from that moment (`videos.dustFrom: start` keeps the opening).
-The sheet is seen through a camera like the stage's (the same field of view),
-so over the stage it belongs to that world. `videos.dustMs: [1900, 1700]`
+By default (`dustStyle: frame`) the grains arrive spread over the whole frame,
+in the picture's own colours, and condense in place into the full-bleed clip;
+leaving, the picture breaks up where it stands and its grains are thrown past
+the camera. `dustStyle: flight` is the earlier look: the grains gather into a
+card standing off in the world, which swings square and flies to the frame,
+and a leaving picture steps back and turns aside before it breaks up. The
+sheet is seen through a camera like the stage's (the same field of view), so
+over the stage it belongs to that world. `videos.dustMs: [1900, 1700]`
 sets the two durations.
 
 The grains need the picture's pixels. Release assets are served without CORS
