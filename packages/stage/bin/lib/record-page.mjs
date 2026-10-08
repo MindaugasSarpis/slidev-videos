@@ -120,8 +120,10 @@ export function recorderHooks() {
         slide: Number((/^#\/(\d+)/.exec(location.hash) || [])[1]) || null,
         shown: !!page && getComputedStyle(page).display !== 'none',
         flying: !!(sp && sp.flying),
-        assembled: document.documentElement.hasAttribute('data-space-assembled'),
-        stage: !!st, ready: !!st && (st.classList.contains('ready') || st.classList.contains('static-bg')),
+        // a deck without the world has nothing to wait for but its slides
+        assembled: !st || document.documentElement.hasAttribute('data-space-assembled'),
+        stage: !!st,
+        ready: st ? st.classList.contains('ready') || st.classList.contains('static-bg') : !!document.querySelector('.slidev-layout'),
         at: st ? st.dataset.spaceAt ?? null : null,
         station: st ? st.dataset.spaceStation ?? null : null,
         clicks: st ? Number(st.dataset.clicks || 0) : 0,
