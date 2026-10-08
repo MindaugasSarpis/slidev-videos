@@ -40,10 +40,14 @@ def test_readme_install_lines_name_this_version():
         assert set(tags) == {version()}, rel
 
 
-def test_changelog_has_this_version_with_its_stage():
-    stage = json.loads((ROOT / "packages/stage/package.json").read_text(encoding="utf-8"))["version"]
-    assert SEMVER.match(stage)
+def test_stage_version_is_semver():
+    assert SEMVER.match(json.loads((ROOT / "packages/stage/package.json").read_text(encoding="utf-8"))["version"])
+
+
+def test_changelog_has_a_section_for_this_version_or_lists_it_unreleased():
+    # Between a branch that sets the version and the release, the entries
+    # are still under Unreleased.
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    heading = re.search(rf"^## v{re.escape(version())} .*$", changelog, re.M)
-    assert heading, f"CHANGELOG.md has no '## v{version()}' section"
-    assert f"(stage {stage})" in heading.group(0)
+    assert re.search(r"^## Unreleased\s*$", changelog, re.M)
+    assert re.search(rf"^## v{re.escape(version())}( |$)", changelog, re.M) or re.search(
+        r"^## Unreleased\s*\n+(?!## )\S", changelog, re.M), f"CHANGELOG.md has no '## v{version()}' section"

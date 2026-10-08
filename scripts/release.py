@@ -5,7 +5,8 @@ Run from a clean `main` after the owner has merged what goes in. In order:
 
 1. checks: on main, no tracked changes, the tag is free, main is not behind
    origin/main (as of the last fetch), CHANGELOG.md has entries under
-   `## Unreleased`, the new version is above the current one;
+   `## Unreleased`, the new version is above the last tag and not below the
+   files' version (a merged branch may have set it already);
 2. tests: `python3 -m pytest tests -q` (against this tree's src/) and
    `pnpm test:all`;
 3. one commit `chore: vX.Y.Z` that sets the version in pyproject.toml,
@@ -159,12 +160,16 @@ def checks(version: str, stage: str | None, cur: dict[str, str]) -> list[tuple[b
         out.append((has, "CHANGELOG.md has entries under Unreleased"))
     except (OSError, ValueError) as e:
         out.append((False, f"CHANGELOG.md: {e}"))
-    out.append((vtuple(version) > vtuple(now), f"{version} is above the current {now}"))
+    tags = [l[1:] for l in git("tag", "-l", "v[0-9]*").stdout.split() if SEMVER.match(l[1:])]
+    last_tag = max(tags, key=vtuple, default=None)
+    # A merged branch may have set the version in the files already.
+    out.append((vtuple(version) >= vtuple(now) and (not last_tag or vtuple(version) > vtuple(last_tag)),
+                f"{version} is above the last tag (v{last_tag}) and not below the files ({now})"))
     behind_files = [f"{rel} {v}" for rel, v in cur.items() if rel in VERSION_SITES and v != now]
     if behind_files:
         out.append((True, f"note: out of step with pyproject.toml, set now: {', '.join(behind_files)}"))
     if stage:
-        out.append((vtuple(stage) > vtuple(now_stage), f"stage {stage} is above the current {now_stage}"))
+        out.append((vtuple(stage) >= vtuple(now_stage), f"stage {stage} is not below the current {now_stage}"))
     else:
         last = git("describe", "--tags", "--abbrev=0", "--match", "v[0-9]*", check=False).stdout.strip()
         if last and git("diff", "--quiet", last, "HEAD", "--", "packages/stage", check=False).returncode:

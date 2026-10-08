@@ -116,9 +116,23 @@ def test_refuses_off_main_and_changes_nothing(repo):
     assert git("status", "--porcelain") == ""
 
 
-def test_refuses_a_version_not_above_the_current(repo):
-    r = repo[2]("0.5.0", "--dry-run")
-    assert r.returncode == 2 and "FAIL  0.5.0 is above the current 0.5.0" in r.stdout
+def test_refuses_a_version_not_above_the_last_tag(repo):
+    root, git, run = repo
+    git("tag", "-a", "v0.5.0", "-m", "v0.5.0")
+    r = run("0.5.0", "--dry-run")
+    assert r.returncode == 2 and "FAIL  0.5.0 is above the last tag (v0.5.0)" in r.stdout
+    assert run("0.4.9", "--dry-run").returncode == 2
+
+
+def test_accepts_a_version_a_branch_already_set(repo):
+    root, git, run = repo
+    git("tag", "-a", "v0.5.0", "-m", "v0.5.0")
+    for rel in ("pyproject.toml", "package.json", "src/slidev_videos/__init__.py"):
+        (root / rel).write_text((root / rel).read_text().replace("0.5.0", "0.6.0"))
+    git("commit", "-q", "-am", "feat: v0.6.0 by hand")
+    r = run("0.6.0", "--dry-run")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "+version" not in r.stdout and "slidev-videos#v0.6.0" in r.stdout and "+## v0.6.0 — " in r.stdout
 
 
 def test_dry_run_on_main_prints_the_diff(repo):

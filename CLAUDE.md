@@ -119,7 +119,9 @@ git would show a change that release.py refuses.
 ## Releasing
 
 1. The owner merges what goes in (merge commits) and pulls main.
-2. Make CHANGELOG.md's `## Unreleased` match what landed.
+2. Make CHANGELOG.md's `## Unreleased` match what landed. Branches add
+   entries there and leave version strings to release.py
+   (`tests/test_versions.py` holds them together).
 3. In an installed checkout on main:
    `PATH=~/micromamba/envs/outreach_talks/bin:$PATH /usr/bin/python3 scripts/release.py X.Y.Z [--stage A.B.C] --dry-run`,
    read the plan and the diff, then run it without `--dry-run`. Give
