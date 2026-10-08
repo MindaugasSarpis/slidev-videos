@@ -51,7 +51,7 @@ import threading
 import time
 import tomllib
 import zipfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
 from dataclasses import dataclass
 from collections.abc import Sequence
 from pathlib import Path
@@ -2176,24 +2176,45 @@ def _sigterm_raises():
     """Turn SIGTERM into _Terminated while the block runs.
 
     `timeout` and process supervisors stop a command with SIGTERM, whose
-    default action skips every `finally`, leaving half-downloaded clips.
+    default action skips every `finally`, leaving half-downloaded clips. The
+    handler sets _STOP at once. Yields a gate: while gate["hold"] is true the
+    raise waits, and gate.release() raises it then; ThreadPoolExecutor.submit
+    must not be interrupted, or the pool loses track of the worker it was
+    starting and shutdown() no longer waits for it.
     """
+    gate = _Gate()
     if threading.current_thread() is not threading.main_thread():
-        yield
+        yield gate
         return
 
     def handler(signum, frame):
+        _STOP.set()
+        if gate["hold"]:
+            gate["pending"] = True
+            return
         raise _Terminated(signum)
     previous = signal.signal(signal.SIGTERM, handler)
     try:
-        yield
+        yield gate
     finally:
         signal.signal(signal.SIGTERM, previous)
+
+
+class _Gate(dict):
+    def __init__(self):
+        super().__init__(hold=False, pending=False)
+
+    def release(self) -> None:
+        self["hold"] = False
+        if self["pending"]:
+            raise _Terminated(signal.SIGTERM)
 
 
 def _download(url: str, dest: Path) -> bool:
     """Fetch url to dest (streamed). False on any failure or on _STOP; dest is removed then."""
     import urllib.request
+    if _STOP.is_set():
+        return False
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "slidev-videos"})
         with urllib.request.urlopen(req, timeout=60) as r, dest.open("wb") as f:
@@ -2288,6 +2309,19 @@ def _frames_current(entry: dict | None, out_dir: Path, args: argparse.Namespace)
         and entry.get("interval") == plan["interval"]
         and entry.get("count") == plan["count"]
     )
+
+
+def _as_completed_interruptibly(futures):
+    """as_completed() that wakes every quarter second.
+
+    A process-wide SIGTERM may land on a worker thread; Python then runs the
+    handler only when the main thread next executes, and an untimed wait for
+    a long download would hold it off until that download ends.
+    """
+    pending = set(futures)
+    while pending:
+        done, pending = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
+        yield from done
 
 
 def _sweep_frames_leftovers(out_dir: Path) -> int:
@@ -2393,12 +2427,15 @@ def cmd_frames(args: argparse.Namespace) -> int:
     workers = max(1, min(int(args.jobs), len(jobs) or 1))
     _STOP.clear()
     try:
-        with _sigterm_raises(), tempfile.TemporaryDirectory(prefix="slidev-videos-frames-") as scratch, \
+        with _sigterm_raises() as gate, tempfile.TemporaryDirectory(prefix="slidev-videos-frames-") as scratch, \
                 ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {pool.submit(_frames_one, name, src, out_dir, args, Path(scratch)): (name, tier, src)
-                       for name, tier, src in jobs}
+            futures: dict = {}
             try:
-                for fut in as_completed(futures):
+                gate["hold"] = True
+                for name, tier, src in jobs:
+                    futures[pool.submit(_frames_one, name, src, out_dir, args, Path(scratch))] = (name, tier, src)
+                gate.release()
+                for fut in _as_completed_interruptibly(futures):
                     name, tier, src = futures[fut]
                     try:
                         _, entry, msg = fut.result()
@@ -2419,8 +2456,7 @@ def cmd_frames(args: argparse.Namespace) -> int:
                 # the pool then waits for running cuts before the scratch
                 # directory is removed.
                 _STOP.set()
-                for fut in futures:
-                    fut.cancel()
+                pool.shutdown(wait=False, cancel_futures=True)
                 raise
     except (_Terminated, KeyboardInterrupt) as e:
         _write_frames_index(out_dir, index)
@@ -2483,6 +2519,14 @@ def cmd_contact_sheet(args: argparse.Namespace) -> int:
         print("error: contact-sheet needs ffmpeg and ffprobe (see `slidev-videos doctor`)", file=sys.stderr)
         return 2
     out = Path(args.out) if args.out else _sheet_out(src)
+    try:
+        return _contact_sheet(args, src, is_url, out)
+    except _Terminated:
+        print("\ninterrupted.", file=sys.stderr)
+        return 128 + signal.SIGTERM
+
+
+def _contact_sheet(args: argparse.Namespace, src: str, is_url: bool, out: Path) -> int:
     with _sigterm_raises(), tempfile.TemporaryDirectory(prefix="slidev-videos-sheet-") as scratch:
         info = _probe_media(src)
         if info is None and is_url:
