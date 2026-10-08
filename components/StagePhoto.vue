@@ -39,7 +39,14 @@ const props = defineProps({
   // arrival duration in ms, or [arrive, leave]; default videos.dustMs
   dustMs: { type: [Number, Array], default: undefined },
   fit:    { type: String, default: 'cover' },
+  // The slot (headline, credit) waits for the picture: hidden while the
+  // grains gather, in over 300 ms once the sharp image is up, and out in
+  // 250 ms before the picture breaks up; so two headlines never show at once.
+  // `false` leaves the slot to the deck's own transition.
+  holdText: { type: Boolean, default: true },
 })
+const SLOT_IN_MS = 300
+const SLOT_OUT_MS = 250
 
 const STYLES = ['frame', 'flight', 'none']
 const REDUCED_MOTION = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -63,7 +70,9 @@ const moving = computed(() => mode.value !== 'none' && !REDUCED_MOTION && $rende
 const rootRef = ref(null)
 const imgRef = ref(null)
 const revealed = ref(true)     // the sharp <img> is showing
-const instant = ref(false)     // hide at once: a sheet of grains has just come up over it
+const slotOn = ref(true)       // the slot is showing
+const instant = ref(false)     // hide at once (no hand-over)
+const leaving = ref(false)     // going under a leaving sheet
 let run = 0
 let sheet = null
 let shown = false
@@ -106,12 +115,15 @@ function loaded() {
   })
 }
 
+const holding = computed(() => moving.value && props.holdText)
+
 async function enter() {
   const id = ++run
   shown = false
-  if (!moving.value) { revealed.value = true; shown = true; return }
+  if (!moving.value) { revealed.value = true; slotOn.value = true; shown = true; return }
   instant.value = true
   revealed.value = false
+  if (holding.value) slotOn.value = false
   await nextTick()             // laid out before measuring
   instant.value = false
   const ok = await loaded()
@@ -133,6 +145,7 @@ async function enter() {
   sheet?.release(450)
   sheet = null
   revealed.value = true
+  slotOn.value = true          // in with the gradient, over SLOT_IN_MS
   shown = true
 }
 
@@ -142,38 +155,49 @@ function leave() {
   sheet = null
   const wasShown = shown
   shown = false
-  if (!moving.value || !wasShown) { revealed.value = true; return }
+  if (!moving.value || !wasShown) { revealed.value = true; slotOn.value = !holding.value; return }
+  // The words go first: the sheet comes up over the picture at once (the deck
+  // may take the slide away any moment) and holds it whole while they fade,
+  // then breaks up.
+  if (holding.value) slotOn.value = false
   const overlay = getOverlay()
   const g = geometry()
   const handle = overlay && g
     ? overlay.leave({ image: imgRef.value, rect: g.rect, uv: g.uv, dust: grainColor.value, style: mode.value,
-                      duration: ms.value.leave, source: 'image' })
+                      duration: ms.value.leave, source: 'image', hold: holding.value ? SLOT_OUT_MS : 0 })
     : null
   // the world takes the picture's colour, as it does a clip's
   announce('transition', { phase: 'leave', mode: 'dust', src: props.src, duration: ms.value.leave,
                            color: handle ? meanColor(imgRef.value) : null })
   if (handle) {
-    instant.value = true       // the sheet is the picture now
+    leaving.value = true       // the picture goes under the sheet as it comes up (0.2 s)
     revealed.value = false
-    handle.done.then(() => { if (id === run) { instant.value = false; revealed.value = true } })
+    handle.done.then(() => { if (id === run) { leaving.value = false; revealed.value = true; slotOn.value = !holding.value } })
   }
 }
 
 watch(isActive, (on) => { on ? enter() : leave() })
-onMounted(() => { if (isActive.value) enter() })
+// a slide that is not up yet waits with its words hidden, so they cannot show
+// before its arrival runs (a preloaded slide, the deck's fade)
+onMounted(() => { if (isActive.value) enter(); else if (holding.value) slotOn.value = false })
 onUnmounted(() => { run++; sheet?.cancel(); sheet = null })
 </script>
 
 <template>
-  <div ref="rootRef" class="hero stage-photo" :class="{ 'stage-photo-moving': moving, 'stage-photo-held': !revealed, 'stage-photo-instant': instant }"
+  <div ref="rootRef" class="hero stage-photo" :class="{ 'stage-photo-moving': moving, 'stage-photo-held': !revealed, 'stage-photo-instant': instant, 'stage-photo-leaving': leaving }"
        :style="{ '--focus': focus }" :data-photo-phase="revealed ? 'shown' : 'held'">
     <img ref="imgRef" :src="src" :alt="alt" :class="{ contain: fit === 'contain' }" decoding="async" />
-    <slot />
+    <div class="stage-photo-slot" :class="{ 'stage-photo-slot-off': !slotOn }"><slot /></div>
   </div>
 </template>
 
 <style>
-/* Full bleed on its own; a talk's .hero styles add to it. */
+/* Full bleed on its own; a talk's .hero styles add to it. The slot's box is
+   the photo's, so `.hero .hero-text` and `.credit` place as before; it sits
+   above the hero's gradient (::after). */
+.stage-photo > .stage-photo-slot { position: absolute; inset: 0; z-index: 1; pointer-events: none; transition: opacity 300ms ease; }
+.stage-photo > .stage-photo-slot > * { pointer-events: auto; }
+.stage-photo > .stage-photo-slot.stage-photo-slot-off { opacity: 0; transition: opacity 250ms ease; }
 .stage-photo { position: absolute; inset: 0; overflow: hidden; }
 .stage-photo > img {
   position: absolute; inset: 0; width: 100%; height: 100%;
@@ -191,4 +215,5 @@ html .stage-photo.stage-photo-held { background: transparent; }
 html .stage-photo.stage-photo-held::after { opacity: 0; }
 html .stage-photo.stage-photo-moving::after { transition: opacity 450ms ease; }
 html .stage-photo.stage-photo-instant > img { transition: none; }
+html .stage-photo.stage-photo-leaving > img { transition: opacity 200ms ease; }
 </style>

@@ -32,6 +32,7 @@ uniform vec2 uCanvas;   // canvas size in px
 uniform float uCellPx;  // one cell's width in px
 uniform float uU;       // 0..1 through the arrival or the leaving
 uniform float uFade, uTime, uLeave;
+uniform float uUp;      // leaving: how far the sheet has come up over the picture, 0..1 (over 0.2 s)
 uniform float uGlow;    // 1: the glow pass — the same grains again, wide and faint, added over
 uniform float uFlight;  // 1: style flight, the picture as a card off in the world; 0: frame, in place
 uniform vec3 uDust;
@@ -147,7 +148,7 @@ void main() {
   // over the picture as the <video> under it goes (0.2 s): the sheet is the
   // picture at a strip's resolution, and put up all at once over a sharp
   // frame it showed as a drop in quality before anything had moved.
-  alpha *= smoothstep(0.0, uLeave < 0.5 ? 0.10 : 0.12, uU);
+  alpha *= uLeave < 0.5 ? smoothstep(0.0, 0.10, uU) : smoothstep(0.0, 1.0, uUp);
   vColor = vec4(col, alpha);
   vLanded = smoothstep(0.94, 1.0, p);   // square only on the last step home: a square in flight reads as confetti
   if (uGlow > 0.5) {
@@ -175,6 +176,7 @@ void main() {
 }`;
 
 const MAX_BUFFER_W = 2560;    // drawing-buffer cap, as in the stage
+const UP_MS = 200;            // a leaving sheet comes up over the picture in this long
 const MIN_COLS = 200, MAX_COLS = 448, PX_PER_CELL = 6;
 
 const smooth = (x) => x * x * (3 - 2 * x);
@@ -218,7 +220,7 @@ export function createDust(canvas) {
     console.warn('[slidev-addon-videos]', e.message || e);
     return null;
   }
-  loc = Object.fromEntries(['uTex', 'uRect', 'uUv', 'uCanvas', 'uCellPx', 'uU', 'uFade', 'uTime', 'uLeave', 'uGlow', 'uFlight', 'uDust']
+  loc = Object.fromEntries(['uTex', 'uRect', 'uUv', 'uCanvas', 'uCellPx', 'uU', 'uFade', 'uTime', 'uLeave', 'uUp', 'uGlow', 'uFlight', 'uDust']
     .map((n) => [n, gl.getUniformLocation(prog, n)]));
 
   // One grid serves every sheet: cells are in picture fractions, so the same
@@ -291,7 +293,10 @@ export function createDust(canvas) {
     gl.activeTexture(gl.TEXTURE0);
 
     for (const s of [...sheets]) {
-      const u = Math.min(1, (now - s.start) / s.duration);
+      // a leaving sheet comes up over 0.2 s and can hold whole for `hold` ms before it breaks up
+      const t = now - s.start;
+      const u = Math.min(1, Math.max(0, t - (s.mode === 'leave' ? s.hold : 0)) / s.duration);
+      gl.uniform1f(loc.uUp, Math.min(1, t / UP_MS));
       if (s.mode === 'enter') {
         s.progress = u;
         if (u >= 1 && !s.assembled) { s.assembled = true; s.onAssembled?.(); }
@@ -331,7 +336,7 @@ export function createDust(canvas) {
   }
 
   let onIdle = null;
-  function add(mode, { image, rect, uv = [0, 0, 1, 1], dust, duration, source = '', style = 'frame' }) {
+  function add(mode, { image, rect, uv = [0, 0, 1, 1], dust, duration, source = '', style = 'frame', hold = 0 }) {
     if (disposed || gl.isContextLost()) return null;
     resize();
     const cols = Math.min(MAX_COLS, Math.max(MIN_COLS, Math.round(bufW / PX_PER_CELL)));
@@ -340,6 +345,7 @@ export function createDust(canvas) {
     try { buildGrid(cols, rows); tex = texture(image); } catch { return null; }
     const sheet = {
       mode, style: style === 'flight' ? 'flight' : 'frame', tex, rect, uv, dust: parseColor(dust), duration,
+      hold: Math.max(0, Number(hold) || 0),
       start: performance.now(), progress: mode === 'enter' ? 0 : 1, fade: 1,
       assembled: false, releaseAt: null, releaseMs: 450,
     };
@@ -373,6 +379,7 @@ export function createDust(canvas) {
       };
     },
     // Break the picture into dust. `done` resolves when the last grain is gone.
+    // `hold` (ms): the sheet comes up and stays whole that long first.
     leave(opts) {
       const sheet = add('leave', { duration: 1700, ...opts });
       if (!sheet) return null;

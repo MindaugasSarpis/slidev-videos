@@ -83,6 +83,11 @@ crop's `object-position`), `dust` (`frame` | `flight` | `none`, default
 `[arrive, leave]`, default `videos.dustMs`), `fit` (`cover` | `contain`).
 Only the audience's slide moves: the presenter window, the overview, the
 next-slide preview, print and reduced motion show the plain image.
+The slot waits for the picture, so two headlines never show at once: it is
+hidden while the grains gather, fades in over 300 ms once the sharp image is
+up, and on leave fades out in 250 ms while the grains hold the picture whole,
+before it breaks up. `:hold-text="false"` leaves the slot to the deck's own
+transition.
 
 **Source chain**, front to back: a production build tries the own release,
 then the shared release, then `videos/` and `videos-hq/` under the deck's
