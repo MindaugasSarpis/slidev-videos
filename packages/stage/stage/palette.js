@@ -9,6 +9,11 @@
 // two glows, the dust at rest and at speed, the lights, the rims and halos,
 // the label inks. The same values reach CSS as --stage-* custom properties on
 // <html>, so slide styles, panels and the halo layer stay in step.
+//
+// `text` is the accent text is set in (kickers, section and cover labels,
+// panel kickers): the accent itself in classic and blue, light blue in ember,
+// whose amber stays in the dust and the glows. A palette that changes its
+// accent and not its text takes the new accent for its text too.
 
 import { shared } from './shared.js';
 
@@ -19,6 +24,7 @@ const SHIPPED = {
     fg: '#f2f5f9',
     dim: '#8b97a6',
     accent: '#7dd3fc',
+    text: '#7dd3fc',       // accent text: kickers, labels
     dust: '#4d8cb8',
     dustBright: '#fafcff',
     sky: '#7dd3fc',        // hemisphere light from above
@@ -36,6 +42,7 @@ const SHIPPED = {
     fg: '#f1f5ff',
     dim: '#8794b3',
     accent: '#5b93ff',
+    text: '#5b93ff',
     dust: '#2c5fe0',
     dustBright: '#d6e4ff',
     sky: '#4f86ff',
@@ -53,6 +60,7 @@ const SHIPPED = {
     fg: '#fbf4ec',
     dim: '#a8988a',
     accent: '#ffb168',
+    text: '#9fd8ff',       // light blue, not amber: no warm text
     dust: '#b8683a',
     dustBright: '#fff3e2',
     sky: '#ffb877',
@@ -122,7 +130,7 @@ const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 // definePalette('venue', { accent: '#…', … }, { nebula: 0.5 }): the third
 // argument, when given, is the look that comes with the name.
 export function definePalette(name, colours, look) {
-  PALETTES[name] = { ...DEFAULT_PALETTE, ...colours };
+  PALETTES[name] = { ...DEFAULT_PALETTE, ...(colours?.accent && !colours.text ? { text: colours.accent } : {}), ...colours };
   if (look && typeof look === 'object') LOOKS[name] = { ...look };
   return PALETTES[name];
 }
@@ -141,6 +149,9 @@ export function resolvePalette(input) {
     const v = over[k];
     if (typeof v === 'string' && HEX.test(v.trim())) out[k] = v.trim();
   }
+  // a new accent without a text of its own: the text follows it, unless the
+  // base sets its text apart from its accent on purpose (ember)
+  if (out.accent !== base.accent && out.text === base.text && base.text === base.accent) out.text = out.accent;
   return out;
 }
 
@@ -212,6 +223,7 @@ export function paletteVars(p) {
     '--stage-fg': p.fg,
     '--stage-dim': p.dim,
     '--stage-accent': p.accent,
+    '--stage-text-accent': p.text || p.accent,
     '--stage-dust': p.dust,
     '--stage-nebula': p.nebula,
     '--stage-bg-rgb': rgbTriplet(p.bg),

@@ -223,7 +223,7 @@ const tally = computed(() => String(events.value).padStart(3, '0'))
   text-transform: uppercase; letter-spacing: 0.12em;
 }
 .kicker {
-  font-size: 12.5px; color: var(--accent); margin: 0 0 22px; font-weight: 500;
+  font-size: 12.5px; color: var(--stage-text-accent, var(--accent)); margin: 0 0 22px; font-weight: 500;
 }
 .title {
   margin: 0; font-weight: 700; text-transform: uppercase;

@@ -4,6 +4,18 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## v0.6.1 — 2026-10-09
+
+slidev-videos 0.6.1 · slidev-addon-videos 0.6.1 · slidev-addon-stage 0.3.1
+
+- **No warm text.** A palette has a text accent, `text` (CSS
+  `--stage-text-accent`), which the CSS kit's kickers, the cover's and a
+  section's label, StagePanel's kicker and StageHero's kicker are set in.
+  It is the accent in `classic` and `blue` (unchanged), and light blue
+  `#9fd8ff` in `ember`, whose kickers were amber `#ffb168`; ember's amber dust,
+  glows and lights are as they were. A palette given a new `accent` and no
+  `text` carries the accent into its text, as before.
+
 ## v0.6.0 — 2026-10-09
 
 slidev-videos 0.6.0 · slidev-addon-videos 0.6.0 · slidev-addon-stage 0.3.0

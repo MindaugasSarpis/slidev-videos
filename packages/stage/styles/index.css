@@ -82,7 +82,7 @@ html[data-stage] .caption { font-size: max(var(--stage-type-min, 0px), 20px * va
 html[data-stage] .quote-line { font-size: max(var(--stage-type-min, 0px), 22px * var(--stage-type-scale, 1)); font-weight: 500; line-height: 1.35; max-width: 60ch; color: var(--stage-fg); }
 html[data-stage] .quote-line .who,
 html[data-stage] .quote-hero .who { display: block; margin-top: 12px; font-size: max(var(--stage-type-min, 0px), 15px * var(--stage-type-scale, 1)); font-weight: 400; color: var(--stage-dim); letter-spacing: 0.04em; }
-html[data-stage] .kicker { font-size: max(var(--stage-type-min, 0px), 12.5px * var(--stage-type-scale, 1)); font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--stage-accent); margin: 0 0 14px; }
+html[data-stage] .kicker { font-size: max(var(--stage-type-min, 0px), 12.5px * var(--stage-type-scale, 1)); font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--stage-text-accent, var(--stage-accent)); margin: 0 0 14px; }
 /* a large quotation beside something that stands in the world */
 html[data-stage] .quote-hero { position: absolute; right: max(4%, var(--stage-safe-x, 0px)); top: 22%; width: 43%; font-size: max(var(--stage-type-min, 0px), 26px * var(--stage-type-scale, 1)); line-height: 1.35; font-weight: 500; color: var(--stage-fg); }
 html[data-stage] .quote-hero.wide { left: max(44px, var(--stage-safe-x, 0px)); right: auto; top: 28%; width: 68%; }
@@ -121,7 +121,7 @@ html[data-stage][data-space-stop="1"] .slidev-page .slidev-layout { opacity: 0; 
        ## subtitle
        <div class="mt-md">byline</div>                                         */
 html[data-stage] .slidev-layout.cover { font-family: var(--stage-font); padding-left: 11% !important; text-align: left; display: flex; flex-direction: column; justify-content: center; }
-html[data-stage] .slidev-layout.cover h1:first-of-type { font-size: max(var(--stage-type-min, 0px), 12.5px * var(--stage-type-scale, 1)) !important; font-weight: 500 !important; letter-spacing: 0.12em !important; text-transform: uppercase; color: var(--stage-accent) !important; margin: 0 0 20px !important; }
+html[data-stage] .slidev-layout.cover h1:first-of-type { font-size: max(var(--stage-type-min, 0px), 12.5px * var(--stage-type-scale, 1)) !important; font-weight: 500 !important; letter-spacing: 0.12em !important; text-transform: uppercase; color: var(--stage-text-accent, var(--stage-accent)) !important; margin: 0 0 20px !important; }
 html[data-stage] .slidev-layout.cover h1:nth-of-type(2) { font-size: max(var(--stage-type-min, 0px), 66px * var(--stage-type-scale, 1)) !important; font-weight: 700 !important; line-height: 0.98 !important; letter-spacing: -0.02em !important; text-transform: uppercase; color: var(--stage-fg) !important; margin: 0 0 26px !important; max-width: 12ch; }
 html[data-stage] .slidev-layout.cover h2 { font-size: max(var(--stage-type-min, 0px), 12px * var(--stage-type-scale, 1)) !important; font-weight: 400 !important; letter-spacing: 0.1em !important; text-transform: uppercase; color: var(--stage-dim) !important; line-height: 1.9 !important; max-width: 62ch; margin: 0 !important; }
 html[data-stage] .slidev-layout.cover .mt-md { font-size: max(var(--stage-type-min, 0px), 11px * var(--stage-type-scale, 1)); letter-spacing: 0.12em; text-transform: uppercase; color: var(--stage-dim); margin-top: 18px; }
@@ -160,7 +160,7 @@ html[data-stage] .slidev-page .slidev-layout.cover { background: transparent !im
    the frame. Markdown: `# Part I` and a line under it. */
 html[data-stage] .slidev-layout.section { display: flex !important; flex-direction: column; justify-content: flex-end; align-items: flex-start; padding: 0 0 9% 8% !important; }
 html[data-stage] .slidev-layout.section > div { margin: 0 !important; text-align: left !important; }
-html[data-stage] .slidev-layout.section h1 { font-size: max(var(--stage-type-min, 0px), 12.5px * var(--stage-type-scale, 1)) !important; font-weight: 500 !important; letter-spacing: 0.12em; text-transform: uppercase; color: var(--stage-accent) !important; margin: 0 0 14px !important; }
+html[data-stage] .slidev-layout.section h1 { font-size: max(var(--stage-type-min, 0px), 12.5px * var(--stage-type-scale, 1)) !important; font-weight: 500 !important; letter-spacing: 0.12em; text-transform: uppercase; color: var(--stage-text-accent, var(--stage-accent)) !important; margin: 0 0 14px !important; }
 html[data-stage] .slidev-layout.section h1 + p,
 html[data-stage] .slidev-layout.section .sub {
   font-size: max(var(--stage-type-min, 0px), 44px * var(--stage-type-scale, 1)) !important; font-weight: 700; line-height: 1.02; letter-spacing: -0.02em; text-transform: uppercase;

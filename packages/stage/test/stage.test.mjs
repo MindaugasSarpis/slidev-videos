@@ -123,6 +123,18 @@ test('every shipped palette is complete and well-formed', () => {
   }
 });
 
+test('text accents are never warm; a new accent carries the text with it', () => {
+  const warm = (hex) => { const [r, g, b] = hexToRgb(hex); return r > b + 0.15 && g > b; };   // amber, gold, orange
+  for (const [name, p] of Object.entries(PALETTES)) if (!name.startsWith('test-')) assert.ok(!warm(p.text), `${name}.text ${p.text}`);
+  assert.ok(warm(PALETTES.ember.accent));                                   // ember's amber stays, in the dust and glows
+  assert.equal(PALETTES.ember.text, '#9fd8ff');
+  assert.equal(paletteVars(PALETTES.ember)['--stage-text-accent'], '#9fd8ff');
+  assert.equal(resolvePalette({ base: 'blue', accent: '#ff0000' }).text, '#ff0000');     // blue's text was its accent
+  assert.equal(resolvePalette({ base: 'ember', accent: '#ff0000' }).text, '#9fd8ff');    // ember's is its own
+  assert.equal(resolvePalette({ base: 'ember', text: '#ffffff' }).text, '#ffffff');
+  assert.equal(definePalette('test-text', { accent: '#223344' }).text, '#223344');
+});
+
 test('the blue palette is bluer than the classic', () => {
   const blueness = (hex) => { const [r, g, b] = hexToRgb(hex); return b - (r + g) / 2; };
   assert.ok(blueness(PALETTES.blue.dust) > blueness(PALETTES.classic.dust));

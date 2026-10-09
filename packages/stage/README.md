@@ -13,7 +13,7 @@ quarks, clusters, particle names — is a plugin.
 
 ## Install
 
-    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.6.0&path:/packages/stage"
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.6.1&path:/packages/stage"
 
 ## Use
 
@@ -86,13 +86,17 @@ fade; see the root README's *Place groups*. The engine side is
 
 ### Palettes and looks
 
-| | ground | accent | dust | nebula |
-| --- | --- | --- | --- | --- |
-| `classic` | near-black | cyan `#7dd3fc` | dim cyan → white | off (Startertalk's look, unchanged) |
-| `blue` | blue-black | `#5b93ff` | ultramarine → pale blue | 0.8 |
-| `ember` | brown-black | `#ffb168` | amber → cream | 0.7 |
+| | ground | accent | text accent | dust | nebula |
+| --- | --- | --- | --- | --- | --- |
+| `classic` | near-black | cyan `#7dd3fc` | the accent | dim cyan → white | off (Startertalk's look, unchanged) |
+| `blue` | blue-black | `#5b93ff` | the accent | ultramarine → pale blue | 0.8 |
+| `ember` | brown-black | `#ffb168` | light blue `#9fd8ff` | amber → cream | 0.7 |
 
-A palette is fourteen colours (`stage/palette.js`); a *look* is the engine
+A palette is fifteen colours (`stage/palette.js`). `text` is the accent text
+is set in (kickers, the cover's and a section's label, panel kickers; CSS
+`--stage-text-accent`): no shipped palette sets text in gold or amber. A
+palette that changes its `accent` and not its `text` takes the new accent for
+its text too. A *look* is the engine
 options that come with its name. The nebula is painted on a sphere round the
 camera, so it turns as the camera turns and stands still as it travels.
 `options` in the headmatter win over the look: `options: { nebula: 0 }`.
