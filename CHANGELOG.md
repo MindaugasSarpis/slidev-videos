@@ -4,7 +4,9 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
-## Unreleased (v0.6.3)
+## v0.6.3 — 2026-10-09
+
+slidev-videos 0.6.3 · slidev-addon-videos 0.6.3 · slidev-addon-stage 0.3.3
 
 - **`slidev-stage-record` under 12 fps records at the live pace.** The
   engine clamps a frame to 1/12 s (StageHero's simulation to 1/30 s), so a
