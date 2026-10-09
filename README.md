@@ -6,7 +6,7 @@ takes the ones it wants.
 
 | tool | where | what it is |
 | --- | --- | --- |
-| **`slidev-videos`** | `src/` (Python ≥3.11, stdlib only) | manifest-driven CLI: `fetch · sync · encode · encode-hq · publish · publish-hq · pull · pull-hq · check · shared-check · frames · clean · preflight · venue · build · discover · depth`. Web tier is 1080p H.264 with EBU R128 loudness normalisation; clips are hosted as GitHub Release assets |
+| **`slidev-videos`** | `src/` (Python ≥3.11, stdlib only) | manifest-driven CLI: `fetch · sync · encode · encode-hq · publish · publish-hq · pull · pull-hq · check · shared-check · frames · clean · preflight · venue · build · discover · depth · doctor · contact-sheet`. Web tier is 1080p H.264 with EBU R128 loudness normalisation; clips are hosted as GitHub Release assets |
 | **`slidev-addon-videos`** | repo root | the full-bleed `VideoPlayer`: a local → own-release → shared-release fallback chain, slide-driven playback, look-ahead preload, `cut` / `fade` / `dust` transitions, advance-on-end, native auto-hide controls, keyboard volume; and `StagePhoto`, a photograph that arrives and leaves as grains, or stands in the world as a place |
 | **`slidev-addon-stage`** | [`packages/stage`](packages/stage/README.md) | one persistent 3D world under a whole deck: stations in a field of dust, a camera that flies from slide to slide, palettes, a broadcast look, a builder registry, halo borders, photo places, a validator, a screenshot tool, a per-slide video recorder and a safe-area check |
 | **the shared clip library** | `src/slidev_videos/shared.toml` | the registry, with the encodes on this repo's `videos-shared` Release |
@@ -163,8 +163,9 @@ then the shared release, then `videos/` and `videos-hq/` under the deck's
 `public/` (only present in a keep-videos build — the offline fallback);
 `slidev` dev mode tries the local copies first. Setting
 `VITE_VIDEOS_LOCAL_FIRST=1` at build time makes a keep-videos build
-local-first too. Each `<source>` failure advances the chain; when it is
-exhausted the slide shows `Video not available: <src>`.
+local-first too; `slidev-videos venue` always builds with it. Each
+`<source>` failure advances the chain; when it is exhausted the slide shows
+`Video not available: <src>`.
 
 **Playback** is slide-driven: rewind + play on activation (muted first, then
 unmuted unless `muted`), pause + rewind on deactivation. A `<source>` is only
@@ -212,13 +213,16 @@ leaving the tile at the moment the presenter moved on. Where the clip is
 same-origin (dev mode, venue and portable builds) the frame on screen is read
 directly instead. No strip, no overlay, no WebGL2 or `prefers-reduced-motion`:
 the clip fades. `check` lists the `dust` clips that have no strip. `frames`
-cuts from the local copy if there is one, else from the release; where
-ffmpeg cannot read HTTPS (the static Linux builds crash on it) the clip is
-downloaded, cut and removed. Beside each strip it writes a poster,
-`<clip>.poster.jpg`: the first frame with 5 % of it lit (past an opening fade
-from black, and past a speck on black), up to 1280 px wide, which print and
-PDF export show; a manifest entry's `poster = "0:24"` names the moment instead
-(`frames --all` gives every clip one, not only the `dust` clips).
+cuts from the web tier, which a deployed deck plays: the local web copy, else
+the talk's release, else the shared release (a local HQ copy only as a last
+resort). Where the ffmpeg in use cannot read HTTPS the clip is downloaded
+into a temporary directory outside the deck, cut and removed; a run stopped
+with SIGTERM (`timeout`) removes its downloads too and exits 143. Beside each
+strip it writes a poster, `<clip>.poster.jpg`: the first frame with 5 % of it
+lit (past an opening fade from black, and past a speck on black), up to
+1280 px wide, which print and PDF export show; a manifest entry's
+`poster = "0:24"` names the moment instead (`frames --all` gives every clip
+one, not only the `dust` clips).
 
 Other addons can follow along on `window`: `slidev-videos:transition`
 `{ phase: 'enter' | 'leave', mode, src, duration, color }` and
@@ -266,6 +270,19 @@ the stage's tests.
     release_tag   = "videos-web"
     source_remote = "gdrive:your/raws"  # for `sync`
     # web_long_edge_px = 1920, max_size_mb = 200, loudnorm = true, ...
+    # ffmpeg_dir = "~/micromamba/envs/talks/bin"   # optional, see below
+
+**Which ffmpeg.** `$SLIDEV_VIDEOS_FFMPEG_DIR`, then `[defaults].ffmpeg_dir`,
+name the directory holding the ffmpeg and ffprobe to use. After those the CLI
+looks in `$CONDA_PREFIX/bin`, `~/micromamba/envs/*/bin` (also miniforge3,
+mambaforge, miniconda3) and every PATH entry. It skips a build that crashes
+on an offline HTTPS probe, as the static Linux builds do, and among the builds
+it finds on its own it prefers one with NVENC. Each build is probed once; the
+result is cached in `~/.cache/slidev-videos/tools.json` until the binary
+changes. Choosing a binary does not change how it encodes: `encode` still
+test-encodes `h264_nvenc`, with the web tier's rate-control options, on the
+chosen ffmpeg to decide between NVENC and libx264. `slidev-videos doctor`
+shows the pair in use, the ones passed over and why.
 
 Manifest (`videos/manifest.toml`) entries:
 
@@ -276,6 +293,13 @@ Manifest (`videos/manifest.toml`) entries:
     trim    = ["0:20", "1:50"]    # optional; remux trims on keyframes
     poster  = "0:24"              # optional; the print poster's moment (default: the first frame 5 % lit)
     notes   = "what it shows"
+
+A web profile is one quality target for both encoders. On NVENC its `-cq`
+is set to match or beat libx264 `-preset slow` at the profile's `-crf` on
+SSIM and XPSNR (see `WEB_PROFILES` in `pipeline.py` for the measurement).
+`encode` skips a clip whose web file is newer than its raw, so a change of
+profile settings reaches a clip only when it is re-encoded (a newer raw, or
+`encode --force`).
 
 ## The shared library
 
@@ -310,12 +334,41 @@ Names changed when the outreach decks moved onto the library (2026-09-08):
     slidev-videos encode && slidev-videos publish
     slidev-videos check          # manifest vs slides vs raw/web (and dust clips without a strip)
     slidev-videos frames         # frame strips for the dust transition -> public/video-frames/ (commit them)
-    slidev-videos preflight      # what will the deployed deck actually serve?
+    slidev-videos preflight      # probe what the deck will really play (--mode remote-first: the deployed deck)
     slidev-videos pull           # restore local web copies from the release
     slidev-videos discover "cloud chamber" lhc --source cds,nasa   # find new clips; prints [[videos]] snippets
+    slidev-videos doctor         # CLI version and install, the ffmpeg in use, gh, rclone, the deck's addon versions
+    slidev-videos contact-sheet clip.mp4 --every 10   # one PNG of a candidate clip's frames (a file or https URL)
 
 Run from anywhere inside a project (`videos.toml` is found by walking up), or
-pass `--project <dir>`.
+pass `--project <dir>`, before or after the subcommand.
+
+`preflight` follows the player's chain for each clip: the local HQ copy only
+when the clip opts into `hq`, then the local web copy, the talk's release and
+the shared release; local copies first by default (dev, the venue bundle),
+releases first with `--mode remote-first`. It probes `--jobs` clips at once
+(default 6) and caches each probe and loudness reading in
+`~/.cache/slidev-videos/probe.json` under the file's path and mtime or the
+release asset's version, so a re-run reads only what changed. A track that
+measures `-inf` LUFS is reported as silent (use the `silent-loop` profile),
+not as a loudness miss.
+
+`check`, `preflight`, `frames` and `doctor` take `--json`: one JSON object on
+stdout, the usual text on stderr. Exit codes: 0 when all is well, 1 when
+problems were found, 2 for usage and setup errors (a bad flag, no
+`videos.toml`, a missing tool). `slidev-videos --version` prints the installed
+version and the directory it runs from. rclone's `--progress` is passed only
+when stdout is a terminal.
+
+`--prune` (on `publish`, `publish-hq`, `pull`, `pull-hq`) deletes what the
+whole manifest no longer lists: release assets for the publish commands, local
+files for the pull commands. It cannot be combined with `--only`, and it
+deletes only with `--yes`; `--dry-run` lists what it would delete and changes
+nothing (a dry run does not create a missing release either):
+
+    slidev-videos publish --prune --dry-run
+    slidev-videos publish --prune --yes
+    pnpm videos:publish -- --prune --yes   # through a talk's pnpm script
 
 ## New course, three steps
 
