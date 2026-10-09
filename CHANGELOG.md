@@ -16,6 +16,11 @@ slidev-videos 0.5.2 · slidev-addon-videos 0.5.2 · slidev-addon-stage 0.2.2
   list, so going back or jumping is right. A place the pose stands at always
   shows. `slidev-stage-check` reports a `places:` group no place is in.
   Engine: `space.setPlaceGroups()`, `placeGroups`, `placeVisibility`.
+- **StagePhoto on GitHub Pages.** The photo and its depth map are resolved
+  against the deck's base, so a deck served under `/<repo>/<talk>/` finds
+  `/figures/x.jpg` and `x.depth.png` (they 404ed at the domain root, and a
+  place had no grains). Paths that already carry the base, relative paths and
+  full URLs are left as they are.
 - **`humAt: all`** (or `'*'`): the hum plays on every pose, not only within
   reach of the listed stations.
 

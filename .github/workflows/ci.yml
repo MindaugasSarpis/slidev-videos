@@ -24,6 +24,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg   # the example's one real clip
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium   # Linux system libs for the headless shell
+      - run: pnpm test
       - run: pnpm make:clip
       - run: pnpm build:example
       - run: pnpm smoke

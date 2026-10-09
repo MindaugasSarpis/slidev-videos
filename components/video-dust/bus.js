@@ -23,6 +23,17 @@ export function announce(type, detail) {
   try { window.dispatchEvent(new CustomEvent(`slidev-videos:${type}`, { detail })); } catch { /* noop */ }
 }
 
+// ---- public assets ---------------------------------------------------------------
+// A deck writes public files from the root (`/figures/x.jpg`); built under a
+// base (`/<repo>/<talk>/` on GitHub Pages) they live below it. A path that
+// already carries the base, a relative one, `//host/…` and full URLs are left as
+// they are.
+export function assetUrl(src, base = import.meta.env?.BASE_URL || '/') {
+  if (typeof src !== 'string' || !src.startsWith('/') || src.startsWith('//')) return src;
+  const b = String(base || '/').replace(/\/?$/, '/');
+  return b === '/' || src.startsWith(b) ? src : b + src.slice(1);
+}
+
 // ---- frame strips -------------------------------------------------------------
 // `slidev-videos frames` writes public/video-frames/<clip>.jpg (a grid of
 // small tiles, one every few seconds) and index.json beside them. Release

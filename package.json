@@ -9,13 +9,14 @@
   "files": ["components", "global-top.vue", "README.md"],
   "peerDependencies": { "@slidev/cli": ">=52" },
   "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
     "make:clip": "node scripts/make-example-clip.mjs",
     "build:example": "slidev build example/slides.md --out dist --base /",
     "smoke": "node scripts/smoke-example.mjs",
     "stage:test": "pnpm --filter slidev-addon-stage test",
     "stage:build": "pnpm --filter slidev-addon-stage build:example",
     "stage:smoke": "pnpm --filter slidev-addon-stage smoke",
-    "test:all": "pnpm make:clip && pnpm build:example && pnpm smoke && pnpm stage:test && pnpm stage:build && pnpm stage:smoke"
+    "test:all": "pnpm test && pnpm make:clip && pnpm build:example && pnpm smoke && pnpm stage:test && pnpm stage:build && pnpm stage:smoke"
   },
   "devDependencies": {
     "@slidev/cli": "^52.1.0",

@@ -22,7 +22,7 @@
 // arrival and leaving stay as they are.
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useIsSlideActive, useNav, useSlideContext, configs } from '@slidev/client'
-import { getOverlay, announce, meanColor } from './video-dust/bus.js'
+import { getOverlay, announce, meanColor, assetUrl } from './video-dust/bus.js'
 
 const CFG = (configs && configs.videos) || {}
 
@@ -144,7 +144,9 @@ const holding = computed(() => moving.value && props.holdText)
 // ---- place --------------------------------------------------------------------
 const isPlace = computed(() => props.mode === 'place')
 const placeId = computed(() => props.placeId || props.src.split('/').pop().replace(/\.[^.]+$/, ''))
-const depthSrc = computed(() => typeof props.depth === 'string' ? props.depth : props.src.replace(/\.[^.\/]+$/, '.depth.png'))
+// both resolved against the deck's base, so a Pages build finds them
+const imgSrc = computed(() => assetUrl(props.src))
+const depthSrc = computed(() => assetUrl(typeof props.depth === 'string' ? props.depth : props.src.replace(/\.[^.\/]+$/, '.depth.png')))
 const PLACE_DIM = 0.5                 // a place already visited, seen again in the distance
 const visited = (globalThis.__stagePhotoVisited ??= new Set())
 let place = null                      // the cloud's handle, once built
@@ -331,7 +333,7 @@ onUnmounted(() => { run++; sheet?.cancel(); sheet = null; cancelAnimationFrame(t
 <template>
   <div ref="rootRef" class="hero stage-photo" :class="{ 'stage-photo-moving': moving, 'stage-photo-held': !revealed, 'stage-photo-instant': instant, 'stage-photo-leaving': leaving, 'stage-photo-place': isPlace && moving }"
        :style="{ '--focus': focus }" :data-photo-phase="revealed ? 'shown' : 'held'">
-    <img ref="imgRef" :src="src" :alt="alt" :class="{ contain: fit === 'contain' }" decoding="async" />
+    <img ref="imgRef" :src="imgSrc" :alt="alt" :class="{ contain: fit === 'contain' }" decoding="async" />
     <div class="stage-photo-slot" :class="{ 'stage-photo-slot-off': !slotOn }"><slot /></div>
   </div>
 </template>
