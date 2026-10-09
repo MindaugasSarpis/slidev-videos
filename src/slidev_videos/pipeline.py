@@ -1763,6 +1763,10 @@ def cmd_preflight(args: argparse.Namespace) -> int:
 # the deck. Entering uses tile 0; leaving uses the tile at the moment the
 # presenter moved on (a same-origin clip — dev, venue build — is read live
 # instead, to the frame).
+#
+# Beside each strip goes a poster, <clip>.poster.jpg: the clip's first lit
+# frame (past an opening fade from black) at up to 1280 px wide. Print and PDF
+# export show it in the player's place, where a <video> prints as nothing.
 
 FRAMES_DIRNAME = "video-frames"
 FRAMES_INDEX = "index.json"
@@ -1771,6 +1775,25 @@ FRAMES_INTERVAL_S = 4.0
 FRAMES_MAX_TILES = 64
 FRAMES_COLS = 8
 FRAMES_VERSION = 1
+FRAMES_POSTER_W = 1280
+FRAMES_LIT_WITHIN_S = 12.0
+# a frame is black while ≥ 99.8 % of its pixels are under 7 % luminance: the
+# player's own test (bus.js isLit), so one small lit figure on black counts as lit
+FRAMES_BLACK_PIX = 0.07
+FRAMES_BLACK_PIC = 0.998
+BLACK_RE = re.compile(r"black_start:\s*([\d.]+)\s+black_end:\s*([\d.]+)")
+
+
+def lit_from(blackdetect_log: str, within: float = FRAMES_LIT_WITHIN_S) -> float:
+    """Where a clip's picture first lights up, from ffmpeg blackdetect output:
+    the end of a black stretch that opens the clip, else 0. A clip black for
+    all of `within` seconds gives 0 (the poster is then its opening frame)."""
+    for m in BLACK_RE.finditer(blackdetect_log or ""):
+        start, end = float(m.group(1)), float(m.group(2))
+        if start <= 0.05:
+            return 0.0 if end >= within - 0.05 else round(end, 3)
+        break
+    return 0.0
 
 DUST_HEADMATTER_RE = re.compile(r"^videos:[ \t]*\n(?:[ \t]+.*\n|[ \t]*\n)*?[ \t]+transition:[ \t]*[\"']?dust\b", re.M)
 DUST_TAG_RE = re.compile(r'<VideoPlayer\b[^>]*?(?<![:\w-])transition="dust"[^>]*>', re.S)
@@ -1929,6 +1952,7 @@ def _frames_cut(name: str, src: str, info: dict | None, out_dir: Path,
         tail = (res.stderr or "").strip().splitlines()[-1:] or ["ffmpeg failed"]
         return name, None, tail[0]
     tmp.replace(out)
+    lit, poster = _frames_poster(name, src, width, out_dir, args)
     entry = {
         "file": out.name,
         "tile": [tw, th],
@@ -1938,13 +1962,45 @@ def _frames_cut(name: str, src: str, info: dict | None, out_dir: Path,
         "size": [width, height],
         "duration": round(duration, 3),
     }
+    if poster:
+        entry["poster"] = poster
+        entry["lit"] = lit
     return name, entry, human_size(out.stat().st_size) + (" (downloaded to cut)" if via_download else "")
+
+
+def _frames_poster(name: str, src: str, width: int, out_dir: Path,
+                   args: argparse.Namespace) -> tuple[float, str | None]:
+    """Write <clip>.poster.jpg from the first lit frame. → (its time, file name or None)."""
+    probe = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-nostats", "-t", str(FRAMES_LIT_WITHIN_S), "-i", src, "-an", "-sn",
+         "-vf", f"blackdetect=d=0:pix_th={FRAMES_BLACK_PIX}:pic_th={FRAMES_BLACK_PIC}", "-f", "null", "-"],
+        capture_output=True, text=True,
+    )
+    lit = lit_from(probe.stderr) if probe.returncode == 0 else 0.0
+    out = out_dir / f"{name}.poster.jpg"
+    tmp = out_dir / f".{name}.poster.tmp.jpg"
+    w = min(FRAMES_POSTER_W, width) if width else FRAMES_POSTER_W
+    # a hair past the black's end, so the frame is the lit one
+    at = lit + 0.04 if lit else 0
+    res = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{at:.3f}", "-i", src,
+         "-an", "-sn", "-frames:v", "1", "-vf", f"scale={w}:-2:flags=bicubic,setsar=1",
+         "-q:v", str(args.quality), "-f", "image2", "-update", "1", str(tmp)],
+        capture_output=True, text=True,
+    )
+    if res.returncode != 0 or not tmp.is_file() or tmp.stat().st_size == 0:
+        tmp.unlink(missing_ok=True)
+        return 0.0, None
+    tmp.replace(out)
+    return lit, out.name
 
 
 def _frames_current(entry: dict | None, out_dir: Path, args: argparse.Namespace) -> bool:
     """An existing strip made with the same settings needs no second cut."""
     if not entry or not (out_dir / str(entry.get("file", ""))).is_file():
         return False
+    if not entry.get("poster") or not (out_dir / str(entry["poster"])).is_file():
+        return False          # cut before posters existed
     plan = frames_plan(float(entry.get("duration") or 0), args.interval, args.max_tiles, FRAMES_COLS)
     return (
         entry.get("tile", [0])[0] == args.tile_width
@@ -1970,10 +2026,11 @@ def cmd_frames(args: argparse.Namespace) -> int:
         keep = set(all_refs)
         dropped = sorted(set(index) - keep)
         for name in dropped:
-            f = out_dir / str(index[name].get("file", ""))
+            files = [out_dir / str(index[name].get(k)) for k in ("file", "poster") if index[name].get(k)]
             print(f"  {'would drop' if args.dry_run else 'drop'}  {name}")
             if not args.dry_run:
-                f.unlink(missing_ok=True)
+                for f in files:
+                    f.unlink(missing_ok=True)
                 del index[name]
         # saved here: the run may find nothing left to cut and return early
         if dropped and not args.dry_run:

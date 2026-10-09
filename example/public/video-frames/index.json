@@ -14,7 +14,9 @@
         640,
         360
       ],
-      "duration": 12
+      "duration": 12,
+      "poster": "clip_dark.webm.poster.jpg",
+      "lit": 5
     },
     "clip_dust.webm": {
       "file": "clip_dust.webm.jpg",

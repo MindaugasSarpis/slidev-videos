@@ -13,7 +13,7 @@ quarks, clusters, particle names — is a plugin.
 
 ## Install
 
-    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.5.2&path:/packages/stage"
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.5.3&path:/packages/stage"
 
 ## Use
 
@@ -74,6 +74,7 @@ fade; see the root README's *Place groups*. The engine side is
 | `hero` | `space.hero`, else `hero` | the station the deck opens and closes on; what builds itself there does so on arrival |
 | `sound` | `true` | `false` is silent; `{ hum, flight, clip, level }` picks the voices: a low hum while the camera is at `humAt`, a soft whoosh for each flight of any length, a rising tone as a clip condenses. All start after the first key or click, none in the presenter window |
 | `humAt` | `[hero]` | the stations within reach of which the hum plays; `all` (or `'*'`) hums on every pose, out in the open dust too |
+| `stills` | `stills` | the folder under `public/` holding a still per slide (`01.jpg` …) for print, PDF export and the fallback; `false`: none |
 | `tier` | from the device | the quality tier, 0 (full) … 3 (floor); a phone starts at 2, a lost context steps down one |
 | `videos` | `true` | follow `slidev-addon-videos`: a clip arriving as dust draws the world's dust with it, one leaving shoves it out and leaves its colours in it for a few seconds (`tint: 0.8`, 0 for none), and the renderer rests under a clip that covers the slide |
 | `halo` | `true` | the dust borders; `haloOn: '.card, .halo'` picks what gets one |
@@ -381,6 +382,21 @@ stage root as `data-stage-fallback` (`reduced-motion`, `no-webgl2`,
 or after the `#`) to see it on screen with the GPU, the render targets, the
 simulation size, the frame rate and any shader errors: the way to find out
 from a phone.
+
+**Stills for print, PDF export and the fallback.** Slidev's print route mounts
+the stage once per page, so the stage draws no world there (thirty WebGL
+contexts would run out); it shows the slide's still instead, under the slide's
+own text: `public/stills/01.jpg`, `02.jpg`, … (`stage.stills: <folder>` moves
+them, `false` turns them off). The static fallback on screen shows the same
+stills. Make them from a real render, the world alone without the slide:
+
+    slidev build deck.md --out /tmp/deck --base /
+    slidev-stage-shots /tmp/deck public/stills --stills --wait 9000
+
+A slide without a still prints on the static gradient. `slidev export --range`
+on a deck with `routerMode: hash` prints only those slides (Slidev read the
+range from the hash's own query and printed every slide; the addon sets it
+from the address).
 
 The quality tier (0 full … 3 floor) is picked from the device (a phone starts
 at 2) and caps the simulated field, the drawing buffer and the photo places'

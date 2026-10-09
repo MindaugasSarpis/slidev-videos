@@ -4,8 +4,28 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
-## Unreleased (v0.5.3)
+## v0.5.3 — 2026-10-09
 
+slidev-videos 0.5.3 · slidev-addon-videos 0.5.3 · slidev-addon-stage 0.2.3
+
+- **Print and PDF export of a stage deck.** Slidev's print route mounts the
+  stage once per page; each booted a WebGL world, so a long deck ran out of
+  contexts and printed blank pages slowly. The stage now draws no world in
+  print and shows the slide's still under the slide's own text:
+  `public/stills/NN.jpg` (`stage.stills`), written by the new
+  `slidev-stage-shots --stills` from a real render of the world alone. The
+  example's six pages export in about 8 s.
+- **The static fallback shows the same stills** (no float targets, reduced
+  motion, a lost context at the lowest tier), not only the gradient.
+- **`slidev export --range` works on hash-router decks**: it printed every
+  slide (Slidev read the range from the hash's query); the stage addon sets
+  the print range from the address. `--range 2-4` → three pages.
+- **VideoPlayer in print and export** shows the clip's first lit frame, not a
+  live `<video>` (a clip the exporting browser could not decode printed as a
+  blank box). **`slidev-videos frames`** writes it as `<clip>.poster.jpg` beside
+  the strip (up to 1280 px; `frames --all` for every clip); without one the
+  strip's first lit tile is used. Strips cut before v0.5.3 are cut again once
+  to add the poster.
 - **Why the stage fell back, readable from a phone.** Every fallback sets
   `data-stage-fallback` on the stage root (`reduced-motion`, `no-webgl2`,
   `no-float-target`, `plugin`, `data`, `init`, `context-lost`) and logs one
@@ -29,6 +49,14 @@ on its own). A deck pins both addons and the CLI to the same tag.
   off). The sharp picture at the front view is the page's `<img>`, unchanged.
 - **Bloom follows the buffer's width**, so a phone's small buffer, or the
   frame-rate guard's lower steps, no longer wash a bright core out white.
+
+### Upgrading from v0.5.2
+
+- Pin `#v0.5.3` for both addons and `@v0.5.3` for the CLI.
+- For print and export: `slidev-stage-shots <dist> public/stills --stills`,
+  and `slidev-videos frames --all` for the posters; commit both. A talk's own
+  print stills (`.print-still` over the slide) can go.
+- On a phone, `?stage-debug` says how the stage runs or why it fell back.
 
 ## v0.5.2 — 2026-10-09
 

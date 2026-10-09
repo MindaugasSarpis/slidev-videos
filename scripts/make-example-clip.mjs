@@ -1,7 +1,8 @@
 // Generate the example deck's real clips and their frame strips:
 //   example/public/videos/clip_dust.webm        (gitignored; VP9, 6 s, a tone)
 //   example/public/videos/clip_dark.webm        (gitignored; 5 s of black, then 7 s of picture)
-//   example/public/video-frames/*.jpg + index.json   (committed)
+//   example/public/video-frames/*.jpg + index.json   (committed; clip_dark also has its
+//     poster, the first lit frame, which print shows; clip_dust has none, so print uses its strip)
 // The smoke test plays them to watch the `dust` transition end to end, and a
 // clip that opens on black arrive as its first lit frame. VP9/Opus
 // because Playwright's Chromium ships without the H.264 and AAC decoders.
@@ -49,10 +50,11 @@ if (process.argv.includes('--strip') || !existsSync(`${root}video-frames/index.j
     "select='isnan(prev_selected_t)+gte(t-prev_selected_t\\,4)',scale=320:180,setsar=1,tile=3x1:color=black",
     '-fps_mode', 'vfr', '-frames:v', '1', '-q:v', '5', '-update', '1', `${root}video-frames/clip_dark.webm.jpg`,
   ])
+  run(['-ss', '5.04', '-i', dark, '-an', '-frames:v', '1', '-vf', 'scale=640:-2', '-q:v', '5', '-update', '1', `${root}video-frames/clip_dark.webm.poster.jpg`])
   writeFileSync(`${root}video-frames/index.json`, JSON.stringify({
     version: 1,
     clips: {
-      'clip_dark.webm': { file: 'clip_dark.webm.jpg', tile: [320, 180], cols: 3, count: 3, interval: 4, size: [640, 360], duration: 12 },
+      'clip_dark.webm': { file: 'clip_dark.webm.jpg', tile: [320, 180], cols: 3, count: 3, interval: 4, size: [640, 360], duration: 12, poster: 'clip_dark.webm.poster.jpg', lit: 5 },
       'clip_dust.webm': { file: 'clip_dust.webm.jpg', tile: [320, 180], cols: 2, count: 2, interval: 4, size: [640, 360], duration: 6 },
     },
   }, null, 2) + '\n')

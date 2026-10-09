@@ -1,4 +1,5 @@
 """`frames`: the tile plan, which clips arrive as dust, and an end-to-end cut."""
+import re
 import json
 import shutil
 import subprocess
@@ -201,7 +202,7 @@ def test_a_url_ffprobe_cannot_read_is_downloaded_and_cut(tmp_path, capsys, monke
     assert "downloaded to cut" in capsys.readouterr().out
     out_dir = tmp_path / "public" / "video-frames"
     assert json.loads((out_dir / "index.json").read_text())["clips"]["b.mp4"]["size"] == [640, 360]
-    assert sorted(p.name for p in out_dir.iterdir()) == ["b.mp4.jpg", "index.json"]   # the download is gone
+    assert sorted(p.name for p in out_dir.iterdir()) == ["b.mp4.jpg", "b.mp4.poster.jpg", "index.json"]   # the download is gone
 
 
 def test_a_failed_download_fails_that_clip(tmp_path, capsys, monkeypatch):
@@ -241,3 +242,42 @@ def test_check_reports_dust_clips_without_a_strip(tmp_path, capsys):
     capsys.readouterr()
     pipeline.main(["--project", str(tmp_path), "check"])
     assert "without a frame strip" not in capsys.readouterr().out
+
+
+def test_lit_from_reads_an_opening_black_stretch():
+    log = "[blackdetect @ 0x1] black_start:0 black_end:2.04 black_duration:2.04\n"
+    assert pipeline.lit_from(log) == 2.04
+    assert pipeline.lit_from("") == 0.0                                   # never black
+    assert pipeline.lit_from("black_start:3.5 black_end:4.0") == 0.0      # black later, not at the start
+    assert pipeline.lit_from("black_start:0 black_end:12") == 0.0         # black throughout: the opening frame
+
+
+@pytest.mark.skipif(not HAVE_FFMPEG, reason="needs ffmpeg")
+def test_a_poster_is_the_first_lit_frame(tmp_path, capsys):
+    make_project(tmp_path, PER_CLIP)
+    clip = tmp_path / "public" / "videos" / "b.mp4"
+    # two seconds of black, then the picture
+    subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+         "-f", "lavfi", "-i", "color=c=black:size=640x360:rate=25:duration=2",
+         "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=25:duration=4",
+         "-filter_complex", "[0:v][1:v]concat=n=2:v=1[v]", "-map", "[v]",
+         "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", str(clip)],
+        check=True,
+    )
+    assert run(tmp_path) == 0
+    out_dir = tmp_path / "public" / "video-frames"
+    e = json.loads((out_dir / "index.json").read_text())["clips"]["b.mp4"]
+    assert e["poster"] == "b.mp4.poster.jpg"
+    assert 1.9 <= e["lit"] <= 2.1
+    probe = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-i", str(out_dir / e["poster"]), "-vf", "signalstats,metadata=print:key=lavfi.signalstats.YAVG", "-f", "null", "-"],
+        capture_output=True, text=True,
+    )
+    yavg = float(re.search(r"YAVG=([\d.]+)", probe.stderr).group(1))
+    assert yavg > 40                                    # the picture, not the black opening
+    size = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0", str(out_dir / e["poster"])],
+        capture_output=True, text=True, check=True,
+    )
+    assert size.stdout.strip() == "640,360"             # never wider than the clip

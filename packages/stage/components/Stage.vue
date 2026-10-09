@@ -8,6 +8,7 @@ import { createSpace, usePlugin, resolvePalette, resolveLook, liftGround, palett
 import StagePanel from './StagePanel.vue'
 import { placeGroupsAt } from '../stage/place-groups.js'
 import { probeGL, stageDebugOn, debugLines, deviceInfo, pickTier, MAX_TIER } from '../stage/diagnose.js'
+import { stillsDir, stillUrl, inPrint } from '../stage/stills.js'
 
 // The persistent 3D world under a whole deck. The addon mounts it from its
 // own global-bottom.vue whenever the headmatter has a `stage:` block:
@@ -26,6 +27,7 @@ import { probeGL, stageDebugOn, debugLines, deviceInfo, pickTier, MAX_TIER } fro
 //     options: { bloom: 0.55, density: 1, nebula: 0.8, … }   # see stage/space.js DEFAULTS
 //     auto: true                 # false: the deck mounts <Stage> itself (for the #hud slot)
 //     tier: 2                    # pin the quality tier, 0 (full) … 3 (floor); default: from the device
+//     stills: stills             # per-slide stills under public/ for print and the fallback (stage/stills.js); false: none
 //
 // Each slide steers the camera through its frontmatter:
 //
@@ -44,6 +46,8 @@ import { probeGL, stageDebugOn, debugLines, deviceInfo, pickTier, MAX_TIER } fro
 // render targets, or under reduced motion, only the static gradient is drawn.
 // Why it fell back is on the root as data-stage-fallback and in one console
 // line; `?stage-debug` in the address shows it on screen (stage/diagnose.js).
+// Print, PDF export and the fallback show the slide's still when the deck has
+// one (public/stills/NN.jpg, from `slidev-stage-shots --stills`).
 //
 // `dim` is the opacity of the scrim between the world and the slide, so body
 // copy keeps its contrast over a busy pose. Without the key: 0 while a stop
@@ -85,6 +89,14 @@ const arrived = ref(true)   // the HUD waits for the camera to land
 let space = null
 let humAt = new Set()
 let humEverywhere = false
+
+// ---- stills: print, export and the fallback --------------------------------------
+const STILLS = stillsDir(CFG.stills)
+const printing = ref(false)
+const stillMissing = ref(new Set())
+const stillSrc = computed(() => stillUrl(STILLS, nav.currentSlideNo.value, base()))
+const stillShown = computed(() => !!stillSrc.value && (printing.value || staticBg.value) && !stillMissing.value.has(stillSrc.value))
+const onStillError = () => { stillMissing.value = new Set(stillMissing.value).add(stillSrc.value) }
 
 // ---- why it runs as it does ---------------------------------------------------
 const debug = typeof location !== 'undefined' && stageDebugOn(location)
@@ -268,6 +280,8 @@ const getJson = async (path) => {
 
 async function boot() {
   if (space || staticBg.value || !canvas.value) return
+  // a print page: no world (one WebGL context per page would run out), its still instead
+  if (printing.value) { staticBg.value = true; assembled(true); return }
   glInfo = probeGL(document)
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return fallback('reduced-motion')
   if (glInfo.reason) return fallback(glInfo.reason, glInfo.gpu)
@@ -402,7 +416,8 @@ onMounted(() => {
     window.addEventListener('slidev-videos:cover', onVideoCover)
   }
   if (root.value) root.value.__hum = humProbe   // for the headless probes
-  if (debug) { renderDebug(); debugTimer = setInterval(renderDebug, 1000) }
+  printing.value = inPrint(root.value)
+  if (debug && !printing.value) { renderDebug(); debugTimer = setInterval(renderDebug, 1000) }
   boot()
 })
 onUnmounted(() => {
@@ -429,6 +444,7 @@ onUnmounted(() => {
 <template>
   <div ref="root" class="stage" :class="{ 'static-bg': staticBg, ready }" :data-clicks="clicks" :data-clicks-total="clicksTotal">
     <canvas ref="canvas" :key="canvasKey" class="field" aria-hidden="true"></canvas>
+    <img v-if="stillShown" class="still" :src="stillSrc" alt="" aria-hidden="true" decoding="async" @error="onStillError" />
     <div class="scrim" aria-hidden="true" :style="{ opacity: dim }"></div>
     <div class="grain" aria-hidden="true"></div>
     <Transition name="hud">
@@ -466,6 +482,8 @@ onUnmounted(() => {
 .field { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity 1.2s ease; }
 .ready .field { opacity: 1; }
 .static-bg .field { display: none; }
+/* the slide's still, where the world cannot run (print, the fallback); under the scrim like the world */
+.still { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
 /* Scrim between the world and the slide: keeps body copy legible over a busy
    pose. Opacity comes from `dim` (frontmatter `space.dim`, else the layout). */
 .scrim {

@@ -17,10 +17,10 @@ renderer under a clip that covers the slide. Either works alone.
 
 ## Install (per consumer repo)
 
-    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.5.2"
-    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.5.2
-    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.5.2&path:/packages/stage"   # the stage, if wanted
-    pip install "slidev-videos[depth] @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.5.2"   # + depth maps for photo places
+    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.5.3"
+    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.5.3
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.5.3&path:/packages/stage"   # the stage, if wanted
+    pip install "slidev-videos[depth] @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.5.3"   # + depth maps for photo places
 
 What changed between releases: [CHANGELOG.md](CHANGELOG.md).
 
@@ -214,7 +214,10 @@ directly instead. No strip, no overlay, no WebGL2 or `prefers-reduced-motion`:
 the clip fades. `check` lists the `dust` clips that have no strip. `frames`
 cuts from the local copy if there is one, else from the release; where
 ffmpeg cannot read HTTPS (the static Linux builds crash on it) the clip is
-downloaded, cut and removed.
+downloaded, cut and removed. Beside each strip it writes a poster,
+`<clip>.poster.jpg`: the first lit frame (past an opening fade from black), up
+to 1280 px wide, which print and PDF export show (`frames --all` gives every
+clip one, not only the `dust` clips).
 
 Other addons can follow along on `window`: `slidev-videos:transition`
 `{ phase: 'enter' | 'leave', mode, src, duration, color }` and
@@ -222,10 +225,13 @@ Other addons can follow along on `window`: `slidev-videos:transition`
 the frame a leaving `dust` clip broke up from (`[r, g, b]`, weighted toward
 its lit and coloured parts); the stage tints its dust with it.
 
-**Overview and previews.** In Slidev's overview grid (`o`) and the presenter's
-next-slide preview the player renders a static placeholder, not a `<video>`:
-the overview mounts every slide at once, and its copy of the current slide
-would otherwise re-download the clip being watched.
+**Overview, previews and print.** In Slidev's overview grid (`o`), the
+presenter's next-slide preview, print and PDF export the player renders the
+clip's poster, not a `<video>`: the overview and print mount every slide at
+once, the overview's copy of the current slide would otherwise re-download the
+clip being watched, and the exporting browser may not decode the clip at all
+(H.264 in Playwright's Chromium printed a blank box). Without a poster it
+shows the strip's first lit tile, without a strip a play icon.
 
 **Keyboard**, on the active slide's clip, without revealing the control bar:
 

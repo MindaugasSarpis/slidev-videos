@@ -27,7 +27,7 @@ function setSessionVolume(v) {
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useIsSlideActive, useNav, useSlideContext, configs } from '@slidev/client'
-import { getOverlay, announce, warmStrip, stripFrame, liveFrame, fitPicture, meanColor, isLit, firstLitFrame } from './video-dust/bus.js'
+import { getOverlay, announce, warmStrip, stripFrame, liveFrame, fitPicture, meanColor, isLit, firstLitFrame, loadFrameIndex } from './video-dust/bus.js'
 
 // Config resolution (headmatter beats env beats built-ins):
 //   videos:                       VITE_VIDEO_REPO
@@ -511,6 +511,7 @@ function onKey(e) {
 }
 
 onMounted(() => {
+  if (!isLive.value) findPoster()
   window.addEventListener('keydown', onKey)
   window.addEventListener('mousemove', onWindowMove, { passive: true })
   document.documentElement.addEventListener('mouseleave', onPointerGone)
@@ -539,7 +540,24 @@ onUnmounted(() => {
 // media elements on the machine, and its copy of the CURRENT slide is
 // "active" too, so it re-downloaded the clip being watched.
 const { $page, $renderContext } = useSlideContext()
-const isLive = computed(() => $renderContext.value === 'slide' || $renderContext.value === 'presenter')
+// Print and PDF export (`?print`, html.print) are never live either: a print
+// page mounts every slide's player at once, and a clip the exporting browser
+// cannot decode (H.264 in Playwright's Chromium) printed as a blank box.
+const PRINTING = typeof location !== 'undefined' && (/[?&]print\b/.test(location.search) || !!document.documentElement?.classList.contains('print'))
+const isLive = computed(() => !PRINTING && ($renderContext.value === 'slide' || $renderContext.value === 'presenter'))
+
+// In print, PDF export and the overview the placeholder shows the clip's
+// first lit frame: the poster `slidev-videos frames` writes beside the strip
+// (full size), else the strip's first lit tile, else the play icon.
+const posterSrc = ref('')
+async function findPoster() {
+  try {
+    const entry = (await loadFrameIndex())?.[props.src]
+    if (entry?.poster) { posterSrc.value = `${base.value}video-frames/${entry.poster}`; return }
+    const f = await firstLitFrame(props.src) || await stripFrame(props.src, 0)
+    if (f?.image?.toDataURL) posterSrc.value = f.image.toDataURL('image/jpeg', 0.9)
+  } catch { /* the play icon stays */ }
+}
 
 // Attach window. A <video> only carries its <source> while its slide is the
 // live one, one of the next PRELOAD_AHEAD slides (look-ahead: attach early
@@ -605,7 +623,8 @@ watch(attached, (yes) => {
 
 <template>
   <div ref="wrapRef" class="video-player" :class="[`video-${effTransition}`, { 'video-instant': instant }]" :data-video-phase="revealed ? 'shown' : 'held'" @mouseleave="onPointerGone">
-    <div v-if="!isLive" class="video-placeholder">
+    <img v-if="!isLive && posterSrc" class="video-poster" :src="posterSrc" :style="{ objectFit: effFit }" alt="" />
+    <div v-else-if="!isLive" class="video-placeholder">
       <svg class="video-placeholder-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5z" fill="currentColor" /></svg>
       <span class="video-status">{{ src }}</span>
     </div>
@@ -689,6 +708,7 @@ watch(attached, (yes) => {
   color: #ef4444;
   opacity: 1;
 }
+.video-poster { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .video-placeholder {
   display: flex;
   flex-direction: column;

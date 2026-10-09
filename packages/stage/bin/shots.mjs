@@ -11,6 +11,9 @@
 //   --slides    which slides (default: all, counted from the deck itself)
 //   --clicks    slides with clicks to step through: {"slide": clicks}
 //   --wait      ms to let a slide settle before the shot (a flight takes up to 4.5 s)
+//   --stills    the world alone, no slide text, as <out-dir>/01.jpg …: the stills
+//               print, PDF export and the static fallback show (stage/stills.js);
+//               write them to the deck's public/stills
 //
 // WebGL runs on SwiftShader (software), which is slow but draws the same
 // picture. Needs playwright-chromium (a devDependency of the deck or this repo).
@@ -66,7 +69,7 @@ export function parseSlides(spec, total) {
 }
 
 function parseArgs(argv) {
-  const o = { dist: null, out: null, slides: null, clicks: {}, wait: 4200, clickWait: 9000, size: [1600, 900], json: null };
+  const o = { dist: null, out: null, slides: null, clicks: {}, wait: 4200, clickWait: 9000, size: [1600, 900], json: null, stills: false };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -76,6 +79,7 @@ function parseArgs(argv) {
     else if (a === '--click-wait') o.clickWait = Number(argv[++i]);
     else if (a === '--size') o.size = argv[++i].split('x').map(Number);
     else if (a === '--json') o.json = argv[++i];
+    else if (a === '--stills') o.stills = true;
     else if (a === '-h' || a === '--help') o.help = true;
     else rest.push(a);
   }
@@ -101,6 +105,11 @@ export async function shoot(o) {
     await page.goto(`http://localhost:${port}/#/1`);
     await page.waitForSelector('.slidev-layout', { state: 'attached', timeout: 60000 });   // attached, not visible: the first in the DOM may be a hidden slide
     await page.waitForTimeout(3000);
+    // --stills: only the world shows; the slide, the stage's scrim, HUD and paper
+    // grain, the halo layer and the controls are drawn live over the still
+    if (o.stills) await page.addStyleTag({ content: `
+      .slidev-page, .slidev-nav, .slidev-icon-btn, #slidev-goto-dialog, .stage .scrim, .stage .grain, .stage .hud, .halo-layer, .stage-debug { visibility: hidden !important; }
+      .stage, .stage .field { visibility: visible !important; }` });
     // A built deck does not say how long it is, and Slidev mounts only the
     // slides near the current one: walk until a slide fails to appear.
     const MAX = 500;
@@ -127,11 +136,12 @@ export async function shoot(o) {
           return { at, station, overflowPx: Math.round(bottom - r.bottom), overflowRightPx: Math.round(right - r.right), textChars: lay.innerText.length };
         }, n);
         const name = `${String(n).padStart(2, '0')}${suffix}`;
-        await page.screenshot({ path: join(out, `${name}.png`) });
+        if (o.stills) await page.screenshot({ path: join(out, `${name}.jpg`), type: 'jpeg', quality: 82 });
+        else await page.screenshot({ path: join(out, `${name}.png`) });
         report.push({ slide: n, frame: name, ...info });
       };
       await shot('');
-      for (let c = 1; c <= (o.clicks[n] || 0); c++) {
+      for (let c = 1; c <= (o.stills ? 0 : o.clicks[n] || 0); c++) {
         await page.keyboard.press('ArrowRight');
         await page.waitForTimeout(o.clickWait);
         await shot(`-c${c}`);
@@ -147,7 +157,7 @@ export async function shoot(o) {
 export async function main(argv = process.argv.slice(2)) {
   const o = parseArgs(argv);
   if (o.help || !o.dist || !o.out) {
-    console.log("usage: slidev-stage-shots <dist> <out-dir> [--slides 1-12,15] [--clicks '{\"9\":3}'] [--wait 4200] [--click-wait 9000] [--size 1600x900] [--json report.json]");
+    console.log("usage: slidev-stage-shots <dist> <out-dir> [--slides 1-12,15] [--clicks '{\"9\":3}'] [--wait 4200] [--click-wait 9000] [--size 1600x900] [--json report.json] [--stills]");
     return o.help ? 0 : 2;
   }
   let result;
