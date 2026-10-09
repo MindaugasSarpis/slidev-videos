@@ -128,7 +128,7 @@ function finish(o, geo, mat, { seconds = 3.2 } = {}) {
   const f = former(mat.uniforms.uForm, typeof o.assemble === 'number' ? o.assemble : seconds);
   if (born) f.api.arm(); else mat.uniforms.uForm.value = 1;
   return {
-    group: g, labels: [], api: born ? f.api : undefined, pixelRatio: mat.uniforms.uPixelRatio,
+    group: g, labels: [], api: born ? f.api : undefined, frameScale: mat.uniforms.uPixelRatio,   // sized to the frame, not in raw pixels
     update(t) { mat.uniforms.uTime.value = t; f.tick(t); },
   };
 }

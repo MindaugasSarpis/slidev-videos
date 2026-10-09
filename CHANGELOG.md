@@ -4,6 +4,24 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## v0.6.8 — 2026-10-09
+
+slidev-videos 0.6.8 · slidev-addon-videos 0.6.8 · slidev-addon-stage 0.3.8
+
+- **Grains are sized to the frame, not in raw pixels.** On a phone's ~220 px
+  slide band a grain of fixed pixel size covers several times the share of the
+  picture it does at 1600×900, so grains overlapped many times over and an
+  additive pile-up washed out to white (after v0.6.7's guard, the white the
+  owner's iPhone showed instead of black). The field, the engine's own forms
+  (galaxy, collider, constellation …) and StageHero now size grains by the
+  drawing buffer's height over 900. At 1600×900 nothing changes: the example's
+  stills are byte-identical to v0.6.7's. At iPhone size its galaxy is fine
+  grains again instead of blurred blobs.
+- A talk's builder can return `frameScale` (a `{ value }` uniform the engine
+  keeps at buffer height / 900) to size its grains the same way; `pixelRatio`
+  stays the device pixel ratio, so a builder that sizes its own grains, as
+  Innoday's now do, is not scaled twice.
+
 ## v0.6.7 — 2026-10-09
 
 slidev-videos 0.6.7 · slidev-addon-videos 0.6.7 · slidev-addon-stage 0.3.7

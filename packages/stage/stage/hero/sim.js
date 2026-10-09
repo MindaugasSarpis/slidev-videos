@@ -178,6 +178,12 @@ export function createField(canvas, container, opts = {}) {
     renderer.setSize(w, h, false); // drawing buffer only; CSS size stays 100%
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    sizeGrains();
+  }
+  // grains sized to the frame (the buffer's height over 900), as in space.js
+  function sizeGrains() {
+    const frame = Math.max(0.05, (viewH * renderer.getPixelRatio()) / 900);
+    renderMat.uniforms.uPixelRatio.value = frame; core.setPixelRatio(frame); collisions.setPixelRatio(frame);
   }
   resize();
 
@@ -313,10 +319,8 @@ export function createField(canvas, container, opts = {}) {
       if (winTime >= 2) {
         if (winFrames / winTime < 40) {
           if (guardStage === 0) {
-            renderMat.uniforms.uPixelRatio.value = baseDpr * 0.7;
             renderer.setPixelRatio(baseDpr * 0.7);
-            core.setPixelRatio(baseDpr * 0.7);
-            collisions.setPixelRatio(baseDpr * 0.7);
+            sizeGrains();
           } else geo.setDrawRange(0, Math.floor(count / 2));
           guardStage++;
         }

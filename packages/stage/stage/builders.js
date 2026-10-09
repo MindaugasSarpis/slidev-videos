@@ -22,6 +22,12 @@ import { shared } from './shared.js';
 //               while a form moves on its own clock without assemble(): the headless
 //               tools wait for it as they wait for an assembly
 //   pixelRatio  a { value } uniform the engine keeps at the drawing buffer's ratio
+//   frameScale  a { value } uniform the engine keeps at the drawing buffer's height
+//               / 900: a grain sized by it (gl_PointSize = frameScale * …) is the
+//               same share of the frame at every size; one sized by pixelRatio is
+//               a fixed number of pixels, and on a phone's small slide band it
+//               covers several times as much of the picture (the engine's own
+//               forms use frameScale)
 //   dispose     called when the world is torn down, before the engine disposes every
 //               geometry and material under group: for what else the builder holds
 //
@@ -356,7 +362,7 @@ export function buildConstellation(o, ctx) {
     get armed() { return asm.armed; },
   };
   if (o.assemble !== false) api.arm();
-  return { group: g, labels, api: o.assemble === false ? undefined : api, pixelRatio: mat.uniforms.uPixelRatio, update(t) {
+  return { group: g, labels, api: o.assemble === false ? undefined : api, frameScale: mat.uniforms.uPixelRatio, update(t) {
     mat.uniforms.uTime.value = t;
     centres.forEach((c, i) => { const q = orbits[i], a = q.phase + t * q.speed; c.copy(q.u).multiplyScalar(q.r * Math.cos(a)).addScaledVector(q.w, q.r * Math.sin(a)); });
     if (asm.t0 >= 0) {
@@ -417,7 +423,7 @@ registerBuilder('collider', buildCollider, { fields: ['pos', 'radius'] });
 export function buildStation(station, ctx) {
   const group = new Group(); group.position.copy(v3(station.pos));
   const anchors = new Map([[station.id, v3(station.pos)]]);
-  const labels = []; const updaters = []; const apis = []; const prs = []; const disposers = [];
+  const labels = []; const updaters = []; const apis = []; const prs = []; const frs = []; const disposers = [];
   const named = new Map();   // name → api, for what reads a form's value (StageCount)
   for (const o of station.objects || []) {
     const b = registry.get(o.type);
@@ -430,13 +436,14 @@ export function buildStation(station, ctx) {
     if (r.api) apis.push(r.api);
     if (r.api && o.name != null) named.set(String(o.name), r.api);
     if (r.pixelRatio) prs.push(r.pixelRatio);
+    if (r.frameScale) frs.push(r.frameScale);
     if (typeof r.dispose === 'function') disposers.push([o.type, r.dispose]);
     if (r.anchors) for (const [id, p] of r.anchors) anchors.set(id, p.clone().add(v3(o.pos)).add(v3(station.pos)));
   }
   return {
     group, anchors, apis, named,
     update(t, camPos) { for (const u of updaters) u(t, camPos); },
-    setPixelRatio(d) { for (const u of prs) u.value = d; },
+    setPixelRatio(d, frame = d) { for (const u of prs) u.value = d; for (const u of frs) u.value = frame; },
     setDim(k) { const op = 0.9 * Math.max(0, 1 - k / 0.85); for (const l of labels) { l.material.opacity = op; l.userData.dimOp = op; } },
     dispose() {
       for (const [type, d] of disposers) { try { d(); } catch (e) { console.warn(`stage: builder "${type}" failed to dispose in station ${station.id}:`, e); } }

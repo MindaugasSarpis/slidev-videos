@@ -397,9 +397,15 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   const bloomBase = num(opt.bloom, 0.55);
   const applyDpr = () => {
     const d = dprFor(viewW) * guardScale;
-    renderer.setPixelRatio(d); composer.setPixelRatio(d); fieldMat.uniforms.uPixelRatio.value = d;
+    renderer.setPixelRatio(d); composer.setPixelRatio(d);
+    // grains are sized to the frame: the buffer's height over 900, so they are the
+    // same share of the picture at 1600×900 as on a phone's 220 px slide band
+    // (in raw pixels they covered several times as much there, and an additive
+    // pile-up saturated to white)
+    const frame = Math.max(0.05, (viewH * d) / 900);
+    fieldMat.uniforms.uPixelRatio.value = frame;
     bloom.strength = bloomBase * Math.min(1, Math.max(0.35, (viewW * d) / 1280));
-    for (const s of stations.values()) s.built.setPixelRatio(d);
+    for (const s of stations.values()) s.built.setPixelRatio(d, frame);
   };
   function resize() {
     const r = container.getBoundingClientRect();
