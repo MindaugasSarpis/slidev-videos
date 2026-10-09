@@ -5,12 +5,17 @@
 // camera stood, page errors.
 //
 //   slidev-stage-shots <dist> <out-dir> [--slides 1-12,15] [--clicks '{"9":3}']
-//                      [--wait 4200] [--click-wait 9000] [--size 1600x900] [--json report.json]
+//                      [--wait 1500] [--settle 60] [--click-wait 9000] [--size 1600x900] [--json report.json]
 //
 //   dist        a built deck (slidev build … --base /)
 //   --slides    which slides (default: all, counted from the deck itself)
 //   --clicks    slides with clicks to step through: {"slide": clicks}
-//   --wait      ms to let a slide settle before the shot (a flight takes up to 4.5 s)
+//   --wait      ms a slide is given at least before the shot
+//   --settle    s at most to wait, after --wait, for the slide to stand still: the
+//               camera landed, the forms gathered, StagePhotos handed over, CSS
+//               transitions done (the recorder's test, on the page's own clock;
+//               a slow software renderer takes longer, so a fixed wait caught
+//               slides mid-flight). 0: no settling, --wait only
 //   --stills    the world alone, no slide text, as <out-dir>/01.jpg …: the stills
 //               print, PDF export and the static fallback show (stage/stills.js);
 //               write them to the deck's public/stills
@@ -69,13 +74,14 @@ export function parseSlides(spec, total) {
 }
 
 function parseArgs(argv) {
-  const o = { dist: null, out: null, slides: null, clicks: {}, wait: 4200, clickWait: 9000, size: [1600, 900], json: null, stills: false };
+  const o = { dist: null, out: null, slides: null, clicks: {}, wait: 1500, settle: 60, clickWait: 9000, size: [1600, 900], json: null, stills: false };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--slides') o.slides = argv[++i];
     else if (a === '--clicks') o.clicks = JSON.parse(argv[++i]);
     else if (a === '--wait') o.wait = Number(argv[++i]);
+    else if (a === '--settle') o.settle = Number(argv[++i]);
     else if (a === '--click-wait') o.clickWait = Number(argv[++i]);
     else if (a === '--size') o.size = argv[++i].split('x').map(Number);
     else if (a === '--json') o.json = argv[++i];
@@ -85,6 +91,41 @@ function parseArgs(argv) {
   }
   [o.dist, o.out] = rest;
   return o;
+}
+
+// Where slide n stands, for settle(): the recorder's state (lib/record-page.mjs
+// state()), read in real time.
+function standing(n) {
+  const st = document.querySelector('.stage');
+  const sp = st && st.__space;
+  const page = document.querySelector(`.slidev-page[data-slidev-no="${n}"]`);
+  let running = 0;
+  for (const a of document.getAnimations()) {
+    if (a.playState !== 'running') continue;
+    const end = a.effect && a.effect.getComputedTiming ? a.effect.getComputedTiming().endTime : Infinity;
+    if (Number.isFinite(end)) running++;          // a looping animation never ends; it does not hold the shot
+  }
+  return {
+    flying: !!(sp && sp.flying),
+    assembled: !st || document.documentElement.hasAttribute('data-space-assembled'),
+    ready: !st || st.classList.contains('ready') || st.classList.contains('static-bg'),
+    photosHeld: page ? page.querySelectorAll('.stage-photo[data-photo-phase="held"]').length : 0,
+    running,
+  };
+}
+export const isStill = (s) => s.ready && !s.flying && s.assembled && s.photosHeld === 0 && s.running === 0;
+
+// Wait until slide n has stood still for half a second, `max` ms at most. → { ms, settled }
+export async function settle(page, n, max, poll = 250) {
+  const t0 = Date.now();
+  let calm = 0;
+  while (Date.now() - t0 < max) {
+    const s = await page.evaluate(standing, n).catch(() => null);
+    calm = s && isStill(s) ? calm + 1 : 0;
+    if (calm >= 2) return { ms: Date.now() - t0, settled: true };
+    await page.waitForTimeout(poll);
+  }
+  return { ms: Date.now() - t0, settled: false };
 }
 
 export async function shoot(o) {
@@ -119,6 +160,7 @@ export async function shoot(o) {
       const on = there && await page.evaluate((n) => Number((/^#\/(\d+)/.exec(location.hash) || [])[1]) === n, n);
       if (!on) break;
       await page.waitForTimeout(o.wait);
+      const settled = o.settle > 0 ? await settle(page, n, o.settle * 1000) : null;
       const shot = async (suffix) => {
         const info = await page.evaluate((n) => {
           const pg = document.querySelector(`.slidev-page[data-slidev-no="${n}"]`);
@@ -138,12 +180,13 @@ export async function shoot(o) {
         const name = `${String(n).padStart(2, '0')}${suffix}`;
         if (o.stills) await page.screenshot({ path: join(out, `${name}.jpg`), type: 'jpeg', quality: 82 });
         else await page.screenshot({ path: join(out, `${name}.png`) });
-        report.push({ slide: n, frame: name, ...info });
+        report.push({ slide: n, frame: name, ...info, ...(settled && !suffix ? { settleMs: settled.ms, settled: settled.settled } : {}) });
       };
       await shot('');
       for (let c = 1; c <= (o.stills ? 0 : o.clicks[n] || 0); c++) {
         await page.keyboard.press('ArrowRight');
-        await page.waitForTimeout(o.clickWait);
+        await page.waitForTimeout(Math.min(o.clickWait, o.settle > 0 ? o.wait : o.clickWait));
+        if (o.settle > 0) await settle(page, n, Math.max(o.settle * 1000, o.clickWait));
         await shot(`-c${c}`);
       }
     }
@@ -157,14 +200,16 @@ export async function shoot(o) {
 export async function main(argv = process.argv.slice(2)) {
   const o = parseArgs(argv);
   if (o.help || !o.dist || !o.out) {
-    console.log("usage: slidev-stage-shots <dist> <out-dir> [--slides 1-12,15] [--clicks '{\"9\":3}'] [--wait 4200] [--click-wait 9000] [--size 1600x900] [--json report.json] [--stills]");
+    console.log("usage: slidev-stage-shots <dist> <out-dir> [--slides 1-12,15] [--clicks '{\"9\":3}'] [--wait 1500] [--settle 60] [--click-wait 9000] [--size 1600x900] [--json report.json] [--stills]");
     return o.help ? 0 : 2;
   }
   let result;
   try { result = await shoot(o); } catch (e) { console.error(e.message || e); return 1; }
   if (o.json) await writeFile(resolve(o.json), JSON.stringify(result, null, 2) + '\n');
   const over = result.report.filter((r) => (r.overflowPx ?? 0) > 0 || (r.overflowRightPx ?? 0) > 0);
-  for (const r of result.report) console.log(`${r.frame}  at=${r.at ?? '-'}  station=${r.station ?? '-'}  overflow=${r.overflowPx ?? '-'}px`);
+  for (const r of result.report) console.log(`${r.frame}  at=${r.at ?? '-'}  station=${r.station ?? '-'}  overflow=${r.overflowPx ?? '-'}px${r.settleMs != null ? `  ${r.settled ? 'settled' : 'NOT settled'} in ${(r.settleMs / 1000).toFixed(1)} s` : ''}`);
+  const unsettled = result.report.filter((r) => r.settled === false);
+  if (unsettled.length) console.log(`\n${unsettled.length} slide(s) had not stood still after --settle ${o.settle} s: ${unsettled.map((r) => r.frame).join(', ')}`);
   if (over.length) console.log(`\n${over.length} frame(s) run off the slide: ${over.map((r) => r.frame).join(', ')}`);
   if (result.errors.length) console.log(`\npage errors:\n  ${result.errors.join('\n  ')}`);
   console.log(`\n${result.report.length} frame(s) in ${resolve(o.out)}`);

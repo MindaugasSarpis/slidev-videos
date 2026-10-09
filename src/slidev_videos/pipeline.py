@@ -415,6 +415,9 @@ class VideoEntry:
     # end. Applied at encode (-ss input-side, -t duration output-side); the
     # remux profile cuts on keyframes.
     trim: tuple[str, str] | None = None
+    # The print poster's moment (seconds or M:SS), where the first lit frame is
+    # not the picture: an animation that opens on a speck on black.
+    poster: str | None = None
 
 
 def _videos_from_data(data: dict) -> list[VideoEntry]:
@@ -430,6 +433,7 @@ def _videos_from_data(data: dict) -> list[VideoEntry]:
             encoder=v.get("encoder"),
             loudnorm=v.get("loudnorm"),
             trim=tuple(v["trim"]) if v.get("trim") else None,
+            poster=str(v["poster"]) if v.get("poster") not in (None, "") else None,
         )
         for v in data.get("videos", [])
     ]
@@ -1767,6 +1771,10 @@ def cmd_preflight(args: argparse.Namespace) -> int:
 # Beside each strip goes a poster, <clip>.poster.jpg: the clip's first lit
 # frame (past an opening fade from black) at up to 1280 px wide. Print and PDF
 # export show it in the player's place, where a <video> prints as nothing.
+# Lit, for a poster, is 5 % of the frame above 7 % luminance (a speck on black
+# is not a picture); a clip that never gets there takes the first frame with
+# anything lit at all (0.2 %, the player's own test). A manifest entry's
+# `poster = "0:24"` names the moment instead.
 
 FRAMES_DIRNAME = "video-frames"
 FRAMES_INDEX = "index.json"
@@ -1781,19 +1789,41 @@ FRAMES_LIT_WITHIN_S = 12.0
 # player's own test (bus.js isLit), so one small lit figure on black counts as lit
 FRAMES_BLACK_PIX = 0.07
 FRAMES_BLACK_PIC = 0.998
+FRAMES_POSTER_PIC = 0.95
 BLACK_RE = re.compile(r"black_start:\s*([\d.]+)\s+black_end:\s*([\d.]+)")
 
 
-def lit_from(blackdetect_log: str, within: float = FRAMES_LIT_WITHIN_S) -> float:
+def lit_from(blackdetect_log: str, within: float = FRAMES_LIT_WITHIN_S) -> float | None:
     """Where a clip's picture first lights up, from ffmpeg blackdetect output:
-    the end of a black stretch that opens the clip, else 0. A clip black for
-    all of `within` seconds gives 0 (the poster is then its opening frame)."""
+    the end of a black stretch that opens the clip, else 0; None when it is
+    black for all of `within` seconds."""
     for m in BLACK_RE.finditer(blackdetect_log or ""):
         start, end = float(m.group(1)), float(m.group(2))
         if start <= 0.05:
-            return 0.0 if end >= within - 0.05 else round(end, 3)
+            return None if end >= within - 0.05 else round(end, 3)
         break
     return 0.0
+
+
+def _black_end(src: str, pic_th: float) -> float | None:
+    probe = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-nostats", "-t", str(FRAMES_LIT_WITHIN_S), "-i", src, "-an", "-sn",
+         "-vf", f"blackdetect=d=0:pix_th={FRAMES_BLACK_PIX}:pic_th={pic_th}", "-f", "null", "-"],
+        capture_output=True, text=True,
+    )
+    return lit_from(probe.stderr) if probe.returncode == 0 else 0.0
+
+
+def manifest_posters() -> dict[str, str]:
+    """{clip: poster moment} from the talk's and the shared manifest."""
+    out: dict[str, str] = {}
+    for load in (load_shared_manifest, load_manifest):
+        try:
+            _, videos = load()
+        except (OSError, ValueError, KeyError, tomllib.TOMLDecodeError):
+            continue
+        out.update({v.name: v.poster for v in videos if v.poster})
+    return out
 
 DUST_HEADMATTER_RE = re.compile(r"^videos:[ \t]*\n(?:[ \t]+.*\n|[ \t]*\n)*?[ \t]+transition:[ \t]*[\"']?dust\b", re.M)
 DUST_TAG_RE = re.compile(r'<VideoPlayer\b[^>]*?(?<![:\w-])transition="dust"[^>]*>', re.S)
@@ -1965,23 +1995,27 @@ def _frames_cut(name: str, src: str, info: dict | None, out_dir: Path,
     if poster:
         entry["poster"] = poster
         entry["lit"] = lit
+        if (getattr(args, "poster_at", None) or {}).get(name):
+            entry["poster_at"] = args.poster_at[name]
     return name, entry, human_size(out.stat().st_size) + (" (downloaded to cut)" if via_download else "")
 
 
 def _frames_poster(name: str, src: str, width: int, out_dir: Path,
                    args: argparse.Namespace) -> tuple[float, str | None]:
-    """Write <clip>.poster.jpg from the first lit frame. → (its time, file name or None)."""
-    probe = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-nostats", "-t", str(FRAMES_LIT_WITHIN_S), "-i", src, "-an", "-sn",
-         "-vf", f"blackdetect=d=0:pix_th={FRAMES_BLACK_PIX}:pic_th={FRAMES_BLACK_PIC}", "-f", "null", "-"],
-        capture_output=True, text=True,
-    )
-    lit = lit_from(probe.stderr) if probe.returncode == 0 else 0.0
+    """Write <clip>.poster.jpg from the first lit frame, or the manifest's
+    `poster` moment. → (its time, file name or None)."""
+    named = (getattr(args, "poster_at", None) or {}).get(name)
+    if named:
+        lit, at = _hms(named), _hms(named)
+    else:
+        lit = _black_end(src, FRAMES_POSTER_PIC)
+        if lit is None:                                   # never 5 % lit: anything lit at all
+            lit = _black_end(src, FRAMES_BLACK_PIC) or 0.0
+        # a hair past the black's end, so the frame is the lit one
+        at = lit + 0.04 if lit else 0
     out = out_dir / f"{name}.poster.jpg"
     tmp = out_dir / f".{name}.poster.tmp.jpg"
     w = min(FRAMES_POSTER_W, width) if width else FRAMES_POSTER_W
-    # a hair past the black's end, so the frame is the lit one
-    at = lit + 0.04 if lit else 0
     res = subprocess.run(
         ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{at:.3f}", "-i", src,
          "-an", "-sn", "-frames:v", "1", "-vf", f"scale={w}:-2:flags=bicubic,setsar=1",
@@ -2001,6 +2035,9 @@ def _frames_current(entry: dict | None, out_dir: Path, args: argparse.Namespace)
         return False
     if not entry.get("poster") or not (out_dir / str(entry["poster"])).is_file():
         return False          # cut before posters existed
+    clip = str(entry.get("file", "")).removesuffix(".jpg")      # the strip is <clip>.jpg
+    if entry.get("poster_at") != (getattr(args, "poster_at", None) or {}).get(clip):
+        return False          # the manifest's poster moment changed
     plan = frames_plan(float(entry.get("duration") or 0), args.interval, args.max_tiles, FRAMES_COLS)
     return (
         entry.get("tile", [0])[0] == args.tile_width
@@ -2044,6 +2081,7 @@ def cmd_frames(args: argparse.Namespace) -> int:
         print("error: frames needs ffmpeg and ffprobe on PATH", file=sys.stderr)
         return 2
 
+    args.poster_at = manifest_posters()
     todo = [n for n in refs if args.force or not _frames_current(index.get(n), out_dir, args)]
     for name in refs:
         if name not in todo:

@@ -17,10 +17,10 @@ renderer under a clip that covers the slide. Either works alone.
 
 ## Install (per consumer repo)
 
-    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.5.3"
-    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.5.3
-    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.5.3&path:/packages/stage"   # the stage, if wanted
-    pip install "slidev-videos[depth] @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.5.3"   # + depth maps for photo places
+    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.5.4"
+    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.5.4
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.5.4&path:/packages/stage"   # the stage, if wanted
+    pip install "slidev-videos[depth] @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.5.4"   # + depth maps for photo places
 
 What changed between releases: [CHANGELOG.md](CHANGELOG.md).
 
@@ -215,9 +215,10 @@ the clip fades. `check` lists the `dust` clips that have no strip. `frames`
 cuts from the local copy if there is one, else from the release; where
 ffmpeg cannot read HTTPS (the static Linux builds crash on it) the clip is
 downloaded, cut and removed. Beside each strip it writes a poster,
-`<clip>.poster.jpg`: the first lit frame (past an opening fade from black), up
-to 1280 px wide, which print and PDF export show (`frames --all` gives every
-clip one, not only the `dust` clips).
+`<clip>.poster.jpg`: the first frame with 5 % of it lit (past an opening fade
+from black, and past a speck on black), up to 1280 px wide, which print and
+PDF export show; a manifest entry's `poster = "0:24"` names the moment instead
+(`frames --all` gives every clip one, not only the `dust` clips).
 
 Other addons can follow along on `window`: `slidev-videos:transition`
 `{ phase: 'enter' | 'leave', mode, src, duration, color }` and
@@ -273,6 +274,7 @@ Manifest (`videos/manifest.toml`) entries:
     profile = "standard"          # remux | standard | standard-tight | silent-loop | high-motion
     used_in = ["L01"]
     trim    = ["0:20", "1:50"]    # optional; remux trims on keyframes
+    poster  = "0:24"              # optional; the print poster's moment (default: the first frame 5 % lit)
     notes   = "what it shows"
 
 ## The shared library

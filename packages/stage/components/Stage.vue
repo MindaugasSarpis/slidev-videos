@@ -2,7 +2,7 @@
 import '@fontsource/space-grotesk/400.css'
 import '@fontsource/space-grotesk/500.css'
 import '@fontsource/space-grotesk/700.css'
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted, inject } from 'vue'
 import { useNav, configs } from '@slidev/client'
 import { createSpace, usePlugin, resolvePalette, resolveLook, liftGround, paletteVars, warmAudio, startHum, stopHum, humProbe, playWhoosh, playRise } from '../index.js'
 import StagePanel from './StagePanel.vue'
@@ -94,7 +94,13 @@ let humEverywhere = false
 const STILLS = stillsDir(CFG.stills)
 const printing = ref(false)
 const stillMissing = ref(new Set())
-const stillSrc = computed(() => stillUrl(STILLS, nav.currentSlideNo.value, base()))
+// Each print page carries its own nav (Slidev's PrintSlideClick provides it as
+// the slide context); useNav() reads it from Slidev 52.19 on, but 52.14 returns
+// the deck's, which stays at 1 on the print route: every page showed slide 1's
+// still. Read the page's context first.
+const pageCtx = inject('$$slidev-context', null)
+const pageNo = computed(() => Number(pageCtx?.nav?.currentSlideNo) || nav.currentSlideNo.value || 1)
+const stillSrc = computed(() => stillUrl(STILLS, printing.value ? pageNo.value : nav.currentSlideNo.value, base()))
 const stillShown = computed(() => !!stillSrc.value && (printing.value || staticBg.value) && !stillMissing.value.has(stillSrc.value))
 const onStillError = () => { stillMissing.value = new Set(stillMissing.value).add(stillSrc.value) }
 
@@ -405,6 +411,8 @@ const onVideoCover = (e) => {
 onMounted(() => {
   const html = document.documentElement
   html.dataset.stage = '1'
+  // Print mounts one stage per page; the page-wide marks stay while any is up
+  html.dataset.stageMounts = String((Number(html.dataset.stageMounts) || 0) + 1)
   if (LOOK) html.dataset.stageLook = LOOK    // the CSS kit keys on html[data-stage-look]
   for (const [k, v] of Object.entries(paletteVars(palette))) html.style.setProperty(k, v)
   document.addEventListener('visibilitychange', onVisibility)
@@ -431,11 +439,20 @@ onUnmounted(() => {
   clearInterval(debugTimer)
   clearTimeout(restoreTimer)
   canvas.value?.removeEventListener('webglcontextlost', onContextLost)
-  stopHum()
-  assembled(true)
-  delete document.documentElement.dataset.stage
-  delete document.documentElement.dataset.stageLook
-  delete document.documentElement.dataset.spaceStop
+  const html = document.documentElement
+  const left = Math.max(0, (Number(html.dataset.stageMounts) || 1) - 1)
+  if (left) html.dataset.stageMounts = String(left)
+  else {
+    // the last stage gone: the page-wide marks go with it (with one per print
+    // page, the first unmount took html[data-stage], and with it the CSS kit
+    // and every deck style scoped to it, from every page)
+    stopHum()
+    assembled(true)
+    delete html.dataset.stageMounts
+    delete html.dataset.stage
+    delete html.dataset.stageLook
+    delete html.dataset.spaceStop
+  }
   space?.dispose()
   space = null
 })
@@ -446,7 +463,8 @@ onUnmounted(() => {
     <canvas ref="canvas" :key="canvasKey" class="field" aria-hidden="true"></canvas>
     <img v-if="stillShown" class="still" :src="stillSrc" alt="" aria-hidden="true" decoding="async" @error="onStillError" />
     <div class="scrim" aria-hidden="true" :style="{ opacity: dim }"></div>
-    <div class="grain" aria-hidden="true"></div>
+    <!-- not in print: an SVG noise filter prints as a page-sized raster on every page -->
+    <div v-if="!printing" class="grain" aria-hidden="true"></div>
     <Transition name="hud">
       <div v-if="shown && arrived" class="hud" :key="shown.id">
         <slot name="hud" :record="shown" :figure="stopFigure" :rows="rows">

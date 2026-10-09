@@ -357,6 +357,10 @@ onUnmounted(() => { run++; sheet?.cancel(); sheet = null; cancelAnimationFrame(t
 .stage-photo > .stage-photo-slot > * { pointer-events: auto; }
 .stage-photo > .stage-photo-slot.stage-photo-slot-off { opacity: 0; transition: opacity 250ms ease; }
 .stage-photo { position: absolute; inset: 0; overflow: hidden; }
+/* In print a CSS filter on the photo (a talk's contrast lift) makes Chrome
+   rasterize it as a lossless page-sized image: 6.5 MB a page instead of the
+   JPEG. The photo prints as it is. */
+html.print .stage-photo > img { filter: none !important; }
 .stage-photo > img {
   position: absolute; inset: 0; width: 100%; height: 100%;
   object-fit: cover; object-position: var(--focus, 50% 50%);

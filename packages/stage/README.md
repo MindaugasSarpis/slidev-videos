@@ -13,7 +13,7 @@ quarks, clusters, particle names — is a plugin.
 
 ## Install
 
-    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.5.3&path:/packages/stage"
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.5.4&path:/packages/stage"
 
 ## Use
 
@@ -197,14 +197,17 @@ deck's own `styles/index.css`.
 ## Tools
 
     slidev-stage-check [deck-dir] [--plugins hadron] [--types beacon]
-    slidev-stage-shots <dist> <out-dir> [--slides 1-12] [--clicks '{"9":3}'] [--wait 4200]
+    slidev-stage-shots <dist> <out-dir> [--slides 1-12] [--clicks '{"9":3}'] [--settle 60] [--stills]
     slidev-stage-record <dist> <out-dir> [--fps 50] [--slides 2-5] [--plate] [--hold 8]
     slidev-stage-safe <dist> [--broadcast] [--json]
 
 `check` validates the space file and that every `space.at` and stop in the
 deck resolves; run it after editing either. `shots` photographs a built deck
 slide by slide in a headless browser (WebGL on SwiftShader) and reports
-content running off a slide, where the camera stood, and page errors. It
+content running off a slide, where the camera stood, and page errors. Each
+shot waits until the slide stands still (camera landed, forms gathered,
+StagePhotos handed over, transitions done), `--settle` seconds at most; the
+report says which slides had not. It
 needs `playwright-chromium` 1.59 in the deck (`pnpm add -D playwright-chromium@~1.59.1`,
 then `pnpm exec playwright install chromium`); nothing else in the addon does.
 `record` and `safe` are for a deck that goes to video or to air; see below.
@@ -391,7 +394,7 @@ them, `false` turns them off). The static fallback on screen shows the same
 stills. Make them from a real render, the world alone without the slide:
 
     slidev build deck.md --out /tmp/deck --base /
-    slidev-stage-shots /tmp/deck public/stills --stills --wait 9000
+    slidev-stage-shots /tmp/deck public/stills --stills
 
 A slide without a still prints on the static gradient. `slidev export --range`
 on a deck with `routerMode: hash` prints only those slides (Slidev read the

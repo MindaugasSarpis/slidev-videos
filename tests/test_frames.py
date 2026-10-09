@@ -249,7 +249,7 @@ def test_lit_from_reads_an_opening_black_stretch():
     assert pipeline.lit_from(log) == 2.04
     assert pipeline.lit_from("") == 0.0                                   # never black
     assert pipeline.lit_from("black_start:3.5 black_end:4.0") == 0.0      # black later, not at the start
-    assert pipeline.lit_from("black_start:0 black_end:12") == 0.0         # black throughout: the opening frame
+    assert pipeline.lit_from("black_start:0 black_end:12") is None        # black throughout
 
 
 @pytest.mark.skipif(not HAVE_FFMPEG, reason="needs ffmpeg")
@@ -281,3 +281,41 @@ def test_a_poster_is_the_first_lit_frame(tmp_path, capsys):
         capture_output=True, text=True, check=True,
     )
     assert size.stdout.strip() == "640,360"             # never wider than the clip
+
+
+def speck_clip(path):
+    """Four seconds of a small white square on black (0.3 % of the frame), then the picture."""
+    subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+         "-f", "lavfi", "-i", "color=c=black:size=640x360:rate=25:duration=4",
+         "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=25:duration=4",
+         "-filter_complex", "[0:v]drawbox=x=300:y=170:w=28:h=28:color=white:t=fill[s];[s][1:v]concat=n=2:v=1[v]",
+         "-map", "[v]", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", str(path)],
+        check=True,
+    )
+
+
+@pytest.mark.skipif(not HAVE_FFMPEG, reason="needs ffmpeg")
+def test_a_speck_on_black_is_not_the_poster(tmp_path):
+    make_project(tmp_path, PER_CLIP)
+    speck_clip(tmp_path / "public" / "videos" / "b.mp4")
+    assert run(tmp_path) == 0
+    e = json.loads((tmp_path / "public" / "video-frames" / "index.json").read_text())["clips"]["b.mp4"]
+    assert 3.9 <= e["lit"] <= 4.1 and "poster_at" not in e
+
+
+@pytest.mark.skipif(not HAVE_FFMPEG, reason="needs ffmpeg")
+def test_the_manifest_names_the_poster_moment(tmp_path, capsys):
+    make_project(tmp_path, PER_CLIP)
+    make_clip(tmp_path / "public" / "videos" / "b.mp4", seconds=9)
+    (tmp_path / "videos" / "manifest.toml").write_text('[defaults]\n\n[[videos]]\nname = "b.mp4"\nposter = "0:06"\n')
+    assert run(tmp_path) == 0
+    out_dir = tmp_path / "public" / "video-frames"
+    e = json.loads((out_dir / "index.json").read_text())["clips"]["b.mp4"]
+    assert e["lit"] == 6.0 and e["poster_at"] == "0:06"
+    capsys.readouterr()
+    assert run(tmp_path) == 0 and "up to date" in capsys.readouterr().out
+    # a new moment cuts it again
+    (tmp_path / "videos" / "manifest.toml").write_text('[defaults]\n\n[[videos]]\nname = "b.mp4"\nposter = "2"\n')
+    assert run(tmp_path) == 0
+    assert json.loads((out_dir / "index.json").read_text())["clips"]["b.mp4"]["lit"] == 2.0

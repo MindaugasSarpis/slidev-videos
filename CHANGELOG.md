@@ -4,6 +4,33 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## v0.5.4 — 2026-10-09
+
+slidev-videos 0.5.4 · slidev-addon-videos 0.5.4 · slidev-addon-stage 0.2.4
+
+Print and export, from the talks' first v0.5.3 exports:
+
+- **Every print page showed slide 1's still** on Slidev 52.14 (the talks'
+  version): its `useNav()` returns the deck's nav, which stays at 1 on the
+  print route. The stage reads each page's own slide context. Checked on
+  52.14.2: three pages, three stills.
+- **`html[data-stage]` went missing in print**, and with it the CSS kit and
+  every deck style scoped to it (the theme's background drew over the still,
+  the type fell back to the theme's font): one stage mounts per page, and the
+  first to unmount removed it for all. The page-wide marks are now counted.
+- **A PDF a tenth the size**: the stage's paper grain (an SVG noise filter)
+  printed as a page-sized raster on every page, and a filtered StagePhoto as a
+  lossless one; in print the grain is left out and photos print unfiltered.
+  The halo layer's canvas is not mounted in print. Innoday: 170 MB → 12.7 MB
+  for 29 slides.
+- **`slidev-stage-shots` settles each slide** before the shot (the camera
+  landed, the forms gathered, StagePhotos handed over, transitions done),
+  `--settle` seconds at most, instead of a fixed `--wait`, which caught slides
+  mid-flight under a software renderer; the report names any that had not.
+- **Posters** skip a speck on black: the first frame with 5 % of it lit
+  (else anything lit at all), and a manifest entry's `poster = "0:24"` names
+  the moment; a changed moment cuts the poster again.
+
 ## v0.5.3 — 2026-10-09
 
 slidev-videos 0.5.3 · slidev-addon-videos 0.5.3 · slidev-addon-stage 0.2.3
