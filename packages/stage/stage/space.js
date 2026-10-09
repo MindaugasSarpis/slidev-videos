@@ -413,22 +413,45 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   const fillOffset = new Vector3(0, 3.5, 2.5);
 
   // Everything at the station that builds itself does so now. The first to
-  // finish gives the dust the station's pulse; `assembling` / `assembled` are
-  // announced for every station (the cover's title waits on them).
+  // finish gives the dust the station's pulse; `assembled` is announced when
+  // the last has finished (the cover's title, and the headless tools' settle,
+  // wait on it: announced at the first, a slower form beside a quick one was
+  // photographed half built).
+  let assembling = 0, assemblyRun = 0;
   function startAssembly(id = atStation) {
     const apis = id != null ? selfBuilders(id) : [];
     if (!apis.length) return false;
     onEvent?.('assembling', { station: id });
-    let done = false;
-    for (const api of apis) api.assemble(elapsed, () => {
-      if (done) return;
-      done = true;
-      const st = stations.get(id);
-      if (st) { gather.copy(st.pos).sub(field.position); burst.set(gather.x, gather.y, gather.z, kick * (id === heroId ? 1.6 : 0.9)); nextPulse = elapsed + (st.def.pulse || 6); }
-      onEvent?.('assembled', { station: id });
-    });
+    const run = ++assemblyRun;
+    let first = true, left = apis.length;
+    assembling = left;
+    for (const api of apis) {
+      let mine = false;
+      api.assemble(elapsed, () => {
+        if (mine || run !== assemblyRun) return;
+        mine = true;
+        if (first) {
+          first = false;
+          const st = stations.get(id);
+          if (st) { gather.copy(st.pos).sub(field.position); burst.set(gather.x, gather.y, gather.z, kick * (id === heroId ? 1.6 : 0.9)); nextPulse = elapsed + (st.def.pulse || 6); }
+        }
+        assembling = --left;
+        if (!left) onEvent?.('assembled', { station: id });
+      });
+    }
     return true;
   }
+  // A form still moving: one assembling at the station, or a builder that says
+  // so itself (`api.busy`, a value or a function), for a form that moves on its
+  // own clock without assemble()
+  const formsBusy = () => {
+    if (assembling > 0) return true;
+    for (const st of stations.values()) for (const a of st.built.apis || []) {
+      const b = typeof a.busy === 'function' ? a.busy() : a.busy;
+      if (b) return true;
+    }
+    return false;
+  };
 
   function frame() {
     raf = requestAnimationFrame(frame);
@@ -530,6 +553,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     get hero() { return heroId; },
     get atStation() { return atStation; },
     get flying() { return flightT0 >= 0; },
+    get busy() { return formsBusy(); },
     get flightProgress() { return flightT0 >= 0 ? flightU : 1; },   // 0..1 in time through the flight, 1 when parked
     get paused() { return paused; },
     get stationIds() { return [...stations.keys()]; },

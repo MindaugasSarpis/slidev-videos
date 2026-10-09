@@ -18,7 +18,9 @@ import { shared } from './shared.js';
 //   update      called every frame with the world clock and the camera position
 //   api         { arm(), assemble(now, onDone), value?() }: a thing that builds itself on
 //               arrival; value() is the number it shows now, which <StageCount for="name">
-//               reads when the object has a `name`
+//               reads when the object has a `name`; busy (a value or a function), true
+//               while a form moves on its own clock without assemble(): the headless
+//               tools wait for it as they wait for an assembly
 //   pixelRatio  a { value } uniform the engine keeps at the drawing buffer's ratio
 //   dispose     called when the world is torn down, before the engine disposes every
 //               geometry and material under group: for what else the builder holds

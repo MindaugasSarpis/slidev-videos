@@ -6,7 +6,10 @@ import { Group, Points, BufferGeometry, BufferAttribute, ShaderMaterial, Additiv
 // `seconds`, and api.value() says how many have landed, which
 // <StageCount for="<name>"> shows while its slide is up.
 //
-//   { type: tally, name: grains, pos, count?: 400, gap?: 0.34, seconds?: 3.2, color? }
+//   { type: tally, name: grains, pos, count?: 400, gap?: 0.34, seconds?: 3.2, delay?: 0, color? }
+//
+// `delay`: engine-seconds after assemble() before the first grain sets out (the
+// example's second tally, which the smoke test checks the settle waits for).
 
 const VERT = /* glsl */ `
 attribute vec3 aFrom;
@@ -54,7 +57,7 @@ export function buildTally(o, ctx) {
   group.add(points)
   group.position.copy(ctx.helpers.v3(o.pos))
 
-  const seconds = o.seconds ?? 3.2
+  const seconds = o.seconds ?? 3.2, delay = Math.max(0, o.delay ?? 0)
   let t0 = -1, onDone = null
   const api = {
     arm() { t0 = -1; onDone = null; uniforms.uU.value = 0 },
@@ -68,7 +71,7 @@ export function buildTally(o, ctx) {
     update(t) {
       uniforms.uTime.value = t
       if (t0 < 0) return
-      const u = Math.min((t - t0) / seconds, 1)
+      const u = Math.min(Math.max(0, t - t0 - delay) / seconds, 1)
       uniforms.uU.value = u
       if (u >= 1) { t0 = -1; const cb = onDone; onDone = null; cb?.() }
     },

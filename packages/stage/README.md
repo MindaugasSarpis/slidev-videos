@@ -217,7 +217,7 @@ when the world is built. `object` is the entry from space.json, `ctx` is
 | --- | --- |
 | `group` | a three.js Object3D; the builder places it at `object.pos` (relative to its station). Required |
 | `update(t, camPos)` | every frame, with the world clock and the camera's position |
-| `api` | `{ arm(), assemble(now, onDone), value?() }`: for something that builds itself on arrival |
+| `api` | `{ arm(), assemble(now, onDone), value?(), busy? }`: for something that builds itself on arrival; `busy` (a value or a function) is true while a form moves on its own clock without `assemble()` |
 | `dispose()` | when the world is torn down, before the engine disposes every geometry and material under `group`: for what else the builder holds (listeners, timers, its own textures) |
 | `labels` | sprites that fade with the scrim |
 | `anchors` | `Map<id, Vector3>` relative to the object: places a pose or a stop can name |
@@ -236,7 +236,9 @@ stays in step with the camera.
 *at* a station, the engine calls `arm()` on every api there that has
 `assemble`: scatter, hide, start from nothing. When it lands it calls
 `assemble(now, onDone)` with the world clock (and so for the station the
-deck opens on); call `onDone` once, when the form stands. `c` calls
+deck opens on); call `onDone` once, when the form stands. The station
+counts as assembled when the last of its forms has called it: the cover's
+title and the headless tools' settle wait for that, and for any `api.busy`. `c` calls
 `assemble` again. Give the object a `name` and an `api.value()` returning
 the number the form shows now, and `<StageCount for="<name>">` counts with
 it (see `example/setup/tally.js`).

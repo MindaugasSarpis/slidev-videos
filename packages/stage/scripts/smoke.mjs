@@ -215,6 +215,19 @@ check('the deck\'s own builder stands in the world', t.built, `built=${t.built}`
 check('its form reports what it shows', t.value === 400, `value=${t.value}`)
 const between = [...counts].filter((c) => Number(c) > 0 && Number(c) < 400)
 check('the count moves with the form and lands with it', t.count === '400' && between.length > 0, `counts seen: ${[...counts].slice(0, 12).join(', ')}`)
+
+// --- a form that starts late: the settle waits for the last form at a station -----------
+// (the tally station holds `grains`, 3.2 s, and `late`, which sets out 4 s after
+// assemble() and takes 5; "assembled" once came with the first to finish)
+await goto(5)
+await until((s) => s.at !== 'tally' && !s.flying)
+await goto(6)
+const late = await page.evaluate(async () => {
+  const r = await window.__stage.settle({ min: 0.5, max: 120 })
+  const sp = document.querySelector('.stage').__space
+  return { settled: r.settled, engineSec: r.engineSec, grains: sp.value('grains'), late: sp.value('late') }
+})
+check('the settle waits for a form that starts late', late.settled && late.grains === 400 && late.late === 100, JSON.stringify(late))
 // --- the probe -------------------------------------------------------------------------
 const probe = await page.evaluate(() => {
   const s = window.__stage?.state()

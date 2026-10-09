@@ -375,7 +375,8 @@ function pageInit(cfg) {
       atStation: s.atStation ?? root?.dataset.spaceAtStation ?? null,
       flying: s.flying ?? !!api?.flying,
       paused: s.paused ?? !!api?.paused,
-      assembled: document.documentElement.dataset.spaceAssembled === '1',
+      // every form at the station done (the engine says so once the last one has), none still moving (api.busy)
+      assembled: (s.assembled ?? document.documentElement.dataset.spaceAssembled === '1') && !read(() => api?.busy, false),
       changedAt: s.changedAt ?? null,
       elapsed: read(() => p.elapsed, 0),
       frames: read(() => p.frames, 0),

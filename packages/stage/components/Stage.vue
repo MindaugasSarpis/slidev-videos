@@ -447,7 +447,7 @@ function probeState() {
     flying: !!space?.flying,
     arrived: !!space?.arrived,
     paused: !!space?.paused,
-    assembled: document.documentElement.dataset.spaceAssembled === '1',
+    assembled: document.documentElement.dataset.spaceAssembled === '1' && !space?.busy,   // every form done, none still moving
     static: staticBg.value,
     changedAt,
     elapsed: p?.elapsed ?? 0,

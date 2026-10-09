@@ -4,6 +4,18 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## Unreleased (v0.6.2)
+
+- **A slower form is no longer photographed half built.** With several
+  forms that build themselves at one station, the engine announced the
+  station assembled when the first finished; now it waits for the last (the
+  first still gives the dust its pulse). The headless tools' settle (shots,
+  `window.__stage.settle`) reads that, and also `api.busy`, a new optional
+  builder flag for a form that moves on its own clock without `assemble()`.
+  The example's tally station gains a second form that starts 4 s late
+  (`tally`'s new `delay`), and the smoke test checks the settle waits for it:
+  before, it settled with that form at 0 of 100.
+
 ## v0.6.1 — 2026-10-09
 
 slidev-videos 0.6.1 · slidev-addon-videos 0.6.1 · slidev-addon-stage 0.3.1
