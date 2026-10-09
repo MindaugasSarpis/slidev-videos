@@ -235,7 +235,7 @@ export function createField(canvas, container, opts = {}) {
 
   function frame() {
     raf = requestAnimationFrame(frame);
-    const dt = Math.min(getDelta(), MAX_DT);
+    const dt = Math.min(getDelta(), Math.max(MAX_DT, globalThis.__stageMaxDt || 0));   // the recorder's frame time (see space.js)
     elapsed += dt;
 
     resize();

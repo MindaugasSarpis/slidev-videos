@@ -609,7 +609,9 @@ presenter who waits for a clip leaves it: a slide after a clip starts over
 that clip's last frame, and the edit list names the clip (`from`). Frames
 are stepped on a fake clock, not filmed: each moves the page exactly 1/fps,
 however long the frame takes to render, with `Math.random` seeded, CSS
-animations held to the same clock and clips seeked to it; the clock waits
+animations held to the same clock and clips seeked to it (the engine's
+frame-time clamp is lifted to 1/fps, so a take under 12 fps moves at the live
+pace, not slower); the clock waits
 for a clip's data and for every seek, which come in real time. Two runs on
 the same renderer give the same frames (on d3d12, one take in six differed
 from the others by about a level after its first frame).

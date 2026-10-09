@@ -4,6 +4,16 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## Unreleased (v0.6.3)
+
+- **`slidev-stage-record` under 12 fps records at the live pace.** The
+  engine clamps a frame to 1/12 s (StageHero's simulation to 1/30 s), so a
+  take at `--fps 6` moved the world at half speed and one at 10 fps about
+  20 % slow. The recorder lifts the clamp to its own frame time
+  (`globalThis.__stageMaxDt`); a page outside the recorder keeps it. The
+  example's flight settles at 8.3 s of video at 6 fps and 8.1 s at 24 fps
+  (16.3 s at 6 fps before).
+
 ## v0.6.2 — 2026-10-09
 
 slidev-videos 0.6.2 · slidev-addon-videos 0.6.2 · slidev-addon-stage 0.3.2

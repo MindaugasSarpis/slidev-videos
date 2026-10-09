@@ -455,7 +455,9 @@ export function createSpace(canvas, container, { space, records = [], palette, o
 
   function frame() {
     raf = requestAnimationFrame(frame);
-    const dt = Math.min(getDelta(), MAX_DT);
+    // the recorder sets __stageMaxDt to its frame time: at under 12 fps a frame is
+    // still one frame of the world, not 1/12 s of it (the take ran slow)
+    const dt = Math.min(getDelta(), Math.max(MAX_DT, globalThis.__stageMaxDt || 0));
     elapsed += dt; frames++;
     resize();
 

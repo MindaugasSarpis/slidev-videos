@@ -141,6 +141,9 @@ async function openDeck(browser, o, url, n, errors) {
   await page.clock.pauseAt(1000);
   await page.addInitScript(seedRandom, o.seed);
   await page.addInitScript(recorderHooks);
+  // one recorded frame is 1/fps of the world: the engine's frame-time clamp
+  // (1/12 s, the hero's 1/30 s) would make a take under 12 fps run slow
+  await page.addInitScript((dt) => { globalThis.__stageMaxDt = dt; }, 1 / o.fps);
   await page.goto(`${url}#/${n}`);
   // the world boots on the paused clock (data and shaders load in real time)
   await page.waitForFunction(() => window.__rec && window.__rec.state(0).ready, null, { polling: 50, timeout: 90000 });
