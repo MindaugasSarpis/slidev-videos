@@ -126,6 +126,10 @@ function renderDebug() {
 // the static stage stays.
 let restoreTimer = 0
 const onContextLost = (e) => {
+  // only the live canvas counts: disposing the old one after a restore makes it
+  // report a loss of its own, which must not step the tier down again
+  e.target?.removeEventListener?.('webglcontextlost', onContextLost)
+  if (e.target !== canvas.value || status.status !== 'running') return
   e.preventDefault?.()
   events.contextLost++
   space?.setPaused(true)
@@ -318,6 +322,7 @@ async function boot() {
   if (root.value) root.value.__space = space
   space.setDim(dim.value)
   apply(true)
+  rest()          // a rebuild under a covering clip, or in a hidden tab, rests at once
 }
 
 // html[data-space-assembled]: set while no assembly runs (and always without WebGL), so the cover's title shows
