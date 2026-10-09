@@ -4,7 +4,9 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
-## Unreleased (v0.6.2)
+## v0.6.2 — 2026-10-09
+
+slidev-videos 0.6.2 · slidev-addon-videos 0.6.2 · slidev-addon-stage 0.3.2
 
 - **A slower form is no longer photographed half built.** With several
   forms that build themselves at one station, the engine announced the
@@ -15,6 +17,12 @@ on its own). A deck pins both addons and the CLI to the same tag.
   The example's tally station gains a second form that starts 4 s late
   (`tally`'s new `delay`), and the smoke test checks the settle waits for it:
   before, it settled with that form at 0 of 100.
+
+### Upgrading from v0.6.1
+
+- `html[data-space-assembled]` now comes when the last form at a station
+  finishes, not the first: talk CSS keyed to it (a cover title fading in, say)
+  may appear later on a station with more than one self-building form.
 
 ## v0.6.1 — 2026-10-09
 
