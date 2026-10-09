@@ -4,6 +4,84 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## v0.6.0 — unreleased
+
+slidev-videos 0.6.0 · slidev-addon-videos 0.6.0 · slidev-addon-stage 0.3.0
+
+v0.5.4 with the three branches that waited beside the releases: the CLI
+hardened, the stage addon fit for the talks' own builders and counters, and
+headless review that settles on the engine's clock.
+
+### Headless review (`slidev-stage-shots`, feat/shots-v2)
+
+- **Settles each frame on the engine's clock** instead of waiting: the world
+  runs fast and undrawn until the camera has landed, nothing assembles and
+  `--settle` engine-seconds (default 6) have passed since the slide or click
+  changed; `--wait` is a wall-time cap. Randomness is seeded, so two runs with
+  `--seed` and `--no-halo` give the same pictures. Under a software renderer
+  a still settles in about 2 s instead of the 7–36 s v0.5.4's real-time wait
+  took (and a fixed wait caught slides mid-flight).
+- **`--stills`** keeps its v0.5.3 meaning on the new engine: the world alone,
+  one `NN.jpg` per slide, for print, PDF export and the static fallback.
+- One NDJSON line per frame (the settle, renderer and backend, overflow, page
+  errors, failed requests, every text box with the luminance behind it); exit
+  0 clean, 3 problems, 1 the run failed, 2 bad arguments, 128 + n a signal.
+- `--changed` (only what changed, public files keyed by their bytes),
+  `--sheet`, `--clicks none|last|all`, `--base` (read from index.html by
+  default: a Pages build is served under its base), `--jobs`, `--probe`,
+  `--draft`, `--burst`/`--every`, `--dev deck.md`, `--gl`, `--seed`,
+  `--no-halo`, `--console`. Runs queue on `/tmp/slidev-stage-shots.lock`; a
+  signal stops the whole run and writes the report so far.
+- `window.__stage`: one documented probe (`state()`, `settle()`, `fps()`,
+  `holdQuality()`); `canvas.__space` and the other handles stay as aliases.
+- `bin/lib/chromium.mjs`: one launcher for shots, record, safe and the smoke
+  tests, on the best WebGL the machine reaches (a native NVIDIA driver, WSL's
+  GPU through Mesa d3d12, llvmpipe, then SwiftShader with a warning);
+  `SLIDEV_STAGE_GL` / `--gl` force one. playwright-chromium pinned to ~1.59.1.
+
+### The stage addon (fix/stage-addon)
+
+- **`slidev-stage-check` names the slide and a code** for every problem
+  (`unknown-station`, `missing-anchor`, `bad-pose`, `camera-inside-form`, …),
+  suggests a close name, reads slides as Slidev counts them (hidden ones not),
+  and finds the types and palettes a deck registers in its own `setup/`.
+  `--json` prints the problems with their codes. The v0.5.1 place checks
+  carry over as `duplicate-place`, `place-is-station` and `unknown-group`.
+- **`<StageCount>`**: a number that counts with its slide, or with a form's
+  own value (`for="grains"`), taking every prop of the talks' `Count.vue`.
+- The addon ships the Vite config the talks copied (one three.js and one
+  builder registry when a deck brings its own copy); `static-ground` draws
+  the gradient without the world; the probe handle carries the options as
+  resolved. No shader calls `smoothstep` with reversed edges (undefined in
+  GLSL; black on some GPUs).
+
+### The CLI (fix/cli-hardening)
+
+- **`slidev-videos doctor`**: the CLI install, ffmpeg, gh, rclone and the
+  deck's addons, in one report. **`contact-sheet`** tiles a candidate clip
+  into one PNG.
+- `--json`, `--version`, and `--project` before or after the subcommand; an
+  explicit `--project` must exist.
+- ffmpeg and ffprobe are picked for reading HTTPS, not taken first on PATH,
+  and never a directory with one but not the other.
+- `preflight` probes what the player serves, in parallel and from a cache;
+  one bad probe no longer sinks the run. `venue` builds with
+  `VITE_VIDEOS_LOCAL_FIRST=1`.
+- `frames` cuts from the web tier a deck plays, downloads into a temporary
+  directory, and a SIGTERM removes every download (exit 143). `--prune` keeps
+  the whole manifest and deletes only with `--yes`.
+- NVENC web encodes reach libx264's quality at its size, not twice it.
+
+### Upgrading from v0.5.4
+
+- Pin `#v0.6.0` for both addons and `@v0.6.0` for the CLI.
+- `slidev-stage-check` output changed shape: each line starts with its slide;
+  `--json` gives `{ ok, problems: [{ slide, line, code, level, msg }] }`.
+- `slidev-stage-shots`: `--wait` is now a cap, not the wait; a script that
+  read `report.json` reads `<out-dir>/shots.ndjson` (or passes `--json`).
+- A talk that copied the addon's Vite config (`optimizeDeps.exclude`) can drop
+  its copy.
+
 ## v0.5.4 — 2026-10-09
 
 slidev-videos 0.5.4 · slidev-addon-videos 0.5.4 · slidev-addon-stage 0.2.4
