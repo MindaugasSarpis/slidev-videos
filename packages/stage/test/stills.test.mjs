@@ -31,13 +31,12 @@ test('--range reads as Slidev reads it', () => {
   assert.deepEqual(rangeList('x', 5), []);
 });
 
-test('a shot waits for a slide that stands still: landed, gathered, handed over, no transition running', async () => {
-  const { isStill } = await import('../bin/shots.mjs');
-  const calm = { ready: true, flying: false, assembled: true, photosHeld: 0, running: 0 };
-  assert.equal(isStill(calm), true);
-  assert.equal(isStill({ ...calm, flying: true }), false);
-  assert.equal(isStill({ ...calm, assembled: false }), false);
-  assert.equal(isStill({ ...calm, photosHeld: 1 }), false);
-  assert.equal(isStill({ ...calm, running: 2 }), false);
-  assert.equal(isStill({ ...calm, ready: false }), false);
+test('--stills takes one frame of the world per slide', async () => {
+  const { parseArgs } = await import('../bin/shots.mjs');
+  const o = parseArgs(['dist', 'public/stills', '--stills', '--clicks', 'all', '--burst', '3']);
+  assert.equal(o.stills, true);
+  assert.equal(o.clicks, 'none');
+  assert.equal(o.burst, 1);
+  assert.equal(o.halo, false);
+  assert.deepEqual(o.errors, []);
 });

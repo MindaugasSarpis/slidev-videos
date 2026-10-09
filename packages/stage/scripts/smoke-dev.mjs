@@ -13,7 +13,7 @@
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:net'
 import { chromium } from 'playwright-chromium'
-import { GL_ARGS } from '../bin/shots.mjs'
+import { ARGS, COMMON } from '../bin/lib/chromium.mjs'
 
 const ROOT = new URL('..', import.meta.url).pathname
 const port = await new Promise((ok) => { const s = createServer().listen(0, () => { const p = s.address().port; s.close(() => ok(p)) }) })
@@ -38,7 +38,7 @@ for (;;) {
   await new Promise((r) => setTimeout(r, 500))
 }
 
-const browser = await chromium.launch({ args: GL_ARGS })
+const browser = await chromium.launch({ args: [...ARGS.swiftshader, ...COMMON] })   // the launcher's software backend: no GPU needed
 // every WebGL context a page opens, counted before any of its code runs
 const counted = async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })

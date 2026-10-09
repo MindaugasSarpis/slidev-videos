@@ -1,15 +1,17 @@
 // node --test test/   — what can be held to account without a browser.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtemp, mkdir, writeFile, utimes, rename, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawn, spawnSync } from 'node:child_process';
 import { CORE_TYPES, PLUGIN_TYPES, STAGE_KEYS, OPTION_KEYS, SPACE_KEYS, anchorIds } from '../stage/types.js';
 import { resolvePalette, PALETTES, DEFAULT_PALETTE, LOOKS, hexToRgb, rgbTriplet, paletteVars, definePalette } from '../stage/palette.js';
 import { checkStage, readStageConfig, deckPoses, deckSlides, deckTypes, deckComponents, readYaml, deckPlaces, deckPlaceList, deckPlaceGroups, deckPages, main as checkMain } from '../bin/check.mjs';
 import { formatCount, countRun, countAt, countSpan, COUNT_DOWN_MS } from '../stage/count.js';
 import { deckHasThree } from '../vite.config.js';
-import { parseSlides } from '../bin/shots.mjs';
+import { parseSlides, parseArgs, detectBase, clicksFor, frameName, parseProcLocks, problemsOf, split, serve, staticKey } from '../bin/shots.mjs';
 import { placesDecl, placeGroupsAt } from '../stage/place-groups.js';
 
 const here = (p) => new URL(p, import.meta.url);
@@ -533,4 +535,206 @@ test('stage:check reads place groups and reports a `places:` group no place is i
   assert.deepEqual(deckPlaceGroups(deck), ['inventions', 'ghosts']);
   const space = { stations: [{ id: 's', pos: [0, 0, 0], look: { dist: 9 } }] };
   assert.deepEqual(checkStage({ space, deck }).problems, ['places: no StagePhoto place in group ghosts (groups: inventions)']);
+});
+
+// ---- slidev-stage-shots (feat/shots-v2) ------------------------------------------------
+test('options', () => {
+  const o = parseArgs(['dist', 'out', '--slides', '2-4', '--clicks', 'all', '--settle', '4', '--wait', '9000', '--burst', '3', '--every', '0.5', '--no-halo', '--no-lock', '--draft', '--jobs', '3', '--gl', 'd3d12']);
+  assert.deepEqual(o.errors, []);
+  assert.equal(o.dist, 'dist'); assert.equal(o.out, 'out');
+  assert.equal(o.clicks, 'all'); assert.equal(o.settle, 4); assert.equal(o.wait, 9000);
+  assert.equal(o.burst, 3); assert.equal(o.every, 0.5); assert.equal(o.halo, false); assert.equal(o.lock, null);
+  assert.equal(o.draft, true); assert.equal(o.jobs, 3); assert.equal(o.gl, 'd3d12');
+  assert.deepEqual(parseArgs(['d', 'o']).size, [1600, 900]);
+  // two pages share the machine with llvmpipe's eight threads; the backend is the launcher's to pick
+  assert.equal(parseArgs(['d', 'o']).jobs, 2);
+  // the probe times frames on the real clock: one page, unless asked for more
+  assert.equal(parseArgs(['d', 'o', '--probe']).jobs, 1);
+  assert.equal(parseArgs(['d', 'o', '--probe', '--jobs', '2']).jobs, 2);
+  assert.equal(parseArgs(['d', 'o']).gl, null);
+  assert.equal(parseArgs(['d', 'o']).lock, '/tmp/slidev-stage-shots.lock');
+  // the older click map and --click-wait still parse
+  const old = parseArgs(['d', 'o', '--clicks', '{"9":3}', '--click-wait', '45000']);
+  assert.deepEqual(old.clickMap, { 9: 3 }); assert.equal(old.wait, 45000);
+  // --dev takes the deck; the one positional is the out dir
+  const dev = parseArgs(['--dev', 'deck.md', 'shots']);
+  assert.equal(dev.dev, 'deck.md'); assert.equal(dev.out, 'shots'); assert.equal(dev.dist, null);
+  assert.equal(parseArgs(['--base', 'repo/talk', 'd', 'o']).base, '/');
+  assert.equal(parseArgs(['--base', '/repo/talk', 'd', 'o']).base, '/repo/talk/');
+});
+
+test('bad options are errors, not positionals', () => {
+  assert.match(parseArgs(['d', 'o', '--frobnicate']).errors.join(), /unknown option --frobnicate/);
+  assert.match(parseArgs(['d', 'o', '--clicks', 'some']).errors.join(), /--clicks/);
+  assert.match(parseArgs(['d', 'o', '--size', '1600']).errors.join(), /--size/);
+  assert.match(parseArgs(['d', 'o', '--gl', 'metal']).errors.join(), /--gl: auto, gpu-nvidia, d3d12, llvmpipe, swiftshader, gl; not metal/);
+  assert.match(parseArgs(['d', 'o', '--gl', 'none']).errors.join(), /--gl/);
+  for (const g of ['auto', 'gl', 'swiftshader', 'llvmpipe', 'gpu-nvidia']) assert.deepEqual(parseArgs(['d', 'o', '--gl', g]).errors, []);
+  assert.match(parseArgs(['d']).errors.join(), /usage/);
+  assert.deepEqual(parseArgs(['--help']).errors, []);
+});
+
+test('the base a deck was built for', () => {
+  assert.equal(detectBase('<script type="module" crossorigin src="/assets/index-a.js"></script>'), '/');
+  assert.equal(detectBase('<script type="module" crossorigin src="/cern_outreach_talks/2026_10_00_OpenData/assets/index-a.js"></script>'), '/cern_outreach_talks/2026_10_00_OpenData/');
+  assert.equal(detectBase('<link rel="stylesheet" href="./assets/index-a.css">'), '/');
+  assert.equal(detectBase('<html></html>'), '/');
+});
+
+test('which clicks a slide is photographed at', () => {
+  assert.deepEqual(clicksFor({ clicks: 'none' }, 3, 2), [0]);
+  assert.deepEqual(clicksFor({ clicks: 'last' }, 3, 2), [2]);
+  assert.deepEqual(clicksFor({ clicks: 'last' }, 3, 0), [0]);
+  assert.deepEqual(clicksFor({ clicks: 'all' }, 3, 2), [0, 1, 2]);
+  assert.deepEqual(clicksFor({ clickMap: { 9: 3 } }, 9, 0), [0, 1, 2, 3]);
+  assert.deepEqual(clicksFor({ clickMap: { 9: 3 } }, 4, 5), [0]);
+  assert.equal(frameName(3), '03'); assert.equal(frameName(12, 2), '12-c2'); assert.equal(frameName(4, 0, 1), '04-b1');
+});
+
+test('the shared lock is read off /proc/locks', () => {
+  const locks = parseProcLocks([
+    '5: FLOCK  ADVISORY  WRITE 1014497 08:30:1176715 0 EOF',
+    '5: -> FLOCK  ADVISORY  WRITE 1022143 08:30:1176715 0 EOF',
+    '6: POSIX  ADVISORY  READ 2201 00:1a:42 0 EOF',
+  ].join('\n'));
+  assert.deepEqual(locks, [
+    { waiting: false, kind: 'FLOCK', pid: 1014497, inode: 1176715 },
+    { waiting: true, kind: 'FLOCK', pid: 1022143, inode: 1176715 },
+    { waiting: false, kind: 'POSIX', pid: 2201, inode: 42 },
+  ]);
+});
+
+test('what makes a run exit 3', () => {
+  assert.deepEqual(problemsOf({ settled: true, overflowPx: -10, overflowRightPx: 1, pageErrors: [], httpErrors: [{ status: 404, local: false }] }), []);
+  assert.deepEqual(problemsOf({ settled: false }), ['not settled']);
+  assert.deepEqual(problemsOf({ overflowPx: 12 }), ['runs 12px off the bottom']);
+  assert.deepEqual(problemsOf({ pageErrors: ['x'], httpErrors: [{ status: 404, local: true }] }), ['1 page error(s)', '1 failed request(s)']);
+  assert.deepEqual(problemsOf({ error: 'timeout' }), ['failed: timeout']);
+});
+
+test('slides are split into contiguous runs, one per page', () => {
+  assert.deepEqual(split([1, 2, 3, 4, 5], 2), [[1, 2, 3], [4, 5]]);
+  assert.deepEqual(split([1, 2], 4), [[1], [2]]);
+  assert.deepEqual(split([1, 2, 3], 1), [[1, 2, 3]]);
+});
+
+test('a deck is served under the base it was built for', async () => {
+  const dist = new URL('../example/public', import.meta.url).pathname;   // any directory with files
+  const { server, port } = await serve(dist, { base: '/repo/talk/' });
+  try {
+    const at = (p) => fetch(`http://127.0.0.1:${port}${p}`).then((r) => r.status);
+    assert.equal(await at('/repo/talk/data/space.json'), 200);
+    assert.equal(await at('/data/space.json'), 404);           // outside the base
+    assert.equal(await at('/repo/talk/data/missing.json'), 404);
+    assert.equal(await at('/repo/talk/../../etc/passwd'), 404);
+  } finally { server.close(); }
+});
+
+test('--changed keys public files by their bytes, not their time', async () => {
+  const dist = await mkdtemp(join(tmpdir(), 'shots-key-'));
+  try {
+    await mkdir(join(dist, 'assets')); await mkdir(join(dist, 'data'));
+    await writeFile(join(dist, 'index.html'), '<script src="/assets/index-a1.js"></script>');
+    await writeFile(join(dist, 'assets', 'index-a1.css'), 'x');
+    await writeFile(join(dist, 'data', 'space.json'), '{"stations":[]}');
+    await writeFile(join(dist, '_redirects'), '/* /index.html 200');
+    const clip = Buffer.alloc(300 << 10, 7);
+    await writeFile(join(dist, 'clip.mp4'), clip);
+    const o = parseArgs(['d', 'o']);
+    const key = () => staticKey(dist, o, 'r', 200 << 10);   // the clip counts as big: its size, first and last 64 KB
+    const k0 = await key();
+    // a rebuild copies public/ and writes _redirects again: the same bytes, new times
+    const later = new Date(Date.now() + 60000);
+    for (const f of ['data/space.json', '_redirects', 'clip.mp4', 'index.html']) await utimes(join(dist, f), later, later);
+    assert.equal(await key(), k0);
+    await writeFile(join(dist, 'index.html'), '<script src="/assets/index-b2.js"></script>');   // new chunk names: the slides' own business
+    assert.equal(await key(), k0);
+    await writeFile(join(dist, 'data', 'space.json'), '{"stations":[1]}');
+    const k1 = await key();
+    assert.notEqual(k1, k0);
+    clip[10] = 8;
+    await writeFile(join(dist, 'clip.mp4'), clip);
+    const k2 = await key();
+    assert.notEqual(k2, k1);
+    await rename(join(dist, 'assets', 'index-a1.css'), join(dist, 'assets', 'index-b2.css'));   // restyled
+    assert.notEqual(await key(), k2);
+  } finally { await rm(dist, { recursive: true, force: true }); }
+});
+
+// ---- signals: what the process the caller started does with them -----------------------
+// No browser: a deck under --dev whose slidev starts and never answers keeps
+// the run busy, holding a private lock, until the signal comes.
+const SHOTS = new URL('../bin/shots.mjs', import.meta.url).pathname;
+const hasFlock = spawnSync('flock', ['--version']).status === 0;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const alive = (pid) => { try { return !/^\d+ \(.*\) Z/.test(readFileSync(`/proc/${pid}/stat`, 'utf8')); } catch { return false; } };
+const lockFree = (lock) => spawnSync('flock', ['-n', lock, 'true']).status === 0;
+// the flock(1) processes on a lock file
+const flocksOn = (file) => readdirSync('/proc').filter((p) => /^\d+$/.test(p)).filter((p) => {
+  try { const a = readFileSync(`/proc/${p}/cmdline`, 'utf8').split('\0'); return /(^|\/)flock$/.test(a[0]) && a.includes(file); } catch { return false; }
+});
+const until = async (pred, ms = 10000) => { const t0 = Date.now(); while (!(await pred()) && Date.now() - t0 < ms) await sleep(50); return pred(); };
+
+async function busyRun(dir, lock) {
+  await mkdir(join(dir, 'node_modules', '.bin'), { recursive: true });
+  await writeFile(join(dir, 'node_modules', '.bin', 'slidev'), `#!/bin/sh\necho $$ > "${dir}/slidev.pid"\nexec sleep 600\n`, { mode: 0o755 });
+  await writeFile(join(dir, 'deck.md'), '# deck\n');
+  const run = spawn(process.execPath, [SHOTS, '--dev', join(dir, 'deck.md'), join(dir, 'out'), '--lock', lock], {
+    stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, SLIDEV_STAGE_SHOTS_LOCKED: '' },
+  });
+  run.log = '';
+  run.stdout.on('data', (d) => { run.log += d; }); run.stderr.on('data', (d) => { run.log += d; });
+  run.exited = new Promise((ok) => run.on('exit', (code, signal) => ok({ code, signal })));
+  return run;
+}
+
+// the fake slidev's pid once it has written it whole, else 0
+const slidevPid = (dir) => { try { const n = Number(readFileSync(join(dir, 'slidev.pid'), 'utf8').trim()); return n > 1 ? n : 0; } catch { return 0; } };
+
+// a failed test leaves nothing behind either
+async function cleanUp(run, dir) {
+  run.kill('SIGKILL');
+  const pid = slidevPid(dir);
+  if (pid) try { process.kill(-pid, 'SIGKILL'); } catch { /* gone */ }
+  await rm(dir, { recursive: true, force: true });
+}
+
+for (const [sig, code] of [['SIGTERM', 143], ['SIGINT', 130]]) {
+  test(`${sig} to the run stops it: the report ends in a fatal line, slidev and the lock are let go`, { skip: !hasFlock && 'no flock(1)' }, async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'shots-sig-'));
+    const lock = join(dir, 'lock');
+    const run = await busyRun(dir, lock);
+    try {
+      assert.ok(await until(() => slidevPid(dir)), `slidev never started:\n${run.log}`);
+      const slidev = slidevPid(dir);
+      assert.ok(!lockFree(lock), 'the run holds the lock');
+      assert.equal(flocksOn(lock).length, 1, 'one flock(1) helper holds it');
+      run.kill(sig);
+      assert.deepEqual(await run.exited, { code, signal: null }, run.log);
+      const lines = (await readFile(join(dir, 'out', 'shots.ndjson'), 'utf8')).trim().split('\n');
+      assert.deepEqual(JSON.parse(lines.at(-1)), { fatal: `stopped by ${sig}`, renderer: null, backend: null });
+      assert.ok(await until(() => !alive(slidev)), 'slidev dev is left running');
+      assert.ok(await until(() => lockFree(lock)), 'the lock is still held');
+      assert.ok(await until(() => flocksOn(lock).length === 0), 'the flock(1) helper is left running');
+    } finally { await cleanUp(run, dir); }
+  });
+}
+
+test('a signal while waiting for the lock ends the wait and leaves nothing waiting', { skip: !hasFlock && 'no flock(1)' }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'shots-wait-'));
+  const lock = join(dir, 'lock');
+  const holder = spawn('flock', [lock, 'sleep', '60'], { stdio: 'ignore', detached: true });
+  let run = null;
+  try {
+    assert.ok(await until(() => !lockFree(lock)));
+    run = await busyRun(dir, lock);
+    assert.ok(await until(() => /waiting for/.test(run.log) && flocksOn(lock).length === 2), run.log);
+    run.kill('SIGTERM');
+    assert.deepEqual(await run.exited, { code: 143, signal: null });
+    assert.ok(await until(() => flocksOn(lock).length === 1), 'a flock(1) helper is left waiting');
+    assert.ok(!existsSync(join(dir, 'slidev.pid')), 'the run went ahead without the lock');
+  } finally {
+    try { process.kill(-holder.pid, 'SIGKILL'); } catch { /* gone */ }
+    if (run) await cleanUp(run, dir); else await rm(dir, { recursive: true, force: true });
+  }
 });

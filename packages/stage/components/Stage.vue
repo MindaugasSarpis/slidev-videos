@@ -130,17 +130,17 @@ function fallback(reason, detail = '') {
   console.warn(`stage: fallback — ${reason}${detail ? ` (${detail})` : ''}`)
   renderDebug()
 }
-let fpsAt = 0, fpsFrames = 0, fps = null
+let fpsAt = 0, fpsFrames = 0, panelFps = null
 function renderDebug() {
   if (!debug) return
   const h = canvas.value?.__space, c = canvas.value
   let sp = null
   if (h && status.status === 'running') {
     const now = performance.now()
-    if (fpsAt) fps = (h.frames - fpsFrames) / ((now - fpsAt) / 1000)
+    if (fpsAt) panelFps = (h.frames - fpsFrames) / ((now - fpsAt) / 1000)
     fpsAt = now; fpsFrames = h.frames
     sp = { tier: h.tier, targets: h.targets, sim: h.sim, dpr: h.dpr, canvas: c ? `${c.width}×${c.height}` : '', guard: h.guardStage,
-      fps, frames: h.frames, textures: h.renderer?.info?.memory?.textures, programs: h.renderer?.info?.programs?.length }
+      fps: panelFps, frames: h.frames, textures: h.renderer?.info?.memory?.textures, programs: h.renderer?.info?.programs?.length }
   }
   debugText.value = debugLines({ ...status, gl: glInfo, space: sp, device: deviceInfo(), events }).join('\n')
 }
@@ -199,9 +199,13 @@ function applyPlaces(immediate = false) {
 }
 watch(() => nav.currentSlideNo.value, () => applyPlaces(false))
 
+// the engine time of the last pose or step change, for the probes' settle
+let changedAt = 0
+
 function apply(immediate = false) {
   if (!space) return
   if (immediate) applyPlaces(true)
+  changedAt = canvas.value?.__space?.elapsed ?? 0
   const sp = frontmatterSpace.value
   if (!sp) { stopId.value = null; space.setStop(null); updateHum(); return }
   const stops = Array.isArray(sp.stops) ? sp.stops : null
@@ -415,8 +419,82 @@ const onVideoCover = (e) => {
 }
 
 let still = false
+// The probe the headless tools read (slidev-stage-shots, the smoke test): one
+// documented object on window. canvas.__space, root.__space and root.__hum
+// stay as aliases for the probes written against them.
+//
+//   __stage.state()          → { slide, total, clicks, clicksTotal, at, station, atStation, stop,
+//                                flying, arrived, paused, assembled, static, changedAt, elapsed,
+//                                frames, dpr, guard, dust }
+//   __stage.settle({ min, max }) → Promise<{ settled, engineSec, ms }>: resolves once the camera
+//                                has landed, nothing assembles and `min` engine-seconds have passed
+//                                since the last pose or step change (`max` wall-seconds at most)
+//   __stage.holdQuality()    the frame-rate guard keeps the full pixel ratio and dust
+//   __stage.fps(seconds)     → Promise<{ fps, engineSecPerSec }>, measured on the live page
+//   __stage.space / .probe / .hum   the engine's API, its render handles, the hum probe
+function probeState() {
+  const p = space ? canvas.value?.__space : null   // a handle whose engine failed to start reads nothing
+  const g = p?.field?.geometry
+  return {
+    slide: nav.currentSlideNo.value,
+    total: nav.total.value,
+    clicks: clicks.value,
+    clicksTotal: nav.clicksTotal.value,
+    at: space?.currentTarget ?? null,
+    station: space?.activeStation ?? null,
+    atStation: space?.atStation ?? null,
+    stop: stopId.value,
+    flying: !!space?.flying,
+    arrived: !!space?.arrived,
+    paused: !!space?.paused,
+    assembled: document.documentElement.dataset.spaceAssembled === '1',
+    static: staticBg.value,
+    changedAt,
+    elapsed: p?.elapsed ?? 0,
+    frames: p?.frames ?? 0,
+    dpr: p?.dpr ?? null,
+    guard: p?.guardStage ?? null,
+    dust: g ? Math.min(g.drawRange.count, g.attributes.position.count) : 0,
+  }
+}
+function settle({ min = 6, max = 30 } = {}) {
+  return new Promise((done) => {
+    const t0 = performance.now(), e0 = canvas.value?.__space?.elapsed ?? 0
+    const check = () => {
+      const s = probeState()
+      const still = !space || s.paused || (!s.flying && s.assembled && s.elapsed - changedAt >= min)
+      const ms = performance.now() - t0
+      if (still || ms > max * 1000) done({ settled: still, engineSec: +(s.elapsed - e0).toFixed(3), ms: Math.round(ms) })
+      else requestAnimationFrame(check)
+    }
+    check()
+  })
+}
+function fps(seconds = 2) {
+  return new Promise((done) => {
+    const p = canvas.value?.__space
+    if (!p) { done({ fps: 0, engineSecPerSec: 0 }); return }
+    const f0 = p.frames, e0 = p.elapsed, t0 = performance.now()
+    setTimeout(() => {
+      const s = (performance.now() - t0) / 1000
+      done({ fps: +((p.frames - f0) / s).toFixed(2), engineSecPerSec: +((p.elapsed - e0) / s).toFixed(3) })
+    }, seconds * 1000)
+  })
+}
+const stageProbe = {
+  version: 1,
+  state: probeState,
+  settle,
+  fps,
+  holdQuality: () => canvas.value?.__space?.holdQuality(),
+  get space() { return space },
+  get probe() { return canvas.value?.__space ?? null },
+  hum: humProbe,
+}
+
 onMounted(() => {
   const html = document.documentElement
+  window.__stage = stageProbe
   html.dataset.stage = '1'
   // Print mounts one stage per page; the page-wide marks stay while any is up
   html.dataset.stageMounts = String((Number(html.dataset.stageMounts) || 0) + 1)
@@ -464,6 +542,11 @@ onUnmounted(() => {
     delete html.dataset.stageLook
     delete html.dataset.spaceStop
   }
+  if (window.__stage === stageProbe) delete window.__stage
+  stopHum()
+  assembled(true)
+  delete document.documentElement.dataset.stage
+  delete document.documentElement.dataset.spaceStop
   space?.dispose()
   space = null
 })
