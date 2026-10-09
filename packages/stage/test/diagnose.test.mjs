@@ -1,7 +1,7 @@
 // Why the stage fell back, readable from a phone (stage/diagnose.js).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { stageDebugOn, probeGL, debugLines, FALLBACK_REASONS } from '../stage/diagnose.js';
+import { stageDebugOn, probeGL, debugLines, pickTier, FALLBACK_REASONS } from '../stage/diagnose.js';
 
 test('?stage-debug is found before or after the hash', () => {
   assert.equal(stageDebugOn({ search: '?stage-debug', hash: '#/3' }), true);
@@ -43,6 +43,15 @@ test('the debug panel says the reason first, then what the GPU has', () => {
   assert.match(lines[2], /float no · half-float yes · max texture 4096/);
   assert.ok(lines.some((l) => /context lost 1×/.test(l)));
   const running = debugLines({ status: 'running', space: { targets: 'half-float', sim: 192, dpr: 1.5, canvas: '585×330', guard: 0, fps: 58.4, frames: 300, textures: 24, programs: 27 } });
-  assert.ok(running.some((l) => l.startsWith('targets half-float · sim 192²')));
+  assert.ok(running.some((l) => l.startsWith('tier ? · targets half-float · sim 192²')));
   assert.ok(running.some((l) => l.startsWith('fps 58 ')));
+});
+
+test('a phone starts at tier 2, a laptop at 0, a small GPU or memory lower', () => {
+  assert.equal(pickTier({ maxTexture: 16384 }, { coarse: true, screenWidth: 390, screenHeight: 844 }), 2);   // iPhone
+  assert.equal(pickTier({ maxTexture: 16384 }, { coarse: true, screenWidth: 820, screenHeight: 1180 }), 1);  // iPad
+  assert.equal(pickTier({ maxTexture: 16384 }, { coarse: false, screenWidth: 1920, screenHeight: 1080, memory: 8 }), 0);
+  assert.equal(pickTier({ maxTexture: 16384 }, { coarse: false, screenWidth: 1920, screenHeight: 1080, memory: 4 }), 1);
+  assert.equal(pickTier({ maxTexture: 4096 }, { coarse: false, screenWidth: 1920, screenHeight: 1080 }), 2);
+  assert.equal(pickTier(), 0);
 });

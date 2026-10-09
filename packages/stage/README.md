@@ -74,6 +74,7 @@ fade; see the root README's *Place groups*. The engine side is
 | `hero` | `space.hero`, else `hero` | the station the deck opens and closes on; what builds itself there does so on arrival |
 | `sound` | `true` | `false` is silent; `{ hum, flight, clip, level }` picks the voices: a low hum while the camera is at `humAt`, a soft whoosh for each flight of any length, a rising tone as a clip condenses. All start after the first key or click, none in the presenter window |
 | `humAt` | `[hero]` | the stations within reach of which the hum plays; `all` (or `'*'`) hums on every pose, out in the open dust too |
+| `tier` | from the device | the quality tier, 0 (full) … 3 (floor); a phone starts at 2, a lost context steps down one |
 | `videos` | `true` | follow `slidev-addon-videos`: a clip arriving as dust draws the world's dust with it, one leaving shoves it out and leaves its colours in it for a few seconds (`tint: 0.8`, 0 for none), and the renderer rests under a clip that covers the slide |
 | `halo` | `true` | the dust borders; `haloOn: '.card, .halo'` picks what gets one |
 | `dim` | `0.6` | the content-slide scrim; `layoutDim: { cover: 0.15, … }` per layout |
@@ -380,3 +381,8 @@ stage root as `data-stage-fallback` (`reduced-motion`, `no-webgl2`,
 or after the `#`) to see it on screen with the GPU, the render targets, the
 simulation size, the frame rate and any shader errors: the way to find out
 from a phone.
+
+The quality tier (0 full … 3 floor) is picked from the device (a phone starts
+at 2) and caps the simulated field, the drawing buffer and the photo places'
+grains and textures; `stage.tier: <n>` pins it. A lost WebGL context rebuilds
+the world one tier lower, at most twice.

@@ -14,8 +14,21 @@ on its own). A deck pins both addons and the CLI to the same tag.
   targets in use, the simulation size, pixel ratio, frame rate, textures,
   programs and shader errors.
 - **A lost WebGL context no longer leaves the slide on black.** The stage
-  stops drawing and shows its static background (restoring at a lower
-  quality is next). Shader compile errors are counted and logged.
+  stops drawing, shows its static background, and builds the world again one
+  quality tier lower on a fresh canvas (photo places go back in); after two
+  losses, or one at the lowest tier, the static stage stays. Shader compile
+  errors are counted and logged.
+- **Quality tiers** 0 (full) … 3 (floor), picked from the device: a phone
+  (coarse pointer, small screen) starts at 2, a tablet or ≤ 4 GB at 1, a GPU
+  with textures under 8192 at 2; `stage.tier` pins one. A tier caps the
+  simulated field, the drawing buffer and a photo place's grains and textures
+  (space.js `TIERS`).
+- **Photo places hold far less GPU memory**: their photo and depth map are
+  uploaded at about twice the grain lattice (1200 px for 600 grains, at most
+  the tier's cap), not at full size (2400 px, ~23 MB a place with mipmaps
+  off). The sharp picture at the front view is the page's `<img>`, unchanged.
+- **Bloom follows the buffer's width**, so a phone's small buffer, or the
+  frame-rate guard's lower steps, no longer wash a bright core out white.
 
 ## v0.5.2 — 2026-10-09
 

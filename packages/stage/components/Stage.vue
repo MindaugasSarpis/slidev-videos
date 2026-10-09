@@ -2,12 +2,12 @@
 import '@fontsource/space-grotesk/400.css'
 import '@fontsource/space-grotesk/500.css'
 import '@fontsource/space-grotesk/700.css'
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useNav, configs } from '@slidev/client'
 import { createSpace, usePlugin, resolvePalette, resolveLook, liftGround, paletteVars, warmAudio, startHum, stopHum, humProbe, playWhoosh, playRise } from '../index.js'
 import StagePanel from './StagePanel.vue'
 import { placeGroupsAt } from '../stage/place-groups.js'
-import { probeGL, stageDebugOn, debugLines, deviceInfo } from '../stage/diagnose.js'
+import { probeGL, stageDebugOn, debugLines, deviceInfo, pickTier, MAX_TIER } from '../stage/diagnose.js'
 
 // The persistent 3D world under a whole deck. The addon mounts it from its
 // own global-bottom.vue whenever the headmatter has a `stage:` block:
@@ -25,6 +25,7 @@ import { probeGL, stageDebugOn, debugLines, deviceInfo } from '../stage/diagnose
 //     videos: true               # stir the dust with slidev-addon-videos' transitions, rest under a covering clip
 //     options: { bloom: 0.55, density: 1, nebula: 0.8, … }   # see stage/space.js DEFAULTS
 //     auto: true                 # false: the deck mounts <Stage> itself (for the #hud slot)
+//     tier: 2                    # pin the quality tier, 0 (full) … 3 (floor); default: from the device
 //
 // Each slide steers the camera through its frontmatter:
 //
@@ -90,11 +91,16 @@ const debug = typeof location !== 'undefined' && stageDebugOn(location)
 const debugText = ref('')
 let glInfo = {}
 const events = { contextLost: 0, shaderErrors: 0, lastShaderError: '' }
+// the quality tier: from the device (pickTier), or `stage.tier`; one lower after each lost context
+let tier = null
+const canvasKey = ref(0)
+const MAX_RESTORES = 2
 const status = { status: 'starting', reason: '', detail: '' }
 function fallback(reason, detail = '') {
   if (status.status === 'fallback') return
   Object.assign(status, { status: 'fallback', reason, detail: String(detail || '').slice(0, 160) })
   staticBg.value = true
+  ready.value = false
   assembled(true)
   if (root.value) root.value.dataset.stageFallback = reason
   console.warn(`stage: fallback — ${reason}${detail ? ` (${detail})` : ''}`)
@@ -109,18 +115,44 @@ function renderDebug() {
     const now = performance.now()
     if (fpsAt) fps = (h.frames - fpsFrames) / ((now - fpsAt) / 1000)
     fpsAt = now; fpsFrames = h.frames
-    sp = { targets: h.targets, sim: h.sim, dpr: h.dpr, canvas: c ? `${c.width}×${c.height}` : '', guard: h.guardStage,
+    sp = { tier: h.tier, targets: h.targets, sim: h.sim, dpr: h.dpr, canvas: c ? `${c.width}×${c.height}` : '', guard: h.guardStage,
       fps, frames: h.frames, textures: h.renderer?.info?.memory?.textures, programs: h.renderer?.info?.programs?.length }
   }
   debugText.value = debugLines({ ...status, gl: glInfo, space: sp, device: deviceInfo(), events }).join('\n')
 }
 // iOS drops a WebGL context under memory pressure; the canvas goes blank and
-// the slide would sit on black. Stop drawing and fall back to the static stage.
+// the slide would sit on black. Stop drawing, show the static stage, and build
+// the world again one tier lower on a fresh canvas, at most twice; after that
+// the static stage stays.
+let restoreTimer = 0
 const onContextLost = (e) => {
   e.preventDefault?.()
   events.contextLost++
   space?.setPaused(true)
-  fallback('context-lost')
+  if (tier >= MAX_TIER || events.contextLost > MAX_RESTORES) return fallback('context-lost', `tier ${tier}`)
+  Object.assign(status, { status: 'restoring', reason: 'context-lost', detail: `rebuilding at tier ${tier + 1}` })
+  staticBg.value = true
+  ready.value = false
+  if (root.value) root.value.dataset.stageFallback = 'context-lost'
+  console.warn(`stage: context lost — rebuilding at tier ${tier + 1}`)
+  renderDebug()
+  const old = e.target
+  const go = () => { clearTimeout(restoreTimer); old?.removeEventListener('webglcontextrestored', go); rebuild() }
+  old?.addEventListener('webglcontextrestored', go, { once: true })
+  restoreTimer = setTimeout(go, 1500)
+}
+async function rebuild() {
+  if (status.status !== 'restoring') return
+  try { space?.dispose() } catch { /* the context is gone */ }
+  space = null
+  tier = Math.min(MAX_TIER, tier + 1)
+  canvasKey.value++                  // a fresh canvas, a fresh context
+  await nextTick()
+  Object.assign(status, { status: 'starting', reason: '', detail: '' })
+  staticBg.value = false
+  if (root.value) delete root.value.dataset.stageFallback
+  await boot()
+  if (space) try { window.dispatchEvent(new CustomEvent('slidev-stage:rebuilt', { detail: { tier } })) } catch {}
 }
 
 const frontmatter = computed(() => nav.currentSlideRoute.value?.meta?.slide?.frontmatter || {})
@@ -235,6 +267,8 @@ async function boot() {
   glInfo = probeGL(document)
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return fallback('reduced-motion')
   if (glInfo.reason) return fallback(glInfo.reason, glInfo.gpu)
+  if (tier == null) tier = Number.isFinite(Number(CFG.tier)) && CFG.tier !== null && CFG.tier !== ''
+    ? Math.max(0, Math.min(MAX_TIER, Math.round(Number(CFG.tier)))) : pickTier(glInfo, deviceInfo())
   let stage = 'plugin', failed = null
   try {
     for (const p of [].concat(CFG.plugins || [])) await usePlugin(p)
@@ -250,7 +284,7 @@ async function boot() {
       space: spaceDef,
       records: records?.records || records?.states || [],
       palette,
-      options: { ...OPTIONS, hero: CFG.hero },
+      options: { ...OPTIONS, hero: CFG.hero, tier },
       asset,
       onArrive: (target) => {
         arrived.value = true
@@ -375,6 +409,7 @@ onUnmounted(() => {
   window.removeEventListener('slidev-videos:cover', onVideoCover)
   clearTimeout(coverTimer)
   clearInterval(debugTimer)
+  clearTimeout(restoreTimer)
   canvas.value?.removeEventListener('webglcontextlost', onContextLost)
   stopHum()
   assembled(true)
@@ -388,7 +423,7 @@ onUnmounted(() => {
 
 <template>
   <div ref="root" class="stage" :class="{ 'static-bg': staticBg, ready }" :data-clicks="clicks" :data-clicks-total="clicksTotal">
-    <canvas ref="canvas" class="field" aria-hidden="true"></canvas>
+    <canvas ref="canvas" :key="canvasKey" class="field" aria-hidden="true"></canvas>
     <div class="scrim" aria-hidden="true" :style="{ opacity: dim }"></div>
     <div class="grain" aria-hidden="true"></div>
     <Transition name="hud">

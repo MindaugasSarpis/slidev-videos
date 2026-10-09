@@ -116,6 +116,18 @@ void main() {
 }`,
 };
 
+// Quality tiers (stage/diagnose.js pickTier; `stage.tier` pins one). Each step
+// down shrinks what the GPU holds: the simulated field, the drawing buffer, the
+// photo places' grains and textures. A lost context rebuilds one tier lower.
+//   sim: the field's side at most · dpr / maxW: the drawing buffer · grains: a
+//   photo place's columns, as a share · placeTex: its textures' longest side
+export const TIERS = [
+  { sim: 448, dpr: 2, maxW: 2560, grains: 1, placeTex: 2048 },
+  { sim: 256, dpr: 1.5, maxW: 1920, grains: 0.8, placeTex: 1536 },
+  { sim: 192, dpr: 1.25, maxW: 1280, grains: 0.6, placeTex: 1024 },
+  { sim: 128, dpr: 1, maxW: 960, grains: 0.4, placeTex: 640 },
+];
+
 function pickTexSize(coarse, density) {
   const cores = navigator.hardwareConcurrency || 4;
   const area = (screen.width || 1280) * (screen.height || 800);
@@ -133,6 +145,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   const opt = { ...DEFAULTS, ...options };
   const pal = resolvePalette(palette);
   const coarse = matchMedia('(pointer: coarse)').matches;
+  const tier = Math.max(0, Math.min(TIERS.length - 1, Math.round(num(opt.tier, 0)))), T = TIERS[tier];
   let renderer;
   try {
     renderer = new WebGLRenderer({ canvas, alpha: false, antialias: false, powerPreference: 'high-performance' });
@@ -148,7 +161,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     console.error('stage: shader error —', log);
     onEvent?.('shader-error', { message: log.slice(0, 200) });
   };
-  const baseDpr = Math.min(devicePixelRatio || 1, coarse ? 1.5 : 2);
+  const baseDpr = Math.min(devicePixelRatio || 1, coarse ? 1.5 : 2, T.dpr);
   renderer.setPixelRatio(baseDpr);
   renderer.setClearColor(new Color(pal.bg), 1);
   renderer.toneMapping = ACESFilmicToneMapping; renderer.toneMappingExposure = num(opt.exposure, 1.05);
@@ -218,7 +231,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   const stopOffset = new Vector3(...(opt.stopOffset || DEFAULTS.stopOffset));
 
   // --- ambient field (GPGPU) --------------------------------------------------
-  const size = pickTexSize(coarse, num(opt.density, 1)), count = size * size;
+  const size = Math.min(pickTexSize(coarse, num(opt.density, 1)), T.sim), count = size * size;
   const rt = () => new WebGLRenderTarget(size, size, { type, format: RGBAFormat, minFilter: NearestFilter, magFilter: NearestFilter, depthBuffer: false, stencilBuffer: false });
   let posA = rt(), posB = rt(), velA = rt(), velB = rt();
   const init = new Float32Array(count * 4);
@@ -346,7 +359,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   finish.uniforms.uVignette.value = num(opt.vignette, 0.3);
   finish.uniforms.uGrain.value = num(opt.grain, 0.035);
   finish.uniforms.uCA.value = num(opt.aberration, 0.0004);
-  canvas.__space = { scene, composer, bloom, finish, field, renderer, get guardStage() { return guardStage; }, holdQuality() { guardStage = 2; }, get elapsed() { return elapsed; }, get dpr() { return renderer.getPixelRatio(); }, get frames() { return frames; }, targets: type === FloatType ? 'float' : 'half-float', sim: size };   // a handle for the headless probes and the debug panel
+  canvas.__space = { scene, composer, bloom, finish, field, renderer, get guardStage() { return guardStage; }, holdQuality() { guardStage = 2; }, get elapsed() { return elapsed; }, get dpr() { return renderer.getPixelRatio(); }, get frames() { return frames; }, targets: type === FloatType ? 'float' : 'half-float', sim: size, tier };   // a handle for the headless probes and the debug panel
 
   // what builds itself at each station, on arrival
   const selfBuilders = (id) => stations.get(id)?.built.apis.filter((a) => a.assemble) || [];
@@ -358,11 +371,16 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   let tintT0 = -1, tintDur = 0, tintPeak = 0;
 
   let viewW = 1, viewH = 1, guardScale = 1;
-  const maxW = num(opt.maxBufferWidth, 2560);
+  const maxW = Math.min(num(opt.maxBufferWidth, 2560), T.maxW);
   const dprFor = (w) => Math.min(baseDpr, maxW / Math.max(w, 1));
+  // Bloom blurs over a fixed count of pixels; on a small buffer (a phone, or the
+  // guard's lower steps) that is a larger share of the frame and a bright core
+  // washes it out white. Its strength follows the buffer's width.
+  const bloomBase = num(opt.bloom, 0.55);
   const applyDpr = () => {
     const d = dprFor(viewW) * guardScale;
     renderer.setPixelRatio(d); composer.setPixelRatio(d); fieldMat.uniforms.uPixelRatio.value = d;
+    bloom.strength = bloomBase * Math.min(1, Math.max(0.35, (viewW * d) / 1280));
     for (const s of stations.values()) s.built.setPixelRatio(d);
   };
   function resize() {
@@ -522,7 +540,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     addPhotoPlace(id, { image, depth, at, yaw = 0, width = 4, cols, relief = 1, depthScale, screenAspect = 16 / 9, group = null }) {
       dropPlace(id);
       const pos = new Vector3(num(at?.[0], 0), num(at?.[1], 0), num(at?.[2], 0));
-      const place = createPhotoPlace({ image, depth, pos: pos.toArray(), yaw, width, cols, relief, depthScale });
+      const place = createPhotoPlace({ image, depth, pos: pos.toArray(), yaw, width, cols: Math.round(num(cols, 600) * T.grains), relief, depthScale, maxTexture: T.placeTex });
       scene.add(place.object);
       const entry = { pos, look: { dist: place.front(num(opt.fov, 50), screenAspect).dist, yaw, pitch: 0, sway: 0, still: true }, place, group: group ? String(group) : null, vis: 1 };
       places.set(String(id), entry);

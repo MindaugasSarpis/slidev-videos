@@ -51,7 +51,7 @@ export function debugLines(s = {}) {
     `gpu: ${gl.gpu || '?'}`,
     `webgl2 ${yes(gl.webgl2)} · float ${yes(gl.float)} · half-float ${yes(gl.halfFloat)} · max texture ${gl.maxTexture || '?'}`,
   ];
-  if (sp.targets) lines.push(`targets ${sp.targets} · sim ${sp.sim}² · dpr ${fix(sp.dpr)} · canvas ${sp.canvas || '?'} · quality step ${sp.guard ?? '?'}`);
+  if (sp.targets) lines.push(`tier ${sp.tier ?? '?'} · targets ${sp.targets} · sim ${sp.sim}² · dpr ${fix(sp.dpr)} · canvas ${sp.canvas || '?'} · quality step ${sp.guard ?? '?'}`);
   if (sp.fps != null) lines.push(`fps ${fix(sp.fps, 0)} · frames ${sp.frames} · textures ${sp.textures ?? '?'} · programs ${sp.programs ?? '?'}`);
   lines.push(`device: ${dev.width}×${dev.height} @${fix(dev.dpr)} · memory ${dev.memory ?? '?'} GB · cores ${dev.cores ?? '?'} · touch ${yes(dev.coarse)} · reduced motion ${yes(dev.reduced)}`);
   if (ev.contextLost || ev.shaderErrors) lines.push(`context lost ${ev.contextLost || 0}× · shader errors ${ev.shaderErrors || 0}${ev.lastShaderError ? ` — ${ev.lastShaderError}` : ''}`);
@@ -65,8 +65,25 @@ export function deviceInfo(w = globalThis) {
   const mm = (q) => { try { return w.matchMedia(q).matches; } catch { return false; } };
   return {
     width: w.innerWidth, height: w.innerHeight, dpr: w.devicePixelRatio || 1,
+    screenWidth: w.screen?.width, screenHeight: w.screen?.height,
     memory: w.navigator?.deviceMemory, cores: w.navigator?.hardwareConcurrency,
     coarse: mm('(pointer: coarse)'), reduced: mm('(prefers-reduced-motion: reduce)'),
     ua: String(w.navigator?.userAgent || '').slice(0, 160),
   };
+}
+
+// ---- quality tiers ---------------------------------------------------------------
+// 0 full · 1 a tablet or a modest laptop · 2 a phone · 3 the floor (after a lost
+// context). What a tier changes is in space.js TIERS; a deck can pin one with
+// `stage.tier`. Safari has no navigator.deviceMemory, so a phone is known by a
+// coarse pointer on a small screen.
+export const MAX_TIER = 3;
+export function pickTier(gl = {}, dev = {}) {
+  const short = Math.min(dev.screenWidth || dev.width || 1280, dev.screenHeight || dev.height || 800);
+  let tier = 0;
+  if (dev.coarse) tier = short < 600 ? 2 : 1;
+  if (dev.memory && dev.memory <= 4) tier = Math.max(tier, 1);
+  if (dev.memory && dev.memory <= 2) tier = Math.max(tier, 2);
+  if (gl.maxTexture && gl.maxTexture < 8192) tier = Math.max(tier, 2);
+  return Math.min(MAX_TIER, tier);
 }

@@ -325,9 +325,20 @@ watch(isActive, (on) => { on ? enter() : leave() })
 // a slide that is not up yet waits with its words hidden, so they cannot show
 // before its arrival runs (a preloaded slide, the deck's fade)
 // a place stands in the world from the start, so earlier and later poses see it
-onMounted(() => { if (isActive.value) enter(); else { if (holding.value) slotOn.value = false; if (isPlace.value && moving.value) { revealed.value = false; buildPlace() } } })
+// The stage rebuilds its world after the GPU drops the context (a phone under
+// memory pressure): the place goes back in, flat if its slide is showing it.
+async function onRebuilt() {
+  if (!isPlace.value) return
+  place = null
+  if (!(await buildPlace())) return
+  if (isActive.value && shown) place.set({ relief: 0, dim: 1 })
+}
+onMounted(() => {
+  window.addEventListener('slidev-stage:rebuilt', onRebuilt)
+  if (isActive.value) enter(); else { if (holding.value) slotOn.value = false; if (isPlace.value && moving.value) { revealed.value = false; buildPlace() } }
+})
 // the cloud stays in the world when its slide is unmounted; only the tween stops
-onUnmounted(() => { run++; sheet?.cancel(); sheet = null; cancelAnimationFrame(tween) })
+onUnmounted(() => { run++; sheet?.cancel(); sheet = null; cancelAnimationFrame(tween); window.removeEventListener('slidev-stage:rebuilt', onRebuilt) })
 </script>
 
 <template>

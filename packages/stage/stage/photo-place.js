@@ -80,6 +80,20 @@ void main() {
   gl_FragColor = vec4(col, a * uOpacity * mix(1.0, vFade, soft));
 }`;
 
+// The grains sample the photo at their cells, and in relief they are seen
+// small: a texture a little finer than the lattice is enough. Uploading the
+// full photo (2400 px, ~23 MB with its depth map) for each place is what
+// filled a phone's GPU.
+function fit(img, max) {
+  const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+  const k = max / Math.max(w, h);
+  if (!(k < 1) || typeof document === 'undefined') return img;
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return c;
+}
+
 function texture(img, srgb) {
   const t = new Texture(img);
   t.minFilter = LinearFilter; t.magFilter = LinearFilter; t.generateMipmaps = false;
@@ -89,7 +103,7 @@ function texture(img, srgb) {
   return t;
 }
 
-export function createPhotoPlace({ image, depth, pos, yaw = 0, width = 4, cols = 600, relief = 1, depthScale }) {
+export function createPhotoPlace({ image, depth, pos, yaw = 0, width = 4, cols = 600, relief = 1, depthScale, maxTexture = 2048 }) {
   const aspect = image.naturalWidth / image.naturalHeight;
   const height = width / aspect;
   const rows = Math.max(2, Math.round(cols / aspect));
@@ -105,7 +119,7 @@ export function createPhotoPlace({ image, depth, pos, yaw = 0, width = 4, cols =
   const y = yaw * Math.PI / 180;
   const normal = [Math.sin(y), 0, Math.cos(y)], right = [Math.cos(y), 0, -Math.sin(y)];
   const uniforms = {
-      uImg: { value: texture(image, true) }, uDepth: { value: texture(depth, false) },
+      uImg: { value: texture(fit(image, Math.min(maxTexture, cols * 2)), true) }, uDepth: { value: texture(fit(depth, Math.min(maxTexture, cols)), false) },
       uRight: { value: right }, uUp: { value: [0, 1, 0] }, uNormal: { value: normal }, uCenter: { value: pos },
       uSize: { value: [width, height] }, uRelief: { value: relief },
       uDepthScale: { value: depthScale ?? width * 0.2 },   // a relief, not a sculpture: faces stay faces
