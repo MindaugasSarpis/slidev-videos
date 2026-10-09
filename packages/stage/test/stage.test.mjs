@@ -11,7 +11,7 @@ import { resolvePalette, PALETTES, DEFAULT_PALETTE, LOOKS, hexToRgb, rgbTriplet,
 import { checkStage, readStageConfig, deckPoses, deckSlides, deckTypes, deckComponents, readYaml, deckPlaces, deckPlaceList, deckPlaceGroups, deckPages, main as checkMain } from '../bin/check.mjs';
 import { formatCount, countRun, countAt, countSpan, COUNT_DOWN_MS } from '../stage/count.js';
 import { deckHasThree } from '../vite.config.js';
-import { parseSlides, parseArgs, detectBase, clicksFor, frameName, parseProcLocks, problemsOf, split, serve, staticKey } from '../bin/shots.mjs';
+import { parseSlides, parseArgs, detectBase, clicksFor, frameName, parseProcLocks, problemsOf, split, serve, staticKey, clipName } from '../bin/shots.mjs';
 import { placesDecl, placeGroupsAt } from '../stage/place-groups.js';
 
 const here = (p) => new URL(p, import.meta.url);
@@ -761,4 +761,13 @@ test('a signal while waiting for the lock ends the wait and leaves nothing waiti
     try { process.kill(-holder.pid, 'SIGKILL'); } catch { /* gone */ }
     if (run) await cleanUp(run, dir); else await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('a clip request is named by its file, from any tier, so a local-first miss can be matched to its release answer', () => {
+  assert.equal(clipName('http://localhost:4000/videos/cern_2022.mp4'), 'cern_2022.mp4');
+  assert.equal(clipName('http://localhost:4000/talk/videos-hq/a%20b.webm'), 'a b.webm');
+  assert.equal(clipName('https://github.com/o/r/releases/download/videos-x/cern_2022.mp4'), 'cern_2022.mp4');
+  assert.equal(clipName('https://objects.githubusercontent.com/g/1?response-content-disposition=attachment%3B%20filename%3Dcern_2022.mp4&X=1'), 'cern_2022.mp4');
+  assert.equal(clipName('http://localhost:4000/assets/index.js'), null);
+  assert.equal(clipName('not a url'), null);
 });

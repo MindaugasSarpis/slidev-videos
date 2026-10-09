@@ -112,6 +112,18 @@ export function clicksFor(o, slide, total) {
   return [0];
 }
 
+// The file a clip request is for (videos/a.mp4, a release URL, a release's
+// redirect with the name in its query), or null for anything else.
+export function clipName(url) {
+  let u;
+  try { u = new URL(url); } catch { return null; }
+  const pick = (s) => (/\.(mp4|webm|mov|m4v)$/i.test(s) ? s.split('/').pop() : null);
+  const fromPath = pick(decodeURIComponent(u.pathname));
+  if (fromPath) return fromPath;
+  for (const v of u.searchParams.values()) { const m = /filename=["']?([^"';]+\.(?:mp4|webm|mov|m4v))/i.exec(v) || /([^/?#]+\.(?:mp4|webm|mov|m4v))$/i.exec(v); if (m) return m[1]; }
+  return null;
+}
+
 export const frameName = (slide, click = 0, burst = 0) =>
   `${String(slide).padStart(2, '0')}${click ? `-c${click}` : ''}${burst ? `-b${burst}` : ''}`;
 
@@ -594,11 +606,18 @@ class Deck {
       if (m.type() === 'error' && !/^Failed to load resource/.test(t)) this.sink.errors.push(t.slice(0, 300));   // those are in httpErrors
       else if (m.type() === 'warning' && o.console) this.sink.warnings.push(t.slice(0, 300));
     });
-    page.on('response', (r) => { if (r.status() >= 400) this.sink.http.push({ status: r.status(), url: r.url(), local: r.url().startsWith(origin) }); });
+    // A clip the player looks for in public/videos first and then finds in a
+    // release (VideoPlayer's local-first chain) is no failure: a clip's miss is
+    // held, and dropped once the same file answers from any tier.
+    const miss = (h) => { const c = clipName(h.url); if (c) (this.misses ??= new Map()).set(c, h); else this.sink.http.push(h); };
+    page.on('response', (r) => {
+      if (r.status() >= 400) miss({ status: r.status(), url: r.url(), local: r.url().startsWith(origin) });
+      else { const c = clipName(r.url()); if (c) (this.found ??= new Set()).add(c); }
+    });
     page.on('requestfailed', (r) => {
       const f = r.failure()?.errorText || 'failed';
       if (/ERR_ABORTED/.test(f)) return;   // a media request the player cancelled
-      this.sink.http.push({ status: 0, url: r.url(), error: f, local: r.url().startsWith(origin) });
+      miss({ status: 0, url: r.url(), error: f, local: r.url().startsWith(origin) });
     });
     page.setDefaultTimeout(Math.max(60000, o.wait));
     const limit = o.dev ? 180000 : 90000;
@@ -629,6 +648,9 @@ class Deck {
   // problems seen since the last call
   drain() {
     const s = this.sink;
+    // a clip's misses still unanswered by any tier are failures
+    for (const [c, h] of this.misses ?? []) if (!this.found?.has(c)) s.http.push(h);
+    this.misses = new Map();
     const out = { pageErrors: [...new Set(s.errors)], consoleWarnings: [...new Set(s.warnings)], httpErrors: s.http };
     this.sink = { errors: [], warnings: [], http: [] };
     return out;

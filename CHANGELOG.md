@@ -4,6 +4,24 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## v0.6.5 — 2026-10-09
+
+slidev-videos 0.6.5 · slidev-addon-videos 0.6.5 · slidev-addon-stage 0.3.5
+
+- **Late text prints.** Slidev's export prints with screen media, so the
+  kit's `@media print` rule never ran, and a page is taken as soon as it has
+  loaded: text that rose or faded in late printed empty. On print pages
+  (`.print-slide-container`, `html.print`) nothing animates or transitions and
+  everything stands at its end state; StagePhoto's headline and photo show.
+  On a rasterised PDF of a test deck, a card rising 3 s in printed empty before
+  and prints now.
+- **shots: a clip found in a release is no failed request.** A local-first
+  build (`VITE_VIDEOS_LOCAL_FIRST=1`, as `talk ready` builds) asks
+  `videos/<clip>` first and gets a 404 when `public/videos` is empty; shots
+  counted it. A clip's miss is now held and dropped once the same file answers
+  from any tier, as `pages_check` treats clips. OpenData's slides 1–3: two 404s
+  before, none now.
+
 ## v0.6.4 — 2026-10-09
 
 slidev-videos 0.6.4 · slidev-addon-videos 0.6.4 · slidev-addon-stage 0.3.4

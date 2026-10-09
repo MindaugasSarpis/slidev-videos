@@ -223,3 +223,14 @@ html[data-stage-look="broadcast"] {
   --stage-safe-y: 27.5px;
 }
 html[data-stage-look="broadcast"] .src { opacity: 0.85; }
+
+/* Print and export. Slidev prints its pages with screen media, so `@media
+   print` above never runs there, and it photographs a page as soon as it has
+   loaded: text that rises or fades in printed empty. On print pages nothing
+   moves; everything stands at its end state. */
+.print-slide-container *, .print-slide-container *::before, .print-slide-container *::after,
+html.print .slidev-page *, html.print .slidev-page *::before, html.print .slidev-page *::after {
+  animation: none !important; transition: none !important;
+}
+.print-slide-container .slidev-layout, html.print .slidev-page .slidev-layout { opacity: 1 !important; }
+.print-slide-container .slidev-layout.cover .mt-md, html.print .slidev-layout.cover .mt-md { opacity: 1 !important; transform: none !important; }
