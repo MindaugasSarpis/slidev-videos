@@ -4,6 +4,21 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## v0.6.9 — 2026-10-09
+
+slidev-videos 0.6.9 · slidev-addon-videos 0.6.9 · slidev-addon-stage 0.3.9
+
+- **No freeze as a dust clip arrives.** Innoday's CERN aerial clip held the
+  main thread 14–20 s (under a software renderer) as it came in as dust. Two
+  causes, both fixed. The frame-strip tiles the dust reads its colours from were
+  GPU-backed canvases, and every `getImageData` on them waited on the GPU; they
+  are CPU-backed now (`willReadFrequently`): 7 ms instead of 2.3 s for a clip's
+  first tiles. And the player copied the playing `<video>` into a canvas to
+  read it before finding the canvas tainted, which a release-hosted clip always
+  is: the copy is skipped for a cross-origin clip, and the strip stands in as
+  it did. A CPU profile of Innoday's slide 7 → 8: 14.2 s in one `drawImage`
+  before, no task over 1.6 s after.
+
 ## v0.6.8 — 2026-10-09
 
 slidev-videos 0.6.8 · slidev-addon-videos 0.6.8 · slidev-addon-stage 0.3.8

@@ -84,7 +84,11 @@ export async function stripFrame(src, time = 0) {
   const i = Math.min(entry.count - 1, Math.max(0, Math.floor((time + 1e-3) / entry.interval)));
   const c = document.createElement('canvas');
   c.width = tw; c.height = th;
-  c.getContext('2d').drawImage(img, (i % entry.cols) * tw, Math.floor(i / entry.cols) * th, tw, th, 0, 0, tw, th);
+  // a CPU-backed canvas: isLit and meanColor read it back, and from a GPU-backed
+  // one each read waited on the GPU (3.6 s for a clip's first tiles under a
+  // software renderer, a 14–20 s freeze as Innoday's CERN aerial clip arrived;
+  // 6 ms from this one)
+  c.getContext('2d', { willReadFrequently: true }).drawImage(img, (i % entry.cols) * tw, Math.floor(i / entry.cols) * th, tw, th, 0, 0, tw, th);
   return { image: c, size: entry.size || [tw, th], source: 'strip' };
 }
 
@@ -93,12 +97,17 @@ export async function stripFrame(src, time = 0) {
 // canvas and getImageData throws; that is the signal to use the strip.
 export function liveFrame(video) {
   if (!video || video.readyState < 2 || !video.videoWidth) return null;
+  // a clip from another origin (a release) without CORS taints the canvas: no
+  // need to copy its frame to find out, and the copy is the costly part (a
+  // 14 s main-thread block on Innoday's CERN aerial clip under a software
+  // renderer): the strip stands in for it
+  try { if (!video.crossOrigin && new URL(video.currentSrc, location.href).origin !== location.origin) return null; } catch { /* read it */ }
   try {
     const w = Math.min(640, video.videoWidth);
     const h = Math.max(2, Math.round(w * video.videoHeight / video.videoWidth));
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
-    const g = c.getContext('2d');
+    const g = c.getContext('2d', { willReadFrequently: true });   // read back below and by isLit / meanColor: CPU-backed (see stripFrame)
     g.drawImage(video, 0, 0, w, h);
     g.getImageData(0, 0, 1, 1);
     return { image: c, size: [video.videoWidth, video.videoHeight], source: 'live' };
