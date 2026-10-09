@@ -39,6 +39,9 @@
 //   camera-inside-form  (warning) a slide's camera stands inside an object's radius (not for a
 //                       form a camera may be in: a ring, a builder registered
 //                       { enterable: true }, an object with "enterable": true)
+//   unsaid-clock        (warning) a deck builder that moves on its own clock and never sets
+//                       api.busy: its assemble() calls onDone at once, or it plays its steps
+//                       (listen(…), onStep) with no assemble()
 //   unknown-key         (warning) a key of `stage:` or of a slide's `space:` nothing reads
 //   unknown-component   (warning) a <Count> tag, and no Count the deck registers itself:
 //                       the addon's counter is <StageCount> (a talk's own Count.vue removed, a tag not renamed)
@@ -250,6 +253,56 @@ export function deckTypes(sources) {
   }
   return { types, palettes, enterable };
 }
+// The deck's builders that move on their own clock and never say so: an
+// `assemble(t, onDone)` that calls onDone at once (what it starts runs on
+// after), or a builder that plays its steps (`listen(…)`, `onStep`) with no
+// assemble at all, and neither sets `busy`. The headless tools and the cover's
+// title take such a form as standing while it still fills or draws.
+// → [{ type, why }]. A builder written inline is not read.
+export function deckClocks(sources) {
+  const text = [].concat(sources).map(String).join('\n');
+  const out = [];
+  for (const m of text.matchAll(/registerBuilder\(\s*(['"])([\w-]+)\1\s*,\s*([\w$]+)\s*[,)]/g)) {
+    const body = fnBody(text, m[3]);
+    if (!body || /\bbusy\b/.test(body)) continue;
+    const at = body.search(/\bassemble\s*\(\s*\w+\s*,\s*(\w+)\s*\)\s*\{/);
+    if (at >= 0) {
+      const done = /\bassemble\s*\(\s*\w+\s*,\s*(\w+)\s*\)\s*\{/.exec(body.slice(at))[1];
+      const inner = braced(body, body.indexOf('{', at));
+      if (topLevel(inner).some((s) => new RegExp(`(^|[^\\w.$])${done}\\s*(\\?\\.)?\\s*\\(`).test(s))) out.push({ type: m[2], why: `its assemble() calls ${done} at once` });
+    } else if (/\blisten\s*\(|\bonStep\b/.test(body)) out.push({ type: m[2], why: 'it plays its steps with no assemble()' });
+  }
+  return out;
+}
+// a top-level function's text, `function name(` or `const name = (…) =>`, up to the next one
+function fnBody(text, name) {
+  const m = new RegExp(`(?:^|\\n)\\s*(?:export\\s+)?(?:(?:async\\s+)?function\\s+${name.replace(/\$/g, '\\$')}\\s*\\(|const\\s+${name.replace(/\$/g, '\\$')}\\s*=)`).exec(text);
+  if (!m) return null;
+  const from = m.index + m[0].length;
+  const next = text.slice(from).search(/\n(?:export\s+)?(?:(?:async\s+)?function\s|const\s+[\w$]+\s*=\s*(?:async\s*)?(?:\(|function))/);
+  return text.slice(from, next < 0 ? text.length : from + next);
+}
+// the text between the brace at `open` and its match
+function braced(s, open) {
+  let d = 0;
+  for (let i = open; i < s.length; i++) {
+    if (s[i] === '{') d++;
+    else if (s[i] === '}' && --d === 0) return s.slice(open + 1, i);
+  }
+  return s.slice(open + 1);
+}
+// the pieces of a block outside any nested braces or parentheses: what runs as the block runs
+function topLevel(s) {
+  const parts = [];
+  let d = 0, cur = '';
+  for (const c of s) {
+    if (c === '{' || c === '(') { if (d === 0 && c === '{') { parts.push(cur); cur = ''; } d++; if (c === '(' && d === 1) cur += c; continue; }
+    if (c === '}' || c === ')') { d--; if (c === ')' && d === 0) cur += c; continue; }
+    if (d === 0) cur += c;
+  }
+  parts.push(cur);
+  return parts;
+}
 // The components a deck registers itself: app.component('<Name>', …) in its
 // setup files, and its components/<Name>.vue.
 export function deckComponents(sources, dir = null) {
@@ -301,7 +354,7 @@ const POSE = { dist: 9, yaw: -20, pitch: 6 };   // space.js DEFAULTS.pose
 const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 const COLOUR_KEYS = Object.keys(DEFAULT_PALETTE);
 
-export function checkStage({ space, records = null, deck = '', pages = [], plugins = null, extraTypes = [], deckOwn = {}, deckEnterable = [], palettes = [], publicDir = null, components = null } = {}) {
+export function checkStage({ space, records = null, deck = '', pages = [], plugins = null, extraTypes = [], deckOwn = {}, deckEnterable = [], deckClocks: clocks = [], palettes = [], publicDir = null, components = null } = {}) {
   const issues = [];
   const add = (code, msg, where = {}, level = 'error') => issues.push({ ...where, code, level, msg });
   const types = { ...CORE_TYPES };
@@ -350,6 +403,10 @@ export function checkStage({ space, records = null, deck = '', pages = [], plugi
         if (records && o.type !== 'orbs' && !recordIds.has(id)) add('unknown-record', `${name}/${o.type}: no record with id ${id}`, where);
       }
     }
+  }
+  const used = new Set(space.stations.flatMap((st) => (st.objects || []).map((o) => o.type)));
+  for (const c of clocks) {
+    if (used.has(c.type)) add('unsaid-clock', `builder ${c.type} moves on its own clock and never says so (${c.why}): shots, stills and the cover's title take it as standing mid-fill. Give its api a busy (a value or a function), true while it moves`, {}, 'warning');
   }
   if (space.hero != null && !stations.has(String(space.hero))) add('unknown-station', `space.hero is not a station: ${space.hero}`);
   const firstId = space.stations[0].id;
@@ -542,7 +599,7 @@ export function main(argv = process.argv.slice(2)) {
   const own = deckTypes(setup);
   // the pages the deck pulls in: their StagePhoto places are pose targets too
   const pages = deckPages(deck).map((p) => { try { return readFileSync(resolve(dir, p), 'utf8'); } catch { return ''; } });
-  const r = checkStage({ space, records, deck, pages, plugins, extraTypes: args.types, deckOwn: own.types, deckEnterable: own.enterable, palettes: own.palettes, publicDir, components: deckComponents(setup, dir) });
+  const r = checkStage({ space, records, deck, pages, plugins, extraTypes: args.types, deckOwn: own.types, deckEnterable: own.enterable, deckClocks: deckClocks(setup), palettes: own.palettes, publicDir, components: deckComponents(setup, dir) });
   const stats = { stations: r.stations, objects: r.objects, places: r.places, poses: r.poses, stops: r.stops, slides: r.slides, deckTypes: Object.keys(own.types) };
   if (args.json) {
     console.log(JSON.stringify({ ok: r.problems.length === 0, deck: deckFile, problems: r.issues, stats }, null, 2));

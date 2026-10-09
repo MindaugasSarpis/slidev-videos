@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { CORE_TYPES, PLUGIN_TYPES, STAGE_KEYS, OPTION_KEYS, SPACE_KEYS, anchorIds } from '../stage/types.js';
 import { resolvePalette, PALETTES, DEFAULT_PALETTE, LOOKS, hexToRgb, rgbTriplet, paletteVars, definePalette } from '../stage/palette.js';
-import { checkStage, readStageConfig, deckPoses, deckSlides, deckTypes, deckComponents, readYaml, deckPlaces, deckPlaceList, deckPlaceGroups, deckPages, main as checkMain } from '../bin/check.mjs';
+import { checkStage, readStageConfig, deckPoses, deckSlides, deckTypes, deckClocks, deckComponents, readYaml, deckPlaces, deckPlaceList, deckPlaceGroups, deckPages, main as checkMain } from '../bin/check.mjs';
 import { formatCount, countRun, countAt, countSpan, COUNT_DOWN_MS } from '../stage/count.js';
 import { deckHasThree } from '../vite.config.js';
 import { parseSlides, parseArgs, detectBase, clicksFor, frameName, parseProcLocks, problemsOf, split, serve, staticKey, clipName } from '../bin/shots.mjs';
@@ -770,4 +770,52 @@ test('a clip request is named by its file, from any tier, so a local-first miss 
   assert.equal(clipName('https://objects.githubusercontent.com/g/1?response-content-disposition=attachment%3B%20filename%3Dcern_2022.mp4&X=1'), 'cern_2022.mp4');
   assert.equal(clipName('http://localhost:4000/assets/index.js'), null);
   assert.equal(clipName('not a url'), null);
+});
+
+test('a deck builder on its own clock that never says busy is warned about (unsaid-clock)', () => {
+  const src = `
+function buildFill(o) {
+  let now = 0
+  const api = {
+    arm() {},
+    assemble(t, onDone) {
+      now = t
+      if (now > 1) { start(now) }
+      onDone?.()
+    },
+  }
+  return { group: g, api, update(t) { now = t } }
+}
+function buildGrow(o) {
+  const cbs = []
+  const api = { arm() {}, assemble(t, onDone) { if (onDone) cbs.push(onDone); setTimeout(() => onDone(), 10) } }
+  return { group: g, api }
+}
+function buildSteps(o) {
+  const off = listen(o.name, (k) => go(k))
+  return { group: g, update(t) {} }
+}
+function buildSaid(o) {
+  const api = { assemble(t, done) { done() }, busy: () => false }
+  return { group: g, api }
+}
+function buildIdle(o) {
+  return { group: g, update(t) { u.uTime.value = t } }
+}
+export function install(registerBuilder) {
+  registerBuilder('fill', buildFill, { fields: ['pos'] })
+  registerBuilder('grow', buildGrow)
+  registerBuilder('steps', buildSteps, { fields: ['pos'] })
+  registerBuilder('said', buildSaid)
+  registerBuilder('idle', buildIdle)
+  registerBuilder('inline', (o) => ({ group: g }))
+}`;
+  const clocks = deckClocks([src]);
+  assert.deepEqual(clocks.map((c) => c.type), ['fill', 'steps']);
+  assert.match(clocks[0].why, /calls onDone at once/);
+  const space = { stations: [{ id: 'a', pos: [0, 0, 0], look: { dist: 9 }, objects: [{ type: 'fill', pos: [0, 0, 0] }, { type: 'grow', pos: [0, 0, 0] }] }] };
+  const deckOwn = { fill: ['pos'], grow: ['pos'], steps: ['pos'] };
+  const r = checkStage({ space, deckOwn, deckClocks: clocks });
+  assert.deepEqual(r.issues.filter((p) => p.code === 'unsaid-clock').map((p) => p.level), ['warning']);   // steps is in no station
+  assert.equal(r.problems.length, 0);
 });

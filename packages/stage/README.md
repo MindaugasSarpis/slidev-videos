@@ -13,7 +13,7 @@ quarks, clusters, particle names — is a plugin.
 
 ## Install
 
-    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.6.9&path:/packages/stage"
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.7.0&path:/packages/stage"
 
 ## Use
 
@@ -243,6 +243,16 @@ title and the headless tools' settle wait for that, and for any `api.busy`. `c` 
 the number the form shows now, and `<StageCount for="<name>">` counts with
 it (see `example/setup/tally.js`).
 
+**A form that moves on its own clock must say so: `api.busy`.** Nothing
+else tells the engine a fill, a drawn route or a gather is still under way.
+A builder that calls `onDone` at once and plays on after it, or plays its
+steps from a listener of its own, is taken as standing the moment it
+starts: `slidev-stage-shots`, `--stills` and the cover's title go ahead
+mid-fill. Give its api `busy: () => now < endsAt` (a value or a function,
+true while it moves). `slidev-stage-check` warns (`unsaid-clock`) about a
+deck builder that looks like this and never mentions `busy`; one whose
+steps land at once can say `busy: false`.
+
 **Readiness.** What a headless tool or a deck's own script can wait on:
 
 | | set |
@@ -453,7 +463,8 @@ were barely faster than two).
 | `--json FILE` | the report (default `<out-dir>/shots.ndjson`) |
 | `--dev deck.md` | start `slidev` on a free port, photograph it, stop it by its process group |
 | `--lock FILE`, `--no-lock` | the shared lock (default `/tmp/slidev-stage-shots.lock`) |
-| `--stills` | the world alone, no slide text, as `<out-dir>/01.jpg` …: the stills print, PDF export and the static fallback show (write them to the deck's `public/stills`); no clicks, no bursts |
+| `--stills` | the world alone, no slide text, as `<out-dir>/01.jpg` …: the stills print, PDF export and the static fallback show (write them to the deck's `public/stills`); one per slide, no bursts |
+| `--stills-at` | `last` (default): each slide's still at its last click, as the export prints it; `first`: at click 0 |
 
 A deck built for GitHub Pages (`--base /repo/talk/`) is served under that
 base. `--changed` keeps its hashes in `<out-dir>/.shots-cache.json`: each
@@ -715,7 +726,9 @@ the stage once per page, so the stage draws no world there (thirty WebGL
 contexts would run out); it shows the slide's still instead, under the slide's
 own text: `public/stills/01.jpg`, `02.jpg`, … (`stage.stills: <folder>` moves
 them, `false` turns them off). The static fallback on screen shows the same
-stills. Make them from a real render, the world alone without the slide:
+stills. A still is the slide at its last click, the moment the export prints
+(`--stills-at first` takes click 0 instead): the printed text and the world
+under it agree, and the fallback shows the slide's world complete. Make them from a real render, the world alone without the slide:
 
     slidev build deck.md --out /tmp/deck --base /
     slidev-stage-shots /tmp/deck public/stills --stills

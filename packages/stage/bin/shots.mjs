@@ -154,6 +154,7 @@ export const USAGE = `usage: slidev-stage-shots <dist> <out-dir> [options]
   --lock FILE          the shared lock (default ${LOCK}); --no-lock: none
   --stills             the world alone, no slide text, as <out-dir>/01.jpg …: the stills print,
                        PDF export and the static fallback show (write them to public/stills)
+  --stills-at WHEN     last (default: each slide at its last click, as the export prints it) | first
 
 exit: 0 clean · 3 overflow, page errors, failed requests, failed or unsettled frames · 1 the run failed · 2 bad arguments · 128+n stopped by signal n`;
 
@@ -162,7 +163,7 @@ export function parseArgs(argv) {
     dist: null, out: null, dev: null, slides: null, clicks: 'none', clickMap: null,
     settle: 6, wait: 30000, dust: 12, size: [1600, 900], draft: false, burst: 1, every: 1, seed: 1,
     halo: true, base: null, changed: false, sheet: false, probe: false, console: false, jobs: null,
-    gl: null, json: null, lock: LOCK, stills: false, help: false, errors: [],
+    gl: null, json: null, lock: LOCK, stills: false, stillsAt: 'last', help: false, errors: [],
   };
   const rest = [];
   const num = (v, name, min = 0) => { const n = Number(v); if (!Number.isFinite(n) || n < min) o.errors.push(`${name}: not a number ≥ ${min}: ${v}`); return n; };
@@ -197,6 +198,7 @@ export function parseArgs(argv) {
     else if (a === '--lock') o.lock = val();
     else if (a === '--no-lock') o.lock = null;
     else if (a === '--stills') o.stills = true;
+    else if (a === '--stills-at') { const v = val(); if (!['last', 'first'].includes(v)) o.errors.push(`--stills-at: last or first, not ${v}`); else o.stillsAt = v; }
     else if (a === '-h' || a === '--help') o.help = true;
     else if (a.startsWith('--')) o.errors.push(`unknown option ${a}`);
     else rest.push(a);
@@ -204,8 +206,9 @@ export function parseArgs(argv) {
   if (o.dev) [o.out] = rest; else [o.dist, o.out] = rest;
   // two pages share the machine well; the probe times the real clock, so one
   o.jobs ??= o.probe ? 1 : 2;
-  // a still is the slide's world as it stands: one frame per slide
-  if (o.stills) { o.clicks = 'none'; o.clickMap = null; o.burst = 1; o.halo = false; }
+  // a still is the slide's world as it stands: one frame per slide, at its
+  // last click (what Slidev's export prints) unless --stills-at first
+  if (o.stills) { o.clicks = o.stillsAt === 'first' ? 'none' : 'last'; o.clickMap = null; o.burst = 1; o.halo = false; }
   if (!o.help && !o.out) o.errors.push(o.dev ? 'usage: --dev deck.md <out-dir>' : 'usage: <dist> <out-dir>');
   return o;
 }
@@ -1000,7 +1003,7 @@ export async function shoot(o, logTo = console.log) {
           const ks = clicksFor(o, n, !o.clickMap && o.clicks !== 'none' ? await deck.clicksTotal(n) : 0);
           for (const k of ks) {
             for (let b = 0; b < o.burst && !stopped; b++) {
-              const rec = { slide: n, click: k, ...(o.burst > 1 ? { burst: b } : {}), frame: frameName(n, k, o.burst > 1 ? b : 0) };
+              const rec = { slide: n, click: k, ...(o.burst > 1 ? { burst: b } : {}), frame: o.stills ? frameName(n) : frameName(n, k, o.burst > 1 ? b : 0) };
               try {
                 if (b === 0 && !(await deck.go(n, k))) throw new Error(`click ${k} of slide ${n} did not come`);
                 let key = null;

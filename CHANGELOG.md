@@ -4,6 +4,38 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## v0.7.0 — 2026-10-09
+
+slidev-videos 0.7.0 · slidev-addon-stage 0.4.0 · slidev-addon-videos 0.7.0
+
+The batch of the talks' findings since v0.6.6, in one release. It carries
+v0.6.9's freeze fix unchanged.
+
+- **Stills are taken at each slide's last click** (`--stills-at last`, the
+  default), the moment `slidev export` prints. Before, `--stills` shot click 0,
+  and a printed slide's text could describe marks its world did not show yet.
+  `--stills-at first` takes click 0 as before. One still per slide, `NN.jpg`,
+  serves print and the on-screen fallback alike, so the fallback shows the
+  slide's world complete. **Changed:** rerun `--stills` for a deck whose
+  slides have clicks.
+- **`slidev-stage-check` warns about a builder on its own clock**
+  (`unsaid-clock`): a deck builder whose `assemble()` calls `onDone` at once
+  and plays on after it, or that plays its steps from a listener of its own
+  with no `assemble()`, and never mentions `busy`. Shots, stills and the
+  cover's title take such a form as standing mid-fill. Set `api.busy` (a value
+  or a function, true while it moves); `busy: false` says its steps land at
+  once. The README says so in bold. Only types a station uses are warned
+  about: on the talks as they stand, Užsikrauk karjerai's histogram, path and
+  quintet and OpenData's streams, portraits and collision; Innoday's none. No
+  motion probe by default: the dust drifts forever and a
+  form's motion lives in its shader, so the CPU has nothing cheap to watch.
+
+In `cern_outreach_talks` (branch `fix/live-walk-retry`, not in this tag):
+`pages_check` asks a slide that is slow to appear for a second time, with
+20 s more, and walks to the deck's count, so a walk that stops short fails.
+`talk deploy` walks the live deck once more before it reports a failure, and
+reports both attempts.
+
 ## v0.6.9 — 2026-10-09
 
 slidev-videos 0.6.9 · slidev-addon-videos 0.6.9 · slidev-addon-stage 0.3.9

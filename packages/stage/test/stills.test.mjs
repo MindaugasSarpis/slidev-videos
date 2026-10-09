@@ -35,8 +35,10 @@ test('--stills takes one frame of the world per slide', async () => {
   const { parseArgs } = await import('../bin/shots.mjs');
   const o = parseArgs(['dist', 'public/stills', '--stills', '--clicks', 'all', '--burst', '3']);
   assert.equal(o.stills, true);
-  assert.equal(o.clicks, 'none');
+  assert.equal(o.clicks, 'last');   // the slide at its last click, as the export prints it
   assert.equal(o.burst, 1);
   assert.equal(o.halo, false);
   assert.deepEqual(o.errors, []);
+  assert.equal(parseArgs(['dist', 'out', '--stills', '--stills-at', 'first']).clicks, 'none');
+  assert.match(parseArgs(['dist', 'out', '--stills', '--stills-at', 'middle']).errors.join(), /last or first/);
 });
