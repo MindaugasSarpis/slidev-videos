@@ -7,7 +7,7 @@ import { useNav, configs } from '@slidev/client'
 import { createSpace, usePlugin, resolvePalette, resolveLook, liftGround, paletteVars, warmAudio, startHum, stopHum, humProbe, playWhoosh, playRise } from '../index.js'
 import StagePanel from './StagePanel.vue'
 import { placeGroupsAt } from '../stage/place-groups.js'
-import { probeGL, stageDebugOn, debugLines, deviceInfo, pickTier, MAX_TIER } from '../stage/diagnose.js'
+import { probeGL, stageDebugOn, debugLines, deviceInfo, pickTier, MAX_TIER, stageOverrides } from '../stage/diagnose.js'
 import { stillsDir, stillUrl, inPrint } from '../stage/stills.js'
 
 // The persistent 3D world under a whole deck. The addon mounts it from its
@@ -112,6 +112,7 @@ const onStillError = () => { stillMissing.value = new Set(stillMissing.value).ad
 
 // ---- why it runs as it does ---------------------------------------------------
 const debug = typeof location !== 'undefined' && stageDebugOn(location)
+const OVERRIDES = typeof location !== 'undefined' ? stageOverrides(location) : {}   // ?stage-post=off, ?stage-targets=half, ?stage-tier=n
 const debugText = ref('')
 let glInfo = {}
 const events = { contextLost: 0, shaderErrors: 0, lastShaderError: '' }
@@ -139,10 +140,10 @@ function renderDebug() {
     const now = performance.now()
     if (fpsAt) panelFps = (h.frames - fpsFrames) / ((now - fpsAt) / 1000)
     fpsAt = now; fpsFrames = h.frames
-    sp = { tier: h.tier, targets: h.targets, sim: h.sim, dpr: h.dpr, canvas: c ? `${c.width}×${c.height}` : '', guard: h.guardStage,
+    sp = { tier: h.tier, targets: h.targets, post: h.post, sim: h.sim, dpr: h.dpr, canvas: c ? `${c.width}×${c.height}` : '', guard: h.guardStage,
       fps: panelFps, frames: h.frames, textures: h.renderer?.info?.memory?.textures, programs: h.renderer?.info?.programs?.length }
   }
-  debugText.value = debugLines({ ...status, gl: glInfo, space: sp, device: deviceInfo(), events }).join('\n')
+  debugText.value = debugLines({ ...status, gl: glInfo, space: sp, device: deviceInfo(), events, overrides: OVERRIDES }).join('\n')
 }
 // iOS drops a WebGL context under memory pressure; the canvas goes blank and
 // the slide would sit on black. Stop drawing, show the static stage, and build
@@ -301,6 +302,7 @@ async function boot() {
   glInfo = probeGL(document)
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return fallback('reduced-motion')
   if (glInfo.reason) return fallback(glInfo.reason, glInfo.gpu)
+  if (tier == null && OVERRIDES.tier != null) tier = OVERRIDES.tier
   if (tier == null) tier = Number.isFinite(Number(CFG.tier)) && CFG.tier !== null && CFG.tier !== ''
     ? Math.max(0, Math.min(MAX_TIER, Math.round(Number(CFG.tier)))) : pickTier(glInfo, deviceInfo())
   let stage = 'plugin', failed = null
@@ -318,7 +320,7 @@ async function boot() {
       space: spaceDef,
       records: records?.records || records?.states || [],
       palette,
-      options: { ...OPTIONS, hero: CFG.hero, tier },
+      options: { ...OPTIONS, hero: CFG.hero, tier, ...(OVERRIDES.post === false ? { post: false } : {}), ...(OVERRIDES.targets ? { targets: OVERRIDES.targets } : {}) },
       asset,
       onArrive: (target) => {
         arrived.value = true

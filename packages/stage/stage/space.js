@@ -99,6 +99,19 @@ void main() {
 }`;
 // The finish: a vignette, a touch of chromatic aberration toward the edges,
 // film grain.
+// A non-finite or overflowing pixel out of the scene (additive grains piled past
+// half-float's 65504, a shader dividing by zero) turns to Inf or NaN; bloom
+// spreads it across the frame and tone mapping makes NaN of it, and on Apple
+// GPUs the whole picture went black. Every pixel comes out finite, 0..64:
+// NaN as 0, Inf and overflow as the ceiling.
+const GuardShader = {
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+float ok(float x) { return x == x ? clamp(x, 0.0, 64.0) : 0.0; }   // NaN → 0; Inf and overflow → the ceiling, bright
+void main() { vec4 c = texture2D(tDiffuse, vUv); gl_FragColor = vec4(ok(c.r), ok(c.g), ok(c.b), clamp(ok(c.a), 0.0, 1.0)); }`,
+};
+
 const FinishShader = {
   uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uVignette: { value: 0.3 }, uGrain: { value: 0.035 }, uCA: { value: 0.0004 } },
   vertexShader: /* glsl */ `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
@@ -151,8 +164,10 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     renderer = new WebGLRenderer({ canvas, alpha: false, antialias: false, powerPreference: 'high-performance' });
   } catch (e) { onEvent?.('fallback', { reason: 'no-webgl2', detail: e?.message || '' }); return null; }
   if (!renderer.capabilities.isWebGL2) { renderer.dispose(); onEvent?.('fallback', { reason: 'no-webgl2' }); return null; }
-  const type = renderer.extensions.has('EXT_color_buffer_float') ? FloatType
-    : renderer.extensions.has('EXT_color_buffer_half_float') ? HalfFloatType : null;
+  // float targets want rendering to float (EXT_color_buffer_float); `targets:
+  // 'half'` (?stage-targets=half) takes half-float even where float would do
+  const type = renderer.extensions.has('EXT_color_buffer_float') && opt.targets !== 'half' ? FloatType
+    : renderer.extensions.has('EXT_color_buffer_half_float') || renderer.extensions.has('EXT_color_buffer_float') ? HalfFloatType : null;
   if (!type) { renderer.dispose(); onEvent?.('fallback', { reason: 'no-float-target' }); return null; }
   // A shader that does not compile leaves its object undrawn, not the page
   // broken; say so (the debug panel counts them), and log it as three would.
@@ -354,6 +369,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   // --- post-processing: bloom, anti-aliasing, tone mapping, the finish ------------
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(new ShaderPass(GuardShader));              // every pixel finite before bloom (see GuardShader)
   const bloom = new UnrealBloomPass(new Vector2(1, 1), num(opt.bloom, 0.55), 0.55, 0.8); composer.addPass(bloom);
   composer.addPass(new SMAAPass());
   composer.addPass(new OutputPass());                         // tone mapping + sRGB
@@ -361,7 +377,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   finish.uniforms.uVignette.value = num(opt.vignette, 0.3);
   finish.uniforms.uGrain.value = num(opt.grain, 0.035);
   finish.uniforms.uCA.value = num(opt.aberration, 0.0004);
-  canvas.__space = { scene, composer, bloom, finish, field, renderer, get guardStage() { return guardStage; }, holdQuality() { guardStage = 2; }, get elapsed() { return elapsed; }, get dpr() { return renderer.getPixelRatio(); }, get frames() { return frames; }, get options() { return { ...opt }; }, targets: type === FloatType ? 'float' : 'half-float', sim: size, tier };   // a handle for the headless probes and the debug panel (options: as resolved, defaults filled in)
+  canvas.__space = { scene, composer, bloom, finish, field, renderer, get guardStage() { return guardStage; }, holdQuality() { guardStage = 2; }, get elapsed() { return elapsed; }, get dpr() { return renderer.getPixelRatio(); }, get frames() { return frames; }, get options() { return { ...opt }; }, targets: type === FloatType ? 'float' : 'half-float', sim: size, tier, post: opt.post !== false };   // a handle for the headless probes and the debug panel (options: as resolved, defaults filled in)
 
   // what builds itself at each station, on arrival
   const selfBuilders = (id) => stations.get(id)?.built.apis.filter((a) => a.assemble) || [];
@@ -543,7 +559,10 @@ export function createSpace(canvas, container, { space, records = [], palette, o
         winFrames = 0; winTime = 0;
       }
     }
-    composer.render(dt);
+    // `post: false` (?stage-post=off): the scene straight to the screen, no
+    // bloom or finish, to tell a post-processing fault from a scene one
+    if (opt.post === false) renderer.render(scene, camera);
+    else composer.render(dt);
   }
   frame();
 

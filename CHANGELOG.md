@@ -4,6 +4,24 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## v0.6.7 — 2026-10-09
+
+slidev-videos 0.6.7 · slidev-addon-videos 0.6.7 · slidev-addon-stage 0.3.7
+
+- **One over-bright pixel no longer blacks out the world.** On an iPhone
+  (iOS 18.7, Apple GPU) Innoday's stage ran at 60 fps with no context lost and
+  drew black, after the funnel flashed once. A pixel that overflows the
+  composer's half-float target (additive grains piled past 65504, a shader
+  dividing by zero) becomes Inf or NaN; bloom spreads it over the frame and
+  tone mapping turns it to NaN, which shows black. A guard pass after the scene
+  now makes every pixel finite (NaN 0, Inf and overflow at a ceiling of 64)
+  before bloom. Reproduced in Chromium by putting one quad writing 1e20 in the
+  scene: on v0.6.6 the whole world went black under the slide's text, now it
+  draws.
+- `?stage-debug` reports `float-linear` and `float-blend`, and three switches
+  narrow a fault down on the device: `stage-post=off`, `stage-targets=half`,
+  `stage-tier=0..3`.
+
 ## v0.6.6 — 2026-10-09
 
 slidev-videos 0.6.6 · slidev-addon-videos 0.6.6 · slidev-addon-stage 0.3.6

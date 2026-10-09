@@ -23,7 +23,7 @@ export function stageDebugOn(loc = globalThis.location) {
 
 // What this browser's WebGL2 can do, from a throwaway context.
 export function probeGL(doc = globalThis.document) {
-  const out = { webgl2: false, float: false, halfFloat: false, gpu: '', maxTexture: 0, reason: null };
+  const out = { webgl2: false, float: false, halfFloat: false, floatLinear: false, floatBlend: false, gpu: '', maxTexture: 0, reason: null };
   let gl = null;
   try { gl = doc.createElement('canvas').getContext('webgl2'); } catch { /* none */ }
   if (!gl) { out.reason = 'no-webgl2'; return out; }
@@ -31,6 +31,8 @@ export function probeGL(doc = globalThis.document) {
   try {
     out.float = gl.getExtension('EXT_color_buffer_float') !== null;
     out.halfFloat = gl.getExtension('EXT_color_buffer_half_float') !== null;
+    out.floatLinear = gl.getExtension('OES_texture_float_linear') !== null;
+    out.floatBlend = gl.getExtension('EXT_float_blend') !== null;
     out.maxTexture = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 0;
     const dbg = gl.getExtension('WEBGL_debug_renderer_info');
     out.gpu = String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER) || '');
@@ -49,9 +51,10 @@ export function debugLines(s = {}) {
   const lines = [
     `stage: ${s.status || '?'}${s.reason ? ` — ${s.reason}` : ''}${s.detail ? ` (${s.detail})` : ''}`,
     `gpu: ${gl.gpu || '?'}`,
-    `webgl2 ${yes(gl.webgl2)} · float ${yes(gl.float)} · half-float ${yes(gl.halfFloat)} · max texture ${gl.maxTexture || '?'}`,
+    `webgl2 ${yes(gl.webgl2)} · float ${yes(gl.float)} · half-float ${yes(gl.halfFloat)} · float-linear ${yes(gl.floatLinear)} · float-blend ${yes(gl.floatBlend)} · max texture ${gl.maxTexture || '?'}`,
   ];
-  if (sp.targets) lines.push(`tier ${sp.tier ?? '?'} · targets ${sp.targets} · sim ${sp.sim}² · dpr ${fix(sp.dpr)} · canvas ${sp.canvas || '?'} · quality step ${sp.guard ?? '?'}`);
+  if (s.overrides && Object.keys(s.overrides).length) lines.push(`overrides: ${Object.entries(s.overrides).map(([k, v]) => `${k}=${v}`).join(' ')}`);
+  if (sp.targets) lines.push(`tier ${sp.tier ?? '?'} · targets ${sp.targets}${sp.post === false ? ' · post off' : ''} · sim ${sp.sim}² · dpr ${fix(sp.dpr)} · canvas ${sp.canvas || '?'} · quality step ${sp.guard ?? '?'}`);
   if (sp.fps != null) lines.push(`fps ${fix(sp.fps, 0)} · frames ${sp.frames} · textures ${sp.textures ?? '?'} · programs ${sp.programs ?? '?'}`);
   lines.push(`device: ${dev.width}×${dev.height} @${fix(dev.dpr)} · memory ${dev.memory ?? '?'} GB · cores ${dev.cores ?? '?'} · touch ${yes(dev.coarse)} · reduced motion ${yes(dev.reduced)}`);
   if (ev.contextLost || ev.shaderErrors) lines.push(`context lost ${ev.contextLost || 0}× · shader errors ${ev.shaderErrors || 0}${ev.lastShaderError ? ` — ${ev.lastShaderError}` : ''}`);
@@ -86,4 +89,20 @@ export function pickTier(gl = {}, dev = {}) {
   if (dev.memory && dev.memory <= 2) tier = Math.max(tier, 2);
   if (gl.maxTexture && gl.maxTexture < 8192) tier = Math.max(tier, 2);
   return Math.min(MAX_TIER, tier);
+}
+
+// Switches in the address for narrowing a fault down on a device, before or
+// after the # (?stage-debug&stage-post=off):
+//   stage-post=off     the scene straight to the screen, no bloom or finish
+//   stage-targets=half half-float simulation targets even where float would do
+//   stage-tier=0..3    the quality tier
+export function stageOverrides(loc = globalThis.location) {
+  if (!loc) return {};
+  const q = new URLSearchParams([loc.search || '', (loc.hash || '').split('?').slice(1).join('?')].map((x) => x.replace(/^\?/, '')).filter(Boolean).join('&'));
+  const out = {};
+  if (/^(off|0|false|no)$/i.test(q.get('stage-post') || '')) out.post = false;
+  if ((q.get('stage-targets') || '').toLowerCase() === 'half') out.targets = 'half';
+  const t = q.get('stage-tier');
+  if (t != null && /^[0-3]$/.test(t)) out.tier = Number(t);
+  return out;
 }

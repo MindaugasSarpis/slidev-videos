@@ -13,7 +13,7 @@ quarks, clusters, particle names — is a plugin.
 
 ## Install
 
-    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.6.6&path:/packages/stage"
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.6.7&path:/packages/stage"
 
 ## Use
 
@@ -706,7 +706,9 @@ stage root as `data-stage-fallback` (`reduced-motion`, `no-webgl2`,
 `stage: fallback — …` console line. Add `?stage-debug` to the address (before
 or after the `#`) to see it on screen with the GPU, the render targets, the
 simulation size, the frame rate and any shader errors: the way to find out
-from a phone.
+from a phone. Three more switches narrow a fault down on the device itself:
+`stage-post=off` (the scene straight to the screen, no bloom or finish),
+`stage-targets=half` (half-float simulation targets) and `stage-tier=0..3`.
 
 **Stills for print, PDF export and the fallback.** Slidev's print route mounts
 the stage once per page, so the stage draws no world there (thirty WebGL
