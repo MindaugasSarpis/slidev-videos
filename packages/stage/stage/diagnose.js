@@ -1,0 +1,72 @@
+// Why the stage runs as it does, or why it did not start: for a phone, where
+// there is no console to read. Every fallback sets `data-stage-fallback` on
+// the stage root and logs one `stage: fallback — <reason>` line; with
+// `?stage-debug` in the address (before or after the #) a panel on screen
+// shows the same, with the GPU, the render targets and the frame rate.
+//
+// Reasons:
+//   reduced-motion   the device asks for reduced motion
+//   no-webgl2        no WebGL2 context
+//   no-float-target  WebGL2 without float or half-float colour buffers
+//   plugin           a stage plugin failed to load
+//   data             space.json could not be read
+//   init             the engine threw while building the world
+//   context-lost     the GPU dropped the WebGL context (iOS does under memory pressure)
+export const FALLBACK_REASONS = ['reduced-motion', 'no-webgl2', 'no-float-target', 'plugin', 'data', 'init', 'context-lost'];
+
+// `?stage-debug`, `?stage-debug=1`, or the same in the hash's query (`#/3?stage-debug`)
+export function stageDebugOn(loc = globalThis.location) {
+  if (!loc) return false;
+  const q = [loc.search || '', (loc.hash || '').split('?').slice(1).join('?')].join('&');
+  return /(^|[?&])stage-debug(=(1|true|on|yes))?(&|$)/i.test(q);
+}
+
+// What this browser's WebGL2 can do, from a throwaway context.
+export function probeGL(doc = globalThis.document) {
+  const out = { webgl2: false, float: false, halfFloat: false, gpu: '', maxTexture: 0, reason: null };
+  let gl = null;
+  try { gl = doc.createElement('canvas').getContext('webgl2'); } catch { /* none */ }
+  if (!gl) { out.reason = 'no-webgl2'; return out; }
+  out.webgl2 = true;
+  try {
+    out.float = gl.getExtension('EXT_color_buffer_float') !== null;
+    out.halfFloat = gl.getExtension('EXT_color_buffer_half_float') !== null;
+    out.maxTexture = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 0;
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    out.gpu = String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER) || '');
+  } catch { /* keep what we have */ }
+  // WebGL2 can always render to RGBA8, but the particle simulation needs float
+  // or half-float targets; Safari on iOS has the half-float one.
+  if (!out.float && !out.halfFloat) out.reason = 'no-float-target';
+  try { gl.getExtension('WEBGL_lose_context')?.loseContext(); } catch { /* noop */ }
+  return out;
+}
+
+// The panel's lines. s: { status, reason, detail, gl, space, device, events }
+export function debugLines(s = {}) {
+  const gl = s.gl || {}, sp = s.space || {}, dev = s.device || {}, ev = s.events || {};
+  const yes = (b) => (b ? 'yes' : 'no');
+  const lines = [
+    `stage: ${s.status || '?'}${s.reason ? ` — ${s.reason}` : ''}${s.detail ? ` (${s.detail})` : ''}`,
+    `gpu: ${gl.gpu || '?'}`,
+    `webgl2 ${yes(gl.webgl2)} · float ${yes(gl.float)} · half-float ${yes(gl.halfFloat)} · max texture ${gl.maxTexture || '?'}`,
+  ];
+  if (sp.targets) lines.push(`targets ${sp.targets} · sim ${sp.sim}² · dpr ${fix(sp.dpr)} · canvas ${sp.canvas || '?'} · quality step ${sp.guard ?? '?'}`);
+  if (sp.fps != null) lines.push(`fps ${fix(sp.fps, 0)} · frames ${sp.frames} · textures ${sp.textures ?? '?'} · programs ${sp.programs ?? '?'}`);
+  lines.push(`device: ${dev.width}×${dev.height} @${fix(dev.dpr)} · memory ${dev.memory ?? '?'} GB · cores ${dev.cores ?? '?'} · touch ${yes(dev.coarse)} · reduced motion ${yes(dev.reduced)}`);
+  if (ev.contextLost || ev.shaderErrors) lines.push(`context lost ${ev.contextLost || 0}× · shader errors ${ev.shaderErrors || 0}${ev.lastShaderError ? ` — ${ev.lastShaderError}` : ''}`);
+  if (dev.ua) lines.push(dev.ua);
+  return lines;
+}
+
+const fix = (v, d = 2) => (Number.isFinite(Number(v)) ? Number(Number(v).toFixed(d)) : '?');
+
+export function deviceInfo(w = globalThis) {
+  const mm = (q) => { try { return w.matchMedia(q).matches; } catch { return false; } };
+  return {
+    width: w.innerWidth, height: w.innerHeight, dpr: w.devicePixelRatio || 1,
+    memory: w.navigator?.deviceMemory, cores: w.navigator?.hardwareConcurrency,
+    coarse: mm('(pointer: coarse)'), reduced: mm('(prefers-reduced-motion: reduce)'),
+    ua: String(w.navigator?.userAgent || '').slice(0, 160),
+  };
+}

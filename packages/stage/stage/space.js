@@ -136,11 +136,18 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   let renderer;
   try {
     renderer = new WebGLRenderer({ canvas, alpha: false, antialias: false, powerPreference: 'high-performance' });
-  } catch { return null; }
-  if (!renderer.capabilities.isWebGL2) { renderer.dispose(); return null; }
+  } catch (e) { onEvent?.('fallback', { reason: 'no-webgl2', detail: e?.message || '' }); return null; }
+  if (!renderer.capabilities.isWebGL2) { renderer.dispose(); onEvent?.('fallback', { reason: 'no-webgl2' }); return null; }
   const type = renderer.extensions.has('EXT_color_buffer_float') ? FloatType
     : renderer.extensions.has('EXT_color_buffer_half_float') ? HalfFloatType : null;
-  if (!type) { renderer.dispose(); return null; }
+  if (!type) { renderer.dispose(); onEvent?.('fallback', { reason: 'no-float-target' }); return null; }
+  // A shader that does not compile leaves its object undrawn, not the page
+  // broken; say so (the debug panel counts them), and log it as three would.
+  renderer.debug.onShaderError = (gl, program, vs, fs) => {
+    const log = [gl.getProgramInfoLog(program), gl.getShaderInfoLog(vs), gl.getShaderInfoLog(fs)].map((t) => (t || '').trim()).filter(Boolean).join(' | ');
+    console.error('stage: shader error —', log);
+    onEvent?.('shader-error', { message: log.slice(0, 200) });
+  };
   const baseDpr = Math.min(devicePixelRatio || 1, coarse ? 1.5 : 2);
   renderer.setPixelRatio(baseDpr);
   renderer.setClearColor(new Color(pal.bg), 1);
@@ -339,7 +346,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   finish.uniforms.uVignette.value = num(opt.vignette, 0.3);
   finish.uniforms.uGrain.value = num(opt.grain, 0.035);
   finish.uniforms.uCA.value = num(opt.aberration, 0.0004);
-  canvas.__space = { scene, composer, bloom, finish, field, renderer, get guardStage() { return guardStage; }, holdQuality() { guardStage = 2; }, get elapsed() { return elapsed; }, get dpr() { return renderer.getPixelRatio(); }, get frames() { return frames; } };   // a handle for the headless probes
+  canvas.__space = { scene, composer, bloom, finish, field, renderer, get guardStage() { return guardStage; }, holdQuality() { guardStage = 2; }, get elapsed() { return elapsed; }, get dpr() { return renderer.getPixelRatio(); }, get frames() { return frames; }, targets: type === FloatType ? 'float' : 'half-float', sim: size };   // a handle for the headless probes and the debug panel
 
   // what builds itself at each station, on arrival
   const selfBuilders = (id) => stations.get(id)?.built.apis.filter((a) => a.assemble) || [];

@@ -7,6 +7,7 @@ import { useNav, configs } from '@slidev/client'
 import { createSpace, usePlugin, resolvePalette, resolveLook, liftGround, paletteVars, warmAudio, startHum, stopHum, humProbe, playWhoosh, playRise } from '../index.js'
 import StagePanel from './StagePanel.vue'
 import { placeGroupsAt } from '../stage/place-groups.js'
+import { probeGL, stageDebugOn, debugLines, deviceInfo } from '../stage/diagnose.js'
 
 // The persistent 3D world under a whole deck. The addon mounts it from its
 // own global-bottom.vue whenever the headmatter has a `stage:` block:
@@ -40,6 +41,8 @@ import { placeGroupsAt } from '../stage/place-groups.js'
 //
 // A slide without `space` keeps the previous pose. Without WebGL2 float
 // render targets, or under reduced motion, only the static gradient is drawn.
+// Why it fell back is on the root as data-stage-fallback and in one console
+// line; `?stage-debug` in the address shows it on screen (stage/diagnose.js).
 //
 // `dim` is the opacity of the scrim between the world and the slide, so body
 // copy keeps its contrast over a busy pose. Without the key: 0 while a stop
@@ -82,14 +85,42 @@ let space = null
 let humAt = new Set()
 let humEverywhere = false
 
-function webgl2Ok() {
-  try {
-    const gl = document.createElement('canvas').getContext('webgl2')
-    const ok = !!gl && (gl.getExtension('EXT_color_buffer_float') !== null
-      || gl.getExtension('EXT_color_buffer_half_float') !== null)
-    gl?.getExtension('WEBGL_lose_context')?.loseContext()
-    return ok
-  } catch { return false }
+// ---- why it runs as it does ---------------------------------------------------
+const debug = typeof location !== 'undefined' && stageDebugOn(location)
+const debugText = ref('')
+let glInfo = {}
+const events = { contextLost: 0, shaderErrors: 0, lastShaderError: '' }
+const status = { status: 'starting', reason: '', detail: '' }
+function fallback(reason, detail = '') {
+  if (status.status === 'fallback') return
+  Object.assign(status, { status: 'fallback', reason, detail: String(detail || '').slice(0, 160) })
+  staticBg.value = true
+  assembled(true)
+  if (root.value) root.value.dataset.stageFallback = reason
+  console.warn(`stage: fallback — ${reason}${detail ? ` (${detail})` : ''}`)
+  renderDebug()
+}
+let fpsAt = 0, fpsFrames = 0, fps = null
+function renderDebug() {
+  if (!debug) return
+  const h = canvas.value?.__space, c = canvas.value
+  let sp = null
+  if (h && status.status === 'running') {
+    const now = performance.now()
+    if (fpsAt) fps = (h.frames - fpsFrames) / ((now - fpsAt) / 1000)
+    fpsAt = now; fpsFrames = h.frames
+    sp = { targets: h.targets, sim: h.sim, dpr: h.dpr, canvas: c ? `${c.width}×${c.height}` : '', guard: h.guardStage,
+      fps, frames: h.frames, textures: h.renderer?.info?.memory?.textures, programs: h.renderer?.info?.programs?.length }
+  }
+  debugText.value = debugLines({ ...status, gl: glInfo, space: sp, device: deviceInfo(), events }).join('\n')
+}
+// iOS drops a WebGL context under memory pressure; the canvas goes blank and
+// the slide would sit on black. Stop drawing and fall back to the static stage.
+const onContextLost = (e) => {
+  e.preventDefault?.()
+  events.contextLost++
+  space?.setPaused(true)
+  fallback('context-lost')
 }
 
 const frontmatter = computed(() => nav.currentSlideRoute.value?.meta?.slide?.frontmatter || {})
@@ -201,14 +232,18 @@ const getJson = async (path) => {
 
 async function boot() {
   if (space || staticBg.value || !canvas.value) return
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
-  if (reduced || !webgl2Ok()) { staticBg.value = true; assembled(true); return }
+  glInfo = probeGL(document)
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return fallback('reduced-motion')
+  if (glInfo.reason) return fallback(glInfo.reason, glInfo.gpu)
+  let stage = 'plugin', failed = null
   try {
     for (const p of [].concat(CFG.plugins || [])) await usePlugin(p)
+    stage = 'data'
     const [spaceDef, records] = await Promise.all([
       getJson(spaceSrc.value),
       recordsSrc.value ? getJson(recordsSrc.value).catch((e) => { console.warn('stage: records not loaded —', e.message); return null }) : null,
     ])
+    stage = 'init'
     data.value = records
     if (!canvas.value) return    // unmounted while the data came in
     space = createSpace(canvas.value, root.value, {
@@ -230,13 +265,18 @@ async function boot() {
           if (root.value) root.value.dataset.assemblies = String(Number(root.value.dataset.assemblies || 0) + 1)   // for the probes
         } else if (e === 'assembled') assembled(true)
         else if (e === 'flight') onFlight(detail)
+        else if (e === 'fallback') failed = detail
+        else if (e === 'shader-error') { events.shaderErrors++; events.lastShaderError = detail?.message || ''; renderDebug() }
       },
     })
   } catch (e) {
-    console.warn('stage: not started —', e?.message || e)
+    failed = { reason: stage, detail: e?.message || String(e) }
     space = null
   }
-  if (!space) { staticBg.value = true; assembled(true); return }
+  if (!space) return fallback(failed?.reason || stage, failed?.detail || '')
+  canvas.value.addEventListener('webglcontextlost', onContextLost)
+  status.status = 'running'
+  if (debug) console.info('stage: running —', debugLines({ ...status, gl: glInfo, device: deviceInfo(), events }).slice(1, 3).join(' · '))
   const humList = [].concat(CFG.humAt ?? (space.hero != null ? [space.hero] : [])).map(String)
   humEverywhere = CFG.humAt === true || humList.some((s) => s === 'all' || s === '*')
   humAt = new Set(humList)
@@ -283,6 +323,7 @@ const onVisibility = () => { rest(); updateHum() }
 // shoves it back out; and while a clip covers the slide the world rests —
 // the renderer stops, so the machine's GPU is the decoder's alone.
 let coverTimer = 0
+let debugTimer = 0
 const onVideoTransition = (e) => {
   const d = e.detail || {}
   if (!space || d.mode === 'cut') return
@@ -322,6 +363,7 @@ onMounted(() => {
     window.addEventListener('slidev-videos:cover', onVideoCover)
   }
   if (root.value) root.value.__hum = humProbe   // for the headless probes
+  if (debug) { renderDebug(); debugTimer = setInterval(renderDebug, 1000) }
   boot()
 })
 onUnmounted(() => {
@@ -332,6 +374,8 @@ onUnmounted(() => {
   window.removeEventListener('slidev-videos:transition', onVideoTransition)
   window.removeEventListener('slidev-videos:cover', onVideoCover)
   clearTimeout(coverTimer)
+  clearInterval(debugTimer)
+  canvas.value?.removeEventListener('webglcontextlost', onContextLost)
   stopHum()
   assembled(true)
   delete document.documentElement.dataset.stage
@@ -363,6 +407,8 @@ onUnmounted(() => {
         </slot>
       </div>
     </Transition>
+    <!-- on body: the slide is scaled down on a phone, the panel should not be -->
+    <Teleport to="body"><pre v-if="debug" class="stage-debug">{{ debugText }}</pre></Teleport>
   </div>
 </template>
 
@@ -407,6 +453,14 @@ html[data-stage-look="broadcast"] .grain { display: none; }
    grows past the frame and clips both the `see` line and the record's last row. */
 .space-figure { display: block; max-width: 100%; max-height: 320px; border-radius: 6px; background: #fff; opacity: 0.94; }
 .hud-see { margin: 10px 0 0; font-size: max(var(--stage-type-min, 0px), 14px * var(--stage-type-scale, 1)); line-height: 1.4; color: var(--fg); max-width: 100%; }
+/* ?stage-debug: what the stage could and could not do, readable on a phone */
+.stage-debug {
+  position: fixed; left: 8px; right: 8px; top: 8px; z-index: 1000; margin: 0; padding: 8px 10px;
+  max-height: 60vh; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: #e8f0f8;
+  background: rgba(0, 0, 0, 0.78); border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 6px;
+  pointer-events: auto; user-select: text; -webkit-user-select: text;
+}
 .hud-enter-active, .hud-leave-active { transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
 .hud-enter-from, .hud-leave-to { opacity: 0; transform: translateY(8px); }
 </style>

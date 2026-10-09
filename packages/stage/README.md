@@ -370,6 +370,13 @@ the recorder's files do not.
     pnpm --filter slidev-addon-stage build:broadcast # the example under look: broadcast, in example/dist/broadcast
     pnpm --filter slidev-addon-stage smoke           # Playwright, headless
 
-Without WebGL2 float render targets, or under `prefers-reduced-motion`, the
-stage draws its static gradient and the deck stays readable; the overview and
-PDF export have no world.
+Without WebGL2 float or half-float render targets, under
+`prefers-reduced-motion`, or when the GPU drops the WebGL context (iOS does
+under memory pressure), the stage draws its static gradient and the deck stays
+readable; the overview and PDF export have no world. Why it fell back is on the
+stage root as `data-stage-fallback` (`reduced-motion`, `no-webgl2`,
+`no-float-target`, `plugin`, `data`, `init`, `context-lost`) and in one
+`stage: fallback — …` console line. Add `?stage-debug` to the address (before
+or after the `#`) to see it on screen with the GPU, the render targets, the
+simulation size, the frame rate and any shader errors: the way to find out
+from a phone.

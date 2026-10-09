@@ -4,6 +4,19 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## Unreleased (v0.5.3)
+
+- **Why the stage fell back, readable from a phone.** Every fallback sets
+  `data-stage-fallback` on the stage root (`reduced-motion`, `no-webgl2`,
+  `no-float-target`, `plugin`, `data`, `init`, `context-lost`) and logs one
+  `stage: fallback — <reason>` line. `?stage-debug` in the address shows a
+  panel with the reason, the GPU, float / half-float support, the render
+  targets in use, the simulation size, pixel ratio, frame rate, textures,
+  programs and shader errors.
+- **A lost WebGL context no longer leaves the slide on black.** The stage
+  stops drawing and shows its static background (restoring at a lower
+  quality is next). Shader compile errors are counted and logged.
+
 ## v0.5.2 — 2026-10-09
 
 slidev-videos 0.5.2 · slidev-addon-videos 0.5.2 · slidev-addon-stage 0.2.2
