@@ -25,8 +25,10 @@ v0.6.9's freeze fix unchanged.
   cover's title take such a form as standing mid-fill. Set `api.busy` (a value
   or a function, true while it moves); `busy: false` says its steps land at
   once. The README says so in bold. Only types a station uses are warned
-  about: on the talks as they stand, Užsikrauk karjerai's histogram, path and
-  quintet and OpenData's streams, portraits and collision; Innoday's none. No
+  about: on the talks' main as of this tag, OpenData's streams, portraits and
+  collision; Užsikrauk karjerai's and Innoday's none. (As tagged, this line
+  named Užsikrauk karjerai's histogram, path and quintet: that came from a
+  stale checkout, and they have set `api.busy` since v0.6.6.) No
   motion probe by default: the dust drifts forever and a
   form's motion lives in its shader, so the CPU has nothing cheap to watch.
 
