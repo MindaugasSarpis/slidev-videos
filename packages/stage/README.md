@@ -13,7 +13,7 @@ quarks, clusters, particle names — is a plugin.
 
 ## Install
 
-    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.6.3&path:/packages/stage"
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.6.4&path:/packages/stage"
 
 ## Use
 
@@ -288,7 +288,7 @@ Slidev counts them, and a code:
 | `unknown-palette` `bad-colour` | `stage.palette`, its `base` or a key of it is no palette; a colour is not `#rgb`/`#rrggbb` |
 | `unknown-option` | a `stage.options` key the engine does not read |
 | `bad-pose` `bad-vector` | a slide's `dist`, `pitch`, `dim` … out of range; a position that is not `[x, y, z]` |
-| `camera-inside-form` | warning: a slide's camera stands inside an object's `radius` (every grain is drawn across the screen) |
+| `camera-inside-form` | warning: a slide's camera stands inside an object's `radius` (every grain is drawn across the screen). Not for a form a camera is meant to stand in: a `ring`, a type registered `registerBuilder(type, fn, { fields, enterable: true })` (a floor, enveloping strands), or an object with `"enterable": true` |
 | `unknown-key` | warning: a key of `stage:` or of a slide's `space:` that nothing reads |
 | `unknown-component` | warning: a `<Count>` tag, and no `Count` the deck registers itself (in `setup/` or `components/`): the addon's counter is `<StageCount>` |
 

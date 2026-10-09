@@ -16,6 +16,13 @@ export const CORE_TYPES = {
   collider: ['pos', 'radius'],
 };
 
+// Forms a camera may stand inside (a ring it flies through): slidev-stage-check
+// does not warn camera-inside-form for them. A deck's own builder says so with
+// registerBuilder(type, fn, { enterable: true }) (a floor, enveloping strands),
+// an object in space.json with "enterable": true. A galaxy is not one: from
+// inside, every grain of it is drawn across the screen.
+export const ENTERABLE = ['ring'];
+
 // Shipped plugins' types (stage/plugins/*.js export the same table as `types`).
 export const PLUGIN_TYPES = {
   hadron: {

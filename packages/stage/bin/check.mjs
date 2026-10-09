@@ -36,7 +36,9 @@
 //   unknown-palette     stage.palette (or its base, or a key of it) is no palette
 //   bad-colour          a palette colour that is not #rgb or #rrggbb
 //   unknown-option      a stage.options key the engine does not read
-//   camera-inside-form  (warning) a slide's camera stands inside an object's radius
+//   camera-inside-form  (warning) a slide's camera stands inside an object's radius (not for a
+//                       form a camera may be in: a ring, a builder registered
+//                       { enterable: true }, an object with "enterable": true)
 //   unknown-key         (warning) a key of `stage:` or of a slide's `space:` nothing reads
 //   unknown-component   (warning) a <Count> tag, and no Count the deck registers itself:
 //                       the addon's counter is <StageCount> (a talk's own Count.vue removed, a tag not renamed)
@@ -46,7 +48,7 @@
 import { readFileSync, existsSync, realpathSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { CORE_TYPES, PLUGIN_TYPES, STAGE_KEYS, OPTION_KEYS, SPACE_KEYS, anchorIds } from '../stage/types.js';
+import { CORE_TYPES, PLUGIN_TYPES, STAGE_KEYS, OPTION_KEYS, SPACE_KEYS, ENTERABLE, anchorIds } from '../stage/types.js';
 import { PALETTES, DEFAULT_PALETTE } from '../stage/palette.js';
 import { placesDecl } from '../stage/place-groups.js';
 
@@ -233,15 +235,20 @@ export function deckPoses(source) {
 // { fields: [...] }) in its setup files. Fields come along when the builder
 // is passed by name; for one written inline, the type needs `pos` only.
 export function deckTypes(sources) {
-  const types = {}, palettes = [];
+  const types = {}, palettes = [], enterable = [];
   for (const src of [].concat(sources)) {
     for (const m of String(src).matchAll(/registerBuilder\(\s*(['"])([\w-]+)\1\s*(?:,\s*[\w$.]+\s*,\s*\{\s*fields\s*:\s*\[([^\]]*)\])?/g)) {
       const fields = m[3] != null ? [...m[3].matchAll(/(['"])([\w-]+)\1/g)].map((f) => f[2]) : null;
       types[m[2]] = fields && fields.length ? fields : (types[m[2]] || ['pos']);
+      // `enterable: true` in this call's options: up to its `})`, and never past the next registration
+      const text = String(src), from = m.index + m[0].length;
+      const next = text.indexOf('registerBuilder(', from), close = text.indexOf('})', from);
+      const end = close < 0 ? from : (next >= 0 && next < close ? from : close);
+      if (/\benterable\s*:\s*true\b/.test(text.slice(m.index, end))) enterable.push(m[2]);
     }
     for (const m of String(src).matchAll(/definePalette\(\s*(['"])([\w-]+)\1/g)) palettes.push(m[2]);
   }
-  return { types, palettes };
+  return { types, palettes, enterable };
 }
 // The components a deck registers itself: app.component('<Name>', …) in its
 // setup files, and its components/<Name>.vue.
@@ -294,7 +301,7 @@ const POSE = { dist: 9, yaw: -20, pitch: 6 };   // space.js DEFAULTS.pose
 const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 const COLOUR_KEYS = Object.keys(DEFAULT_PALETTE);
 
-export function checkStage({ space, records = null, deck = '', pages = [], plugins = null, extraTypes = [], deckOwn = {}, palettes = [], publicDir = null, components = null } = {}) {
+export function checkStage({ space, records = null, deck = '', pages = [], plugins = null, extraTypes = [], deckOwn = {}, deckEnterable = [], palettes = [], publicDir = null, components = null } = {}) {
   const issues = [];
   const add = (code, msg, where = {}, level = 'error') => issues.push({ ...where, code, level, msg });
   const types = { ...CORE_TYPES };
@@ -336,7 +343,8 @@ export function checkStage({ space, records = null, deck = '', pages = [], plugi
         else if (publicDir && !existsSync(join(publicDir, o.src))) add('missing-file', `${name}/page: no such file under public: ${o.src}`, where);
       }
       const at = sp && op ? plus(sp, op) : null;
-      if (at && typeof o.radius === 'number' && o.radius > 0 && o.type !== 'ring') forms.push({ station: String(name), type: o.type, at, radius: o.radius });
+      const inside = o.enterable === true || ENTERABLE.includes(o.type) || deckEnterable.includes(o.type);
+      if (at && typeof o.radius === 'number' && o.radius > 0 && !inside) forms.push({ station: String(name), type: o.type, at, radius: o.radius });
       for (const id of anchorIds(o)) {
         anchors.set(id, anchorAt(o, id, at));
         if (records && o.type !== 'orbs' && !recordIds.has(id)) add('unknown-record', `${name}/${o.type}: no record with id ${id}`, where);
@@ -534,7 +542,7 @@ export function main(argv = process.argv.slice(2)) {
   const own = deckTypes(setup);
   // the pages the deck pulls in: their StagePhoto places are pose targets too
   const pages = deckPages(deck).map((p) => { try { return readFileSync(resolve(dir, p), 'utf8'); } catch { return ''; } });
-  const r = checkStage({ space, records, deck, pages, plugins, extraTypes: args.types, deckOwn: own.types, palettes: own.palettes, publicDir, components: deckComponents(setup, dir) });
+  const r = checkStage({ space, records, deck, pages, plugins, extraTypes: args.types, deckOwn: own.types, deckEnterable: own.enterable, palettes: own.palettes, publicDir, components: deckComponents(setup, dir) });
   const stats = { stations: r.stations, objects: r.objects, places: r.places, poses: r.poses, stops: r.stops, slides: r.slides, deckTypes: Object.keys(own.types) };
   if (args.json) {
     console.log(JSON.stringify({ ok: r.problems.length === 0, deck: deckFile, problems: r.issues, stats }, null, 2));

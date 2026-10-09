@@ -36,11 +36,16 @@ const registry = shared('registry', () => new Map());
 const required = shared('required', () => new Map());
 
 // fields: the keys an object of this type must carry (used by the validator)
-export function registerBuilder(type, fn, { fields = ['pos'] } = {}) {
+// { fields, enterable }: `enterable: true` for a form a camera may stand inside
+// (a floor, enveloping strands), which slidev-stage-check then does not warn about
+const enterable = new Set();
+export function registerBuilder(type, fn, { fields = ['pos'], enterable: inside = false } = {}) {
   if (typeof fn !== 'function') throw new TypeError(`stage: builder for "${type}" is not a function`);
   registry.set(type, fn);
   required.set(type, fields);
+  if (inside) enterable.add(type); else enterable.delete(type);
 }
+export const builderEnterable = (type) => enterable.has(type);
 export const hasBuilder = (type) => registry.has(type);
 export const builderTypes = () => [...registry.keys()];
 export const builderFields = (type) => required.get(type) || ['pos'];

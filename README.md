@@ -17,10 +17,10 @@ renderer under a clip that covers the slide. Either works alone.
 
 ## Install (per consumer repo)
 
-    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.6.3"
-    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.6.3
-    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.6.3&path:/packages/stage"   # the stage, if wanted
-    pip install "slidev-videos[depth] @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.6.3"   # + depth maps for photo places
+    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.6.4"
+    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.6.4
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.6.4&path:/packages/stage"   # the stage, if wanted
+    pip install "slidev-videos[depth] @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.6.4"   # + depth maps for photo places
 
 What changed between releases: [CHANGELOG.md](CHANGELOG.md).
 

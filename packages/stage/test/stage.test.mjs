@@ -271,6 +271,18 @@ test('a typo in a slide names the slide and a code', () => {
   assert.deepEqual(typo((d) => d).issues, []);
 });
 
+test('a form a camera may stand in is not warned about: the builder\'s enterable, or the object\'s', () => {
+  const own = deckTypes(["registerBuilder('floor', buildFloor, { fields: ['pos', 'radius'], enterable: true })\nregisterBuilder('x', fn)\nregisterBuilder('lineup', f, {\n  fields: ['pos'],\n})"]);
+  assert.deepEqual(own.enterable, ['floor']);
+  const space = { stations: [{ id: 'store', pos: [0, 0, 0], look: { dist: 9 }, objects: [{ type: 'floor', pos: [0, 0, 0], radius: 52 }, { type: 'lineup', pos: [0, 0, 0], radius: 30 }] }] };
+  const deck = '---\ntitle: t\n---\n# a\n---\nspace: { at: store, dist: 5 }\n---\n# b\n';
+  const codes = (o) => checkStage({ space, deck, deckOwn: own.types, ...o }).issues.filter((p) => p.code === 'camera-inside-form').map((p) => p.msg.match(/inside (\w+)/)[1]);
+  assert.deepEqual(codes({}), ['floor', 'lineup']);                                   // not marked: both warn
+  assert.deepEqual(codes({ deckEnterable: own.enterable }), ['lineup']);             // the builder says floor is enterable
+  space.stations[0].objects[1].enterable = true;
+  assert.deepEqual(codes({ deckEnterable: own.enterable }), []);                     // and this lineup, in space.json
+});
+
 test('palettes and options are held to the engine\'s lists', () => {
   const head = (stage) => `---\nstage:\n${stage}\n---\n`;
   const run = (stage, palettes = []) => typo(() => ({ deck: head(stage), palettes })).issues.map((p) => p.code);
@@ -301,7 +313,7 @@ test('a deck\'s own types and palettes are read from its setup files', () => {
     "registerBuilder('beacon', (o, ctx) => { return { group } }, { fields: ['pos', 'colour'] })",
     "definePalette('venue', { accent: '#ff5c8a' })",
   ].join('\n');
-  assert.deepEqual(deckTypes(src), { types: { lineup: ['pos', 'name', 'balls'], streams: ['pos', 'name', 'to'], beacon: ['pos'] }, palettes: ['venue'] });
+  assert.deepEqual(deckTypes(src), { types: { lineup: ['pos', 'name', 'balls'], streams: ['pos', 'name', 'to'], beacon: ['pos'] }, palettes: ['venue'], enterable: [] });
 });
 
 test('--json reports every problem with its slide and code', () => {

@@ -4,6 +4,19 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## v0.6.4 — 2026-10-09
+
+slidev-videos 0.6.4 · slidev-addon-videos 0.6.4 · slidev-addon-stage 0.3.4
+
+- **`enterable`: a form a camera is meant to stand in.** `slidev-stage-check`
+  warned camera-inside-form for every pose inside an object's radius, so a
+  floor the camera walks on or strands that wrap round it warned on every
+  slide (9 warnings for OpenData's floor, 5 for Innoday's strands).
+  `registerBuilder(type, fn, { fields, enterable: true })` marks a type, and
+  `"enterable": true` one object in space.json; `ring` is enterable as it was.
+  A galaxy still warns: from inside, its grains are drawn across the screen.
+  With the one-line mark, both talks check without a warning.
+
 ## v0.6.3 — 2026-10-09
 
 slidev-videos 0.6.3 · slidev-addon-videos 0.6.3 · slidev-addon-stage 0.3.3
