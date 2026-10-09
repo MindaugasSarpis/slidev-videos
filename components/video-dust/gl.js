@@ -188,7 +188,7 @@ out vec4 frag;
 void main() {
   // a soft round grain in flight, a full square once landed
   float d = length(gl_PointCoord - 0.5);
-  float grain = smoothstep(0.5, 0.12, d);
+  float grain = 1.0 - smoothstep(0.12, 0.5, d);
   float a = vColor.a * mix(grain, 1.0, vLanded);
   frag = vec4(vColor.rgb * a, a);     // premultiplied
 }`;

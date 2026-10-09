@@ -19,6 +19,8 @@ import { orb, marble, shell, ball, setOrb } from './stage/materials.js';
 import { PALETTES, DEFAULT_PALETTE, LOOKS, definePalette, resolvePalette, resolveLook, liftGround, paletteVars } from './stage/palette.js';
 import { createSpace } from './stage/space.js';
 import { warmAudio, playCollision, playWhoosh, playRise, startHum, stopHum, humProbe } from './stage/sound.js';
+import { shared } from './stage/shared.js';
+import { formatCount, countLang } from './stage/count.js';
 
 // Plugins shipped with the package, loaded on demand by name
 // (`stage.plugins: [hadron]`), so a deck that does not want one never
@@ -26,7 +28,7 @@ import { warmAudio, playCollision, playWhoosh, playRise, startHum, stopHum, humP
 const SHIPPED = {
   hadron: () => import('./stage/plugins/hadron.js'),
 };
-const installed = new Set();
+const installed = shared('plugins', () => new Set());   // one per page, whichever copy of the package installs
 const api = { registerBuilder, setLabelSegmenter, setLabelFont, definePalette, helpers };
 
 // usePlugin('hadron') | usePlugin({ name, install(api) }) → Promise<boolean>
@@ -54,4 +56,5 @@ export {
   orb, marble, shell, ball, setOrb,
   PALETTES, DEFAULT_PALETTE, LOOKS, definePalette, resolvePalette, resolveLook, liftGround, paletteVars,
   warmAudio, playCollision, playWhoosh, playRise, startHum, stopHum, humProbe,
+  formatCount, countLang,
 };

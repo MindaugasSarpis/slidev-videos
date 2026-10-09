@@ -42,3 +42,4 @@ jobs:
       - run: node packages/stage/bin/check.mjs packages/stage/example
       - run: pnpm stage:build
       - run: pnpm stage:smoke
+      - run: pnpm stage:smoke:dev   # the example under `slidev dev`: a deck's own builder, one engine, no WebGL in export

@@ -146,7 +146,7 @@ void main() {
   float along = dot(q, vStreak.xy), across = dot(q, vec2(-vStreak.y, vStreak.x));
   // the sprite was enlarged by (1 + length): across the path the grain keeps its own width
   float d = vStreak.z > 0.0 ? length(vec2(along, across * (1.0 + vStreak.z))) : length(q);
-  float a = smoothstep(0.5, 0.05, d) * vAlpha;
+  float a = (1.0 - smoothstep(0.05, 0.5, d)) * vAlpha;
   vec3 c = vColor * a;
   gl_FragColor = uLinearOut > 0.5 ? vec4(pow(c, vec3(2.2)), 1.0) : vec4(c, a);
 }`;

@@ -64,7 +64,7 @@ const NODE_FRAG = /* glsl */ `
 varying float vAlpha;
 void main() {
   float d = length(gl_PointCoord - 0.5);
-  float a = smoothstep(0.5, 0.08, d) * vAlpha;
+  float a = (1.0 - smoothstep(0.08, 0.5, d)) * vAlpha;
   vec3 col = mix(vec3(0.45, 0.72, 0.88), vec3(1.0), smoothstep(0.6, 1.6, vAlpha));
   gl_FragColor = vec4(col * a, a);
 }`;

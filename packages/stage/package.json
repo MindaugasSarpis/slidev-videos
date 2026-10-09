@@ -23,13 +23,14 @@
     "slidev-stage-record": "bin/record.mjs",
     "slidev-stage-safe": "bin/safe.mjs"
   },
-  "files": ["components", "stage", "styles", "bin", "setup", "index.js", "global-top.vue", "global-bottom.vue", "README.md"],
+  "files": ["components", "stage", "styles", "bin", "setup", "index.js", "global-top.vue", "global-bottom.vue", "vite.config.js", "README.md"],
   "scripts": {
     "build:example": "slidev build example/slides.md --out dist --base /",
     "build:broadcast": "slidev build example/broadcast.md --out dist/broadcast --base /",
     "check:example": "node bin/check.mjs example",
     "test": "node --test \"test/*.test.mjs\"",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:dev": "node scripts/smoke-dev.mjs"
   },
   "dependencies": {
     "@fontsource/space-grotesk": "^5.2.10",

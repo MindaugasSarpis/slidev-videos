@@ -71,7 +71,7 @@ const FLASH_FRAG = /* glsl */ `
 varying float vA;
 void main() {
   float d = length(gl_PointCoord - 0.5);
-  float a = smoothstep(0.5, 0.04, d) * vA;
+  float a = (1.0 - smoothstep(0.04, 0.5, d)) * vA;
   vec3 col = mix(vec3(0.55, 0.78, 0.92), vec3(1.0), clamp(vA, 0.0, 1.0));
   gl_FragColor = vec4(col * a, a);
 }`;

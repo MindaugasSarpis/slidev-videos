@@ -27,7 +27,7 @@ import { resolvePalette, hexToRgb } from './palette.js';
 //   createSpace(canvas, container, { space, records, palette, options, onArrive, onEvent })
 //     space    { stations: [{ id, pos, look, gather?, pulse?, objects: [...] }], poses?, hero? }
 //     records  [{ id, … }]: things a stop can name; an object with an id anchors one
-//   → { setPose, setStop, setDim, setPaused, stir, assemble, record, dispose, … }
+//   → { setPose, setStop, setDim, setPaused, stir, assemble, record, value, dispose, … }
 //
 // The field is pulled toward the active station only faintly: the dust reads
 // as a uniform, bright ground behind the scenes, not a cloud clumped round them.
@@ -35,7 +35,7 @@ import { resolvePalette, hexToRgb } from './palette.js';
 const FIELD_BOUNDS = new Vector3(30, 30, 30);   // ambient field wrap box (half extents; a cube so the camera never sits at a face)
 const MAX_DT = 1 / 12;   // frame-time clamp: real time down to 12 fps (flights and the assembly keep their pace on a slow GPU)
 const D2R = Math.PI / 180;
-const DEFAULTS = {
+export const DEFAULTS = {   // the keys of `stage.options` (types.js OPTION_KEYS lists them for the validator)
   fov: 50,
   pose: { dist: 9, yaw: -20, pitch: 6 },
   gather: 0.25,          // the field's pull toward the active station; a station may set its own
@@ -214,12 +214,14 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     if (p.place) { scene.remove(p.place.object); p.place.dispose(); }
     places.delete(String(id));
   };
+  const forms = new Map();   // an object's `name` → its builder's api (value() for <StageCount for>)
   const ctx = { records: byId, states: byId, palette: pal, anisotropy: renderer.capabilities.getMaxAnisotropy(), asset: asset || ((s) => s), helpers, twinkle: Math.max(0, num(opt.twinkle, 1)) };
   for (const st of space.stations || []) {
     const built = buildStation(st, ctx);
     scene.add(built.group);
     stations.set(st.id, { def: st, pos: new Vector3(...st.pos), built });
     for (const [id, p] of built.anchors) anchors.set(String(id), p);
+    for (const [name, api] of built.named) forms.set(name, api);
   }
   for (const [id, s] of byId) if (anchors.has(id)) s.pos = anchors.get(id).clone();
   const firstStation = space.stations?.[0]?.id ?? null;
@@ -359,7 +361,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   finish.uniforms.uVignette.value = num(opt.vignette, 0.3);
   finish.uniforms.uGrain.value = num(opt.grain, 0.035);
   finish.uniforms.uCA.value = num(opt.aberration, 0.0004);
-  canvas.__space = { scene, composer, bloom, finish, field, renderer, get guardStage() { return guardStage; }, holdQuality() { guardStage = 2; }, get elapsed() { return elapsed; }, get dpr() { return renderer.getPixelRatio(); }, get frames() { return frames; }, targets: type === FloatType ? 'float' : 'half-float', sim: size, tier };   // a handle for the headless probes and the debug panel
+  canvas.__space = { scene, composer, bloom, finish, field, renderer, get guardStage() { return guardStage; }, holdQuality() { guardStage = 2; }, get elapsed() { return elapsed; }, get dpr() { return renderer.getPixelRatio(); }, get frames() { return frames; }, get options() { return { ...opt }; }, targets: type === FloatType ? 'float' : 'half-float', sim: size, tier };   // a handle for the headless probes and the debug panel (options: as resolved, defaults filled in)
 
   // what builds itself at each station, on arrival
   const selfBuilders = (id) => stations.get(id)?.built.apis.filter((a) => a.assemble) || [];
@@ -560,6 +562,8 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     // build again what stands at the station the pose is at (the `c` key)
     assemble() { return startAssembly(atStation); },
     record(id) { return byId.get(String(id)) || null; },
+    // the number the object named `name` shows now (its builder's api.value()), or null
+    value(name) { const v = forms.get(String(name))?.value?.(); return Number.isFinite(v) ? v : null; },
     state(id) { return byId.get(String(id)) || null; },   // Startertalk's name for record()
     // pose: { at: <station id | record id | named pose | [x,y,z]>, dist?, yaw?, pitch?, sway? }
     setPose(p, { immediate = false } = {}) {
