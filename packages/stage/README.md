@@ -13,7 +13,7 @@ quarks, clusters, particle names — is a plugin.
 
 ## Install
 
-    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.5.1&path:/packages/stage"
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.5.2&path:/packages/stage"
 
 ## Use
 
@@ -57,6 +57,11 @@ Then each slide steers the camera from its frontmatter:
 A slide without `space` keeps the previous pose. Flights take 1.4–4.5 s by
 distance and ease in and out.
 
+A slide's `places: { <group>: true | false }` (beside `space`, not in it)
+shows or hides a group of StagePhoto places from that slide on, with a 1 s
+fade; see the root README's *Place groups*. The engine side is
+`space.setPlaceGroups({ group: bool }, { immediate })`.
+
 ### `stage:` options
 
 | key | default | |
@@ -68,7 +73,7 @@ distance and ease in and out.
 | `plugins` | `[]` | shipped plugins to load: `hadron` |
 | `hero` | `space.hero`, else `hero` | the station the deck opens and closes on; what builds itself there does so on arrival |
 | `sound` | `true` | `false` is silent; `{ hum, flight, clip, level }` picks the voices: a low hum while the camera is at `humAt`, a soft whoosh for each flight of any length, a rising tone as a clip condenses. All start after the first key or click, none in the presenter window |
-| `humAt` | `[hero]` | |
+| `humAt` | `[hero]` | the stations within reach of which the hum plays; `all` (or `'*'`) hums on every pose, out in the open dust too |
 | `videos` | `true` | follow `slidev-addon-videos`: a clip arriving as dust draws the world's dust with it, one leaving shoves it out and leaves its colours in it for a few seconds (`tint: 0.8`, 0 for none), and the renderer rests under a clip that covers the slide |
 | `halo` | `true` | the dust borders; `haloOn: '.card, .halo'` picks what gets one |
 | `dim` | `0.6` | the content-slide scrim; `layoutDim: { cover: 0.15, … }` per layout |

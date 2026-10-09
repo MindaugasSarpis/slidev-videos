@@ -4,6 +4,21 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## v0.5.2 — 2026-10-09
+
+slidev-videos 0.5.2 · slidev-addon-videos 0.5.2 · slidev-addon-stage 0.2.2
+
+- **Place groups.** `<StagePhoto mode="place" group="inventions">` and a
+  slide's frontmatter `places: { inventions: true | false }` show or hide
+  the group from that slide on, with a 1 s fade. Before the first slide that
+  names a group it is the opposite, so one line on Part II's first slide keeps
+  Part I's frames clear of Part II's places. The state comes from the slide
+  list, so going back or jumping is right. A place the pose stands at always
+  shows. `slidev-stage-check` reports a `places:` group no place is in.
+  Engine: `space.setPlaceGroups()`, `placeGroups`, `placeVisibility`.
+- **`humAt: all`** (or `'*'`): the hum plays on every pose, not only within
+  reach of the listed stations.
+
 ## v0.5.1 — 2026-10-08
 
 slidev-videos 0.5.1 · slidev-addon-videos 0.5.1 · slidev-addon-stage 0.2.1

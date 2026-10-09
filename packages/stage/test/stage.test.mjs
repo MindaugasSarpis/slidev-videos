@@ -6,8 +6,9 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { CORE_TYPES, PLUGIN_TYPES, anchorIds } from '../stage/types.js';
 import { resolvePalette, PALETTES, DEFAULT_PALETTE, hexToRgb, rgbTriplet, paletteVars, definePalette } from '../stage/palette.js';
-import { checkStage, readStageConfig, deckPoses, deckPlaces, deckPages, main as checkMain } from '../bin/check.mjs';
+import { checkStage, readStageConfig, deckPoses, deckPlaces, deckPlaceList, deckPlaceGroups, deckPages, main as checkMain } from '../bin/check.mjs';
 import { parseSlides } from '../bin/shots.mjs';
+import { placesDecl, placeGroupsAt } from '../stage/place-groups.js';
 
 const here = (p) => new URL(p, import.meta.url);
 const exampleSpace = JSON.parse(readFileSync(here('../example/public/data/space.json'), 'utf8'));
@@ -219,4 +220,27 @@ test('slidev-stage-check reads places from the deck and its pages', () => {
   writeFileSync(join(dir, 'pages/p.md'), '<StagePhoto mode="place" place-id="tunnel" :at="[0, 0, -4]" src="/figures/t.jpg"></StagePhoto>\n');
   assert.equal(checkMain([dir]), 0);
   rmSync(dir, { recursive: true, force: true });
+});
+
+test('place groups: a slide sets a group from there on, the opposite before its first mention', () => {
+  assert.deepEqual(placesDecl('inventions, other'), { inventions: true, other: true });
+  assert.deepEqual(placesDecl({ a: false, b: 'off', c: 'show', d: true }), { a: false, b: false, c: true, d: true });
+  assert.equal(placesDecl(null), null);
+  // Part II (slide 4) shows the inventions; slide 7 hides them again
+  const decls = [null, null, null, { inventions: true }, null, null, { inventions: 'hide' }, null];
+  const at = (no) => placeGroupsAt(decls, no).inventions;
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 8].map(at), [false, false, false, true, true, true, false, false]);
+  // derived from the slide list: going back from 5 to 2 is the same as landing on 2
+  assert.equal(at(2), false);
+  // a group first hidden shows before that slide
+  assert.deepEqual(placeGroupsAt([null, { x: false }], 1), { x: true });
+  assert.deepEqual(placeGroupsAt([null, null], 2), {});
+});
+
+test('stage:check reads place groups and reports a `places:` group no place is in', () => {
+  const deck = '---\nstage:\n  space: data/space.json\n---\n\n---\nplaces: { inventions: true }\n---\n\n<StagePhoto mode="place" src="/f/a.jpg" group="inventions" />\n\n---\nplaces:\n  inventions: false\n  ghosts: true\n---\n\n---\nplaces: inventions\n---\n';
+  assert.deepEqual(deckPlaceList(deck), [{ id: 'a', group: 'inventions' }]);
+  assert.deepEqual(deckPlaceGroups(deck), ['inventions', 'ghosts']);
+  const space = { stations: [{ id: 's', pos: [0, 0, 0], look: { dist: 9 } }] };
+  assert.deepEqual(checkStage({ space, deck }).problems, ['places: no StagePhoto place in group ghosts (groups: inventions)']);
 });

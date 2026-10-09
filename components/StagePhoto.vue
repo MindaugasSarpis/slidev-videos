@@ -55,8 +55,12 @@ const props = defineProps({
   // depth`). The slide's pose names it: `space: { at: <place-id> }` flies the
   // camera to its front view; there the cloud flattens and hands over to the
   // sharp image. Leaving, it rises back into relief, dimmer, and stays.
+  // `group`: the place belongs to a group a slide can hide or show
+  // (frontmatter `places: { <group>: true | false }`, from that slide on,
+  // with a 1 s fade); its own slide always shows it.
   mode:    { type: String, default: 'screen' },
   placeId: { type: String, default: '' },
+  group:   { type: String, default: '' },
   at:      { type: Array, default: () => [0, 0, 0] },
   size:    { type: Number, default: 4 },
   yaw:     { type: [Number, String], default: 0 },
@@ -171,7 +175,7 @@ async function buildPlace() {
   if (!sp || !ok || !dm || place) return place
   place = sp.addPhotoPlace(placeId.value, {
     image: imgRef.value, depth: dm, at: props.at, yaw: Number(props.yaw) || 0, width: props.size,
-    cols: props.grains, depthScale: props.size * props.relief,
+    cols: props.grains, depthScale: props.size * props.relief, group: props.group || null,
   })
   place?.set({ dim: visited.has(placeId.value) ? PLACE_DIM : 1 })
   return place

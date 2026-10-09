@@ -6,6 +6,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useNav, configs } from '@slidev/client'
 import { createSpace, usePlugin, resolvePalette, resolveLook, liftGround, paletteVars, warmAudio, startHum, stopHum, humProbe, playWhoosh, playRise } from '../index.js'
 import StagePanel from './StagePanel.vue'
+import { placeGroupsAt } from '../stage/place-groups.js'
 
 // The persistent 3D world under a whole deck. The addon mounts it from its
 // own global-bottom.vue whenever the headmatter has a `stage:` block:
@@ -19,7 +20,7 @@ import StagePanel from './StagePanel.vue'
 //     plugins: [hadron]          # shipped plugins to load
 //     hero: hero                 # the station the deck opens and closes on
 //     sound: true                # false: silent. Or pick: { hum: true, flight: true, clip: true, level: 1 }
-//     humAt: [hero]              # the hum plays while the camera is at these stations
+//     humAt: [hero]              # the hum plays while the camera is at these stations; all (or '*'): on every pose
 //     videos: true               # stir the dust with slidev-addon-videos' transitions, rest under a covering clip
 //     options: { bloom: 0.55, density: 1, nebula: 0.8, … }   # see stage/space.js DEFAULTS
 //     auto: true                 # false: the deck mounts <Stage> itself (for the #hud slot)
@@ -32,6 +33,10 @@ import StagePanel from './StagePanel.vue'
 //     stops: [a, b, c]     # click k flies to stops[k-1] and shows its record
 //     dim: 0.6             # how far the world is dimmed behind the slide, 0..1
 //   clicks: 3              # = stops.length
+//
+//   places: { inventions: true }   # photo places in group "inventions" show from here on
+//                                  # (false hides them); before the first slide that names a
+//                                  # group, it is the opposite (stage/place-groups.js)
 //
 // A slide without `space` keeps the previous pose. Without WebGL2 float
 // render targets, or under reduced motion, only the static gradient is drawn.
@@ -75,6 +80,7 @@ const stopId = ref(null)
 const arrived = ref(true)   // the HUD waits for the camera to land
 let space = null
 let humAt = new Set()
+let humEverywhere = false
 
 function webgl2Ok() {
   try {
@@ -91,8 +97,20 @@ const frontmatterSpace = computed(() => frontmatter.value.space || null)
 const clicks = computed(() => nav.clicks.value || 0)
 const clicksTotal = computed(() => nav.clicksTotal?.value || 0)   // on the root as data-clicks-total, for the headless tools
 
+// Place groups: worked out from every slide's `places:` up to this one, so
+// going back or jumping shows what that slide would have.
+const placeDecls = computed(() => (nav.slides.value || []).map((r) => r?.meta?.slide?.frontmatter?.places ?? null))
+function applyPlaces(immediate = false) {
+  if (!space || !space.setPlaceGroups) return
+  const groups = placeGroupsAt(placeDecls.value, nav.currentSlideNo.value || 1)
+  space.setPlaceGroups(groups, { immediate })
+  if (root.value) root.value.dataset.placeGroups = Object.entries(groups).map(([g, on]) => `${g}:${on ? 'on' : 'off'}`).join(' ')
+}
+watch(() => nav.currentSlideNo.value, () => applyPlaces(false))
+
 function apply(immediate = false) {
   if (!space) return
+  if (immediate) applyPlaces(true)
   const sp = frontmatterSpace.value
   if (!sp) { stopId.value = null; space.setStop(null); updateHum(); return }
   const stops = Array.isArray(sp.stops) ? sp.stops : null
@@ -111,7 +129,8 @@ function apply(immediate = false) {
   updateHum()
 }
 
-// The hum: on while the pose is at a station that asks for it, after the
+// The hum: on while the pose is at a station that asks for it (on every
+// pose, out in the open dust too, with `humAt: all`), after the
 // first key press or pointer down (autoplay policy), with the tab visible,
 // not under a playing clip, and never in the presenter window, so an audience
 // window and a presenter window do not hum twice.
@@ -119,7 +138,7 @@ let audioUnlocked = false
 let covered = false
 function updateHum() {
   if (!soundOn.value) return
-  const on = VOICES.hum !== false && audioUnlocked && !!space && !document.hidden && !covered && !nav.isPresenter?.value && humAt.has(space.atStation)
+  const on = VOICES.hum !== false && audioUnlocked && !!space && !document.hidden && !covered && !nav.isPresenter?.value && (humEverywhere || humAt.has(space.atStation))
   if (on) startHum()
   else stopHum()
   if (root.value) root.value.dataset.hum = on ? 'on' : 'off'
@@ -218,7 +237,9 @@ async function boot() {
     space = null
   }
   if (!space) { staticBg.value = true; assembled(true); return }
-  humAt = new Set([].concat(CFG.humAt ?? (space.hero != null ? [space.hero] : [])))
+  const humList = [].concat(CFG.humAt ?? (space.hero != null ? [space.hero] : [])).map(String)
+  humEverywhere = CFG.humAt === true || humList.some((s) => s === 'all' || s === '*')
+  humAt = new Set(humList)
   ready.value = true
   if (root.value) root.value.__space = space
   space.setDim(dim.value)

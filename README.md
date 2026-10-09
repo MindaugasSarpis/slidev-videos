@@ -17,10 +17,10 @@ renderer under a clip that covers the slide. Either works alone.
 
 ## Install (per consumer repo)
 
-    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.5.1"
-    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.5.1
-    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.5.1&path:/packages/stage"   # the stage, if wanted
-    pip install "slidev-videos[depth] @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.5.1"   # + depth maps for photo places
+    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.5.2"
+    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.5.2
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.5.2&path:/packages/stage"   # the stage, if wanted
+    pip install "slidev-videos[depth] @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.5.2"   # + depth maps for photo places
 
 What changed between releases: [CHANGELOG.md](CHANGELOG.md).
 
@@ -129,6 +129,24 @@ in relief are capped at luminance 0.62. The presenter window, the overview,
 print and reduced motion show the plain image; without its depth map or the
 stage, a place arrives as grains on the screen instead. The photo should be
 full bleed (`fit: cover`), as a place's front view is the whole frame.
+
+**Place groups:** a place stands in the world from the deck's start, so a
+later part's places would show in an earlier part's frames. Give them a
+`group`, and say on a slide where the group comes and goes:
+
+    <StagePhoto mode="place" group="inventions" place-id="stumpe" …>…</StagePhoto>
+
+    places: { inventions: true }       # a slide's frontmatter: the group shows from here on
+    places: { inventions: false }      # … and is gone from here on
+
+Before the first slide that names a group, the group is the opposite of what
+that slide says, so one `places: { inventions: true }` on Part II's first
+slide keeps Part I clear. Places fade in or out over a second. The state is
+worked out from the slide list, not the way the deck got there, so going back
+or jumping shows what that slide would have. A place in no group always
+shows, and so does the place the slide's pose stands at. `places: inventions`
+(or a list) is short for `true`. `slidev-stage-check` reports a `places:`
+group that no StagePhoto is in.
 
 **Depth maps:** `slidev-videos depth public/figures/a.jpg …` writes
 `a.depth.png` beside each image: 8-bit grey, white = near, the image's aspect,

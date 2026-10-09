@@ -179,8 +179,15 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   const byId = new Map((records || []).filter((s) => s && s.id != null).map((s) => [String(s.id), { ...s }]));
   const stations = new Map();
   const anchors = new Map();
-  // places a page adds (StagePhoto mode="place"): id → { pos: Vector3, look: { dist, yaw, pitch, sway, still } }
+  // places a page adds (StagePhoto mode="place"): id → { pos: Vector3, look: { dist, yaw, pitch, sway, still }, group, vis }
   const places = new Map();
+  // Place groups the deck shows or hides (a slide's `places:`): group → false
+  // hides its places, fading over PLACE_FADE s. A place in no group always
+  // shows; so does the place the pose stands at.
+  const PLACE_FADE = 1;
+  let placeGroups = new Map();
+  const placeWanted = (id, p) => !p.group || placeGroups.get(p.group) !== false || String(pose.at) === id;
+  const showPlace = (p, vis) => { p.vis = vis; p.place.set({ opacity: vis }); p.place.object.visible = vis > 0.001; };
   const dropPlace = (id) => {
     const p = places.get(String(id));
     if (!p) return;
@@ -464,6 +471,10 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     fieldMat.uniforms.uPos.value = posA.texture; fieldMat.uniforms.uVel.value = velA.texture;
 
     for (const s of stations.values()) s.built.update(elapsed, curPos);
+    for (const [id, p] of places) {
+      const want = placeWanted(id, p) ? 1 : 0;
+      if (p.vis !== want) showPlace(p, want > p.vis ? Math.min(1, p.vis + dt / PLACE_FADE) : Math.max(0, p.vis - dt / PLACE_FADE));
+    }
     if (hiMesh) { const k = 1 + 0.12 * Math.sin(elapsed * 3); hiMesh.scale.set(k, k, k); }
     // frame-rate guard: step the pixel ratio down, then halve the field, if slow —
     // before this frame's render, so the resized canvas is drawn at once (a resize
@@ -500,15 +511,27 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     // A photograph as a place (StagePhoto mode="place"): its grain cloud in the
     // scene, and a pose target `id` whose look is the photo's front view.
     // image, depth: loaded <img> elements. → the cloud's handle (set, dispose, front).
-    addPhotoPlace(id, { image, depth, at, yaw = 0, width = 4, cols, relief = 1, depthScale, screenAspect = 16 / 9 }) {
+    // group: a place group the deck can hide (setPlaceGroups); it starts as its group stands.
+    addPhotoPlace(id, { image, depth, at, yaw = 0, width = 4, cols, relief = 1, depthScale, screenAspect = 16 / 9, group = null }) {
       dropPlace(id);
       const pos = new Vector3(num(at?.[0], 0), num(at?.[1], 0), num(at?.[2], 0));
       const place = createPhotoPlace({ image, depth, pos: pos.toArray(), yaw, width, cols, relief, depthScale });
       scene.add(place.object);
-      places.set(String(id), { pos, look: { dist: place.front(num(opt.fov, 50), screenAspect).dist, yaw, pitch: 0, sway: 0, still: true }, place });
+      const entry = { pos, look: { dist: place.front(num(opt.fov, 50), screenAspect).dist, yaw, pitch: 0, sway: 0, still: true }, place, group: group ? String(group) : null, vis: 1 };
+      places.set(String(id), entry);
+      showPlace(entry, placeWanted(String(id), entry) ? 1 : 0);
       return place;
     },
     removePhotoPlace(id) { dropPlace(id); },
+    // Which place groups show: { group: true | false } (a group not named
+    // shows). Places fade in or out over a second; `immediate` snaps them.
+    setPlaceGroups(groups, { immediate = false } = {}) {
+      placeGroups = new Map(Object.entries(groups || {}).map(([g, on]) => [String(g), on !== false]));
+      if (immediate) for (const [id, p] of places) showPlace(p, placeWanted(id, p) ? 1 : 0);
+    },
+    get placeGroups() { return Object.fromEntries(placeGroups); },
+    // id → 0..1, how far each place shows (for the probes)
+    get placeVisibility() { return Object.fromEntries([...places].map(([id, p]) => [id, p.vis])); },
     // build again what stands at the station the pose is at (the `c` key)
     assemble() { return startAssembly(atStation); },
     record(id) { return byId.get(String(id)) || null; },

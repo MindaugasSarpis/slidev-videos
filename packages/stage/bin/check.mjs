@@ -73,6 +73,10 @@ export function deckPoses(source) {
 // by its place-id, else its image's file stem (StagePhoto's own default). A
 // slide's `space: { at: <place-id> }` flies to one; they are not in space.json.
 export function deckPlaces(...sources) {
+  return deckPlaceList(...sources).map((p) => p.id);
+}
+// the same, with each place's group: [{ id, group }]
+export function deckPlaceList(...sources) {
   const ids = [];
   for (const src of sources) {
     for (const m of String(src).matchAll(/<StagePhoto\b([^>]*)>/g)) {
@@ -80,10 +84,25 @@ export function deckPlaces(...sources) {
       for (const a of m[1].matchAll(/(?:^|\s)(:?[\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) attrs[a[1].replace(/^:/, '')] = a[2] ?? a[3];
       if (attrs.mode !== 'place') continue;
       const id = attrs['place-id'] || attrs.placeId || (attrs.src || '').split('/').pop().replace(/\.[^.]+$/, '');
-      if (id) ids.push(id);
+      if (id) ids.push({ id, group: attrs.group || null });
     }
   }
   return ids;
+}
+
+// The place groups slides show or hide (`places:` in a slide's frontmatter).
+export function deckPlaceGroups(...sources) {
+  const groups = [];
+  for (const src of sources) {
+    const fm = frontmatters(src);
+    for (const m of fm.matchAll(/^\s*places:[ \t]*\{([^}\n]*)\}/gm)) groups.push(...m[1].split(',').map((kv) => unquote(kv.split(':')[0].trim())).filter(Boolean));
+    for (const m of fm.matchAll(/^\s*places:[ \t]*\[([^\]\n]*)\]/gm)) groups.push(...m[1].split(',').map((g) => unquote(g.trim())).filter(Boolean));
+    for (const m of fm.matchAll(/^\s*places:[ \t]*([^\s{\[#][^\n#]*)$/gm)) groups.push(...m[1].trim().split(/[\s,]+/).map(unquote).filter(Boolean));
+    for (const m of fm.matchAll(/^(\s*)places:[ \t]*(?:#.*)?\n((?:\1[ \t]+[^\n]*\n?)+)/gm)) {
+      for (const l of m[2].split('\n')) { const k = /^\s*(?:-\s*)?([\w.'"-]+)\s*(?::|$)/.exec(l); if (k) groups.push(unquote(k[1])); }
+    }
+  }
+  return [...new Set(groups)];
 }
 
 // The pages a deck pulls in (`src: ./pages/x.md` in a slide's frontmatter), relative to its directory.
@@ -137,7 +156,10 @@ export function checkStage({ space, records = null, deck = '', pages = [], plugi
     if (s != null && !Array.isArray(s) && !stations.has(String(s))) problems.push(`pose ${k}: station ${s} does not exist`);
   }
 
-  const placeList = deckPlaces(deck, ...pages);
+  const placeItems = deckPlaceList(deck, ...pages);
+  const placeList = placeItems.map((p) => p.id);
+  const knownGroups = new Set(placeItems.map((p) => p.group).filter(Boolean));
+  for (const g of deckPlaceGroups(deck, ...pages)) if (!knownGroups.has(g)) problems.push(`places: no StagePhoto place in group ${g}${knownGroups.size ? ` (groups: ${[...knownGroups].join(', ')})` : ''}`);
   const places = new Set(placeList);
   for (const id of places) {
     if (placeList.indexOf(id) !== placeList.lastIndexOf(id)) problems.push(`StagePhoto place-id used twice: ${id} (the second replaces the first)`);
