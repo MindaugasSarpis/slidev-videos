@@ -4,6 +4,22 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## v0.6.6 — 2026-10-09
+
+slidev-videos 0.6.6 · slidev-addon-videos 0.6.6 · slidev-addon-stage 0.3.6
+
+- **What ends hidden prints hidden.** v0.6.5 printed with `animation: none`,
+  which also undid animations that end hidden: Innoday's part words, which
+  fade out over the photos, printed on top of them. In print every animation
+  now jumps to its end and holds it (duration and delay 0, one iteration,
+  fill both), so text that rises in prints and text that fades out does not.
+  The kit's reduced-motion and `@media print` rule does the same. StagePhoto's
+  headline still shows. On a rasterised PDF: a card rising 3 s in and a word
+  fading out 2 s in; on v0.6.5 both printed, now the card prints and the word
+  does not.
+- Worth knowing for a deck's type: Slidev's default `h1 + p { opacity: .5 }`
+  greys the line after a heading.
+
 ## v0.6.5 — 2026-10-09
 
 slidev-videos 0.6.5 · slidev-addon-videos 0.6.5 · slidev-addon-stage 0.3.5

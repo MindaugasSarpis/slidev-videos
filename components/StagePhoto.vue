@@ -358,7 +358,7 @@ onUnmounted(() => { run++; sheet?.cancel(); sheet = null; cancelAnimationFrame(t
 .stage-photo > .stage-photo-slot.stage-photo-slot-off { opacity: 0; transition: opacity 250ms ease; }
 /* print and export: the photo and its headline stand as they end (Slidev prints with screen media) */
 .print-slide-container .stage-photo > .stage-photo-slot, html.print .stage-photo > .stage-photo-slot { opacity: 1 !important; transition: none !important; }
-.print-slide-container .stage-photo > img, html.print .stage-photo > img { opacity: 1 !important; animation: none !important; transition: none !important; }
+.print-slide-container .stage-photo > img, html.print .stage-photo > img { opacity: 1 !important; transition: none !important; }
 .stage-photo { position: absolute; inset: 0; overflow: hidden; }
 /* In print a CSS filter on the photo (a talk's contrast lift) makes Chrome
    rasterize it as a lossless page-sized image: 6.5 MB a page instead of the
