@@ -75,7 +75,7 @@ const BG_VERT = /* glsl */ `varying vec2 vUv; void main() { vUv = uv; gl_Positio
 // wallpaper on the slide.
 const BG_FRAG = /* glsl */ `
 uniform vec3 uBg, uGlow, uNebA, uNebB;
-uniform float uNebula, uTime, uAspect, uTanHalfFov;
+uniform float uNebula, uTime, uAspect, uTanHalfFov, uAmbient;
 uniform mat3 uCamRot;
 varying vec2 vUv;
 ${NOISE}
@@ -101,7 +101,7 @@ void main() {
     neb *= 0.45 + 0.55 * smoothstep(-0.5, 0.6, dir.y);
     col += neb * 0.16 * uNebula;
   }
-  gl_FragColor = vec4(col, 1.0);
+  gl_FragColor = vec4(col * uAmbient, 1.0);   // ambient 0: the ground, its glows and the nebula all gone to black
 }`;
 // The finish: a vignette, a touch of chromatic aberration toward the edges,
 // film grain.
@@ -202,7 +202,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
       uNebA: { value: raw(pal.nebula) }, uNebB: { value: raw(pal.nebulaAlt) },
       uNebula: { value: Math.min(1.5, Math.max(0, num(opt.nebula, 0))) },
       uTime: { value: 0 }, uAspect: { value: 1 }, uTanHalfFov: { value: Math.tan(num(opt.fov, 50) * D2R / 2) },
-      uCamRot: { value: new Matrix3() },
+      uCamRot: { value: new Matrix3() }, uAmbient: { value: 1 },
     },
   });
   const bgQuad = new Mesh(new PlaneGeometry(2, 2), bgMat);
@@ -240,6 +240,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   let realT = 0, camT = 0, worldRate = 1, camRate = 1;
   let rateKeys = [[0, 1]], rateT0 = 0, camKeys = null, camT0 = 0;
   let pathKeys = null, pathT0 = 0, pathDone = true, clockSig = null;
+  let ambKeys = [[0, 1]], ambT0 = 0, ambient = 1, ambShown = 1;   // the ambient world (ground, nebula, dust field, halo), 0..1
   const rateFns = new Set();
   const ctx = {
     records: byId, states: byId, palette: pal, anisotropy: renderer.capabilities.getMaxAnisotropy(), asset: asset || ((s) => s), helpers, twinkle: Math.max(0, num(opt.twinkle, 1)),
@@ -300,12 +301,13 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   const refs = new Float32Array(count * 3);
   for (let j = 0; j < size; j++) for (let i = 0; i < size; i++) { const k = j * size + i; refs[k * 3] = (i + 0.5) / size; refs[k * 3 + 1] = (j + 0.5) / size; }
   const fieldGeo = new BufferGeometry(); fieldGeo.setAttribute('position', new BufferAttribute(refs, 3));
+  const dustGain = num(opt.dustGain, 2.0);
   const fieldMat = new ShaderMaterial({
     vertexShader: RENDER_VERT, fragmentShader: RENDER_FRAG,
     transparent: true, depthWrite: false, depthTest: false, blending: AdditiveBlending,
     uniforms: {
       uPos: { value: null }, uVel: { value: null }, uSize: { value: num(opt.dustSize, 1.9) }, uPixelRatio: { value: baseDpr },
-      uGain: { value: num(opt.dustGain, 2.0) }, uFocus: { value: 0 }, uLinearOut: { value: 1 },
+      uGain: { value: dustGain }, uFocus: { value: 0 }, uLinearOut: { value: 1 },
       uDustLo: { value: raw(pal.dust) }, uDustHi: { value: raw(pal.dustBright) },
       uPrevViewProj: { value: new Matrix4() }, uStreak: { value: 0 }, uViewport: { value: new Vector2(1, 1) },
       uTint: { value: new Vector4(0, 0, 0, 0) },
@@ -410,7 +412,8 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   composer.addPass(new OutputPass());                         // tone mapping + sRGB
   const finish = new ShaderPass(FinishShader); composer.addPass(finish);   // vignette and grain in display space, last
   finish.uniforms.uVignette.value = num(opt.vignette, 0.3);
-  finish.uniforms.uGrain.value = num(opt.grain, 0.035);
+  const filmGrain = num(opt.grain, 0.035);
+  finish.uniforms.uGrain.value = filmGrain;
   finish.uniforms.uCA.value = num(opt.aberration, 0.0004);
   canvas.__space = { scene, composer, bloom, finish, field, renderer, get guardStage() { return guardStage; }, holdQuality() { guardStage = 2; }, get elapsed() { return elapsed; }, get dpr() { return renderer.getPixelRatio(); }, get frames() { return frames; }, get options() { return { ...opt }; }, targets: type === FloatType ? 'float' : 'half-float', sim: size, tier, post: opt.post !== false };   // a handle for the headless probes and the debug panel (options: as resolved, defaults filled in)
 
@@ -519,6 +522,13 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     worldRate = rampAt(rateKeys, realT - rateT0);
     camRate = camKeys ? rampAt(camKeys, realT - camT0) : worldRate;
     const dt = rd * worldRate, camDt = rd * camRate;
+    ambient = Math.min(1, rampAt(ambKeys, realT - ambT0));
+    bgMat.uniforms.uAmbient.value = ambient;
+    fieldMat.uniforms.uGain.value = dustGain * ambient;
+    finish.uniforms.uGrain.value = filmGrain * ambient;
+    if (Math.abs(ambient - ambShown) > 0.004 || (ambient !== ambShown && (ambient === 0 || ambient === 1))) {
+      ambShown = ambient; document.documentElement.style.setProperty('--stage-ambient', ambient.toFixed(3));   // the halo layer reads it
+    }
     elapsed += dt; camT += camDt; frames++;
     resize();
 
@@ -630,12 +640,16 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     // real seconds until the rates and the path stop changing (a frozen camera's path: 0)
     get clockLeft() {
       const path = pathKeys && !pathDone && camRate > 0 ? (pathKeys[pathKeys.length - 1].t - (camT - pathT0)) / camRate : 0;
-      return Math.max(rampLeft(rateKeys, realT - rateT0), camKeys ? rampLeft(camKeys, realT - camT0) : 0, path);
+      return Math.max(rampLeft(rateKeys, realT - rateT0), camKeys ? rampLeft(camKeys, realT - camT0) : 0, rampLeft(ambKeys, realT - ambT0), path);
     },
     // how fast the world runs: a number eased to over `over` seconds, or
     // keyframes [[t, rate], …] in seconds from now. camera: the camera's own,
     // the same way (null: it follows the world's)
     setRate(rate, { over = 1, camera } = {}) { setClock(rate, over, camera); },
+    // how much of the ambient world shows (the ground and its glows, the nebula, the
+    // dust field, the halo): 0 is black, for forms of a deck's own alone; eased like a rate
+    setAmbient(a, { over = 1 } = {}) { ambKeys = rampKeys(a, ambient, over).map(([t, v]) => [t, Math.min(1, v)]); ambT0 = realT; },
+    get ambient() { return ambient; },
     get busy() { return formsBusy(); },
     get flightProgress() { return flightT0 >= 0 ? flightU : 1; },   // 0..1 in time through the flight, 1 when parked
     get paused() { return paused; },
@@ -677,9 +691,12 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     // over when it, or what they say, changes, and not on a click within the slide
     setPose(p, { immediate = false, key } = {}) {
       p = p || {};
-      const sig = JSON.stringify([key ?? null, p.rate ?? null, p.rateEase ?? null, p.cameraRate ?? null, p.path ?? null]);
+      const sig = JSON.stringify([key ?? null, p.rate ?? null, p.rateEase ?? null, p.cameraRate ?? null, p.path ?? null, p.ambient ?? null]);
       const fresh = sig !== clockSig;
-      if (fresh) { clockSig = sig; setClock(p.rate ?? 1, num(p.rateEase, 1), p.cameraRate ?? null); }
+      if (fresh) {
+        clockSig = sig; setClock(p.rate ?? 1, num(p.rateEase, 1), p.cameraRate ?? null);
+        ambKeys = rampKeys(p.ambient ?? 1, ambient, num(p.rateEase, 1)).map(([t, v]) => [t, Math.min(1, v)]); ambT0 = realT;
+      }
       const path = readPath(p.path);
       // with a path, the station, the flight's end and the hum are its last key's
       pose = { at: 'wide', ...p, ...(path ? path[path.length - 1][1] : {}) };

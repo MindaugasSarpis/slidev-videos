@@ -462,10 +462,10 @@ export function checkStage({ space, records = null, deck = '', pages = [], plugi
     if (typeof sp.pitch === 'number' && Math.abs(sp.pitch) >= 90) add('bad-pose', `slide ${s.no}: space.pitch must lie within ±90: ${sp.pitch}`, where);
     if (typeof sp.dim === 'number' && (sp.dim < 0 || sp.dim > 1)) add('bad-pose', `slide ${s.no}: space.dim must lie within 0..1: ${sp.dim}`, where);
     const looks = [];
-    for (const k of ['rate', 'cameraRate']) {
+    for (const k of ['rate', 'cameraRate', 'ambient']) {
       const v = sp[k];
       const ok = v == null || typeof v === 'number' || (Array.isArray(v) && v.every((x) => Array.isArray(x) && x.length === 2 && x.every((n) => typeof n === 'number')));
-      if (!ok) add('bad-pose', `slide ${s.no}: space.${k} must be a number or keyframes [[seconds, rate], …]`, where);
+      if (!ok) add('bad-pose', `slide ${s.no}: space.${k} must be a number or keyframes [[seconds, ${k === 'ambient' ? 'level' : 'rate'}], …]`, where);
     }
     if (sp.path != null) {
       if (!Array.isArray(sp.path) || !sp.path.every((x) => Array.isArray(x) && x.length === 2 && typeof x[0] === 'number' && x[1] && typeof x[1] === 'object')) add('bad-pose', `slide ${s.no}: space.path must be keyframes [[seconds, { at, dist, yaw, pitch }], …]`, where);

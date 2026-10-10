@@ -51,6 +51,7 @@ Then each slide steers the camera from its frontmatter:
 | `rate` | how fast the world runs on this slide: a number (`0.08`), eased to over `rateEase` seconds (default 1), or keyframes `[[0, 1], [1.5, 0.05], [5, 3]]` in seconds from the slide's opening, eased between, the last holding. 0 stands it still, at most 8. A slide without one eases back to 1 |
 | `cameraRate` | the camera's own rate, the same way (default: the world's). `cameraRate: 1` keeps the camera moving while the world freezes |
 | `path` | a timed camera move: `[[0, { at, dist, yaw, pitch }], [2.4, { … }], …]`, seconds on the camera clock from the slide's opening, through every key on a smooth curve, holding at the last. Before a first key later than 0 the camera flies there from where it was. With `path`, `at` and the rest are the last key's |
+| `ambient` | how much of the ambient world shows, 0–1, eased like `rate` (a number or keyframes): the ground and its glows, the nebula, the dust field and the halo together. 0 is black, for a deck's own forms alone; a slide without one eases back to 1. By hand: `space.setAmbient(0, { over })` |
 | `hum` | `false`: no hum on this slide |
 
 A slide without `space` keeps the previous pose. Flights take 1.4–4.5 s by

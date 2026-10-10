@@ -152,6 +152,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.halo-layer { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+.halo-layer { position: absolute; inset: 0; pointer-events: none; z-index: 5; opacity: var(--stage-ambient, 1); }   /* a slide's space.ambient fades it with the world */
 .halo-layer canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 </style>

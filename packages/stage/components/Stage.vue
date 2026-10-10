@@ -620,9 +620,10 @@ onUnmounted(() => {
   position: absolute; inset: 0; pointer-events: none;
   transition: opacity 0.6s ease;
   background: linear-gradient(180deg, rgba(var(--stage-bg-rgb, 5, 5, 7), 0.96) 0%, rgba(var(--stage-bg-rgb, 5, 5, 7), 0.88) 62%, rgba(var(--stage-bg-rgb, 5, 5, 7), 0.45) 100%);
+  filter: brightness(var(--stage-ambient, 1));   /* space.ambient 0: its tint goes to black with the ground */
 }
 .grain {
-  position: absolute; inset: 0; pointer-events: none; opacity: 0.05;
+  position: absolute; inset: 0; pointer-events: none; opacity: calc(0.05 * var(--stage-ambient, 1));
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 /* the paper texture is fine detail an encoder smears; a broadcast frame goes without it */
