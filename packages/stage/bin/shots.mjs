@@ -394,6 +394,9 @@ function pageInit(cfg) {
       assembled: (s.assembled ?? document.documentElement.dataset.spaceAssembled === '1') && !read(() => api?.busy, false),
       changedAt: s.changedAt ?? null,
       elapsed: read(() => p.elapsed, 0),
+      // seconds at rate 1 (a stage with clocks, 0.8 on): what changedAt and the settle count in
+      clock: s.realTime ?? read(() => api?.realTime, null) ?? read(() => p.elapsed, 0),
+      rate: s.rate ?? 1, cameraRate: s.cameraRate ?? 1, clockLeft: s.clockLeft ?? 0,
       frames: read(() => p.frames, 0),
       dpr: read(() => p.dpr, null),
       guard: read(() => p.guardStage, null),
@@ -412,14 +415,14 @@ function pageInit(cfg) {
   // (the dust moving all the while). Frame-synchronous: the same deck settles
   // to the same engine time on every run.
   const settle = ({ min = 6, since = 0, capMs = 30000, dust = 12, frames = 1, sec = null }) => new Promise((done) => {
-    const t0 = realNow(), e0 = state().elapsed;
-    let phase = 'run', n = 0, settled = false;
+    const t0 = realNow(), e0 = state().elapsed, c0 = state().clock;
+    let phase = 'run', n = 0, settled = false, stretched = 0;
     setMode('fast');
     const end = () => {
       tickers.delete(step); clearTimeout(timer);
       setMode('hold'); setDraw('off');
       const s = state();
-      done({ settled, settleMs: Math.round(realNow() - t0), engineSec: +(s.elapsed - e0).toFixed(3) });
+      done({ settled, settleMs: Math.round(realNow() - t0), engineSec: +(s.elapsed - e0).toFixed(3), ...(stretched ? { stretchedMs: stretched } : {}) });
     };
     const step = () => {
       if (phase === 'run') {
@@ -428,9 +431,20 @@ function pageInit(cfg) {
         if (sec != null && draw === 'off') { if (offOdd()) setMode('hold'); else { setMode('fast'); setDraw('dust'); } return; }
         const s = state();
         const anchor = Math.max(since ?? 0, s.changedAt ?? 0);
+        const frozen = s.rate === 0 && s.cameraRate === 0 && s.clockLeft <= 0;
         const still = sec != null ? s.elapsed - e0 >= sec - 1e-6
-          : !s.ready || s.static || s.paused || (!s.flying && s.assembled && s.elapsed - anchor >= min - 1e-6);
-        if (!still && realNow() - t0 < capMs) return;
+          : !s.ready || s.static || s.paused || frozen || (!s.flying && s.assembled && s.clockLeft <= 0 && s.clock - anchor >= min - 1e-6);
+        // a loaded machine (two renders on one node) runs the world slowly: the wall cap
+        // stretches, up to fourfold, to what the pace measured so far needs
+        const wall = realNow() - t0;
+        let cap = capMs;
+        if (!still && wall >= capMs && wall > 2000) {
+          const pace = (s.clock - c0) / (wall / 1000);
+          const left = Math.max(0, min - (s.clock - anchor)) + s.clockLeft;
+          if (pace > 0) cap = Math.min(capMs * 4, Math.max(capMs, wall + (left / pace) * 1250));
+          if (cap > capMs) stretched = Math.round(cap);
+        }
+        if (!still && wall < cap) return;
         if (offOdd()) { setMode('hold'); return; }
         settled = still;
         phase = 'dust'; n = 0;
@@ -445,7 +459,7 @@ function pageInit(cfg) {
       if (++n >= frames) end();
     };
     tickers.add(step);
-    const timer = setTimeout(() => { if (tickers.has(step)) end(); }, capMs + 20000);
+    const timer = setTimeout(() => { if (tickers.has(step)) end(); }, capMs * 4 + 20000);
   });
 
   const frames = (k = 2) => new Promise((ok) => { let n = 0; const f = () => { if (++n >= k) { tickers.delete(f); ok(); } }; tickers.add(f); });
@@ -723,7 +737,7 @@ async function shootFrame(deck, o, rec, { sec = null } = {}) {
   // The change happened with the clock held: its engine time is now. One
   // drawn frame is enough: with time held, a second would be the same picture.
   const st = await page.evaluate((a) => window.__shots.settle(a), {
-    min: o.settle, since: before.elapsed, capMs: o.wait, dust: o.dust, frames: 1, sec,
+    min: o.settle, since: before.clock ?? before.elapsed, capMs: o.wait, dust: o.dust, frames: 1, sec,
   });
   const t1 = Date.now();
   await page.evaluate(() => window.__shots.finish());

@@ -476,7 +476,13 @@ function settle({ min = 6, max = 30 } = {}) {
       const frozen = s.rate === 0 && s.cameraRate === 0 && s.clockLeft <= 0
       const still = !space || s.paused || frozen || (!s.flying && s.assembled && s.clockLeft <= 0 && s.realTime - changedAt >= min)
       const ms = performance.now() - t0
-      if (still || ms > max * 1000) done({ settled: still, engineSec: +(s.realTime - e0).toFixed(3), ms: Math.round(ms) })
+      // on a loaded machine the world runs slow (a frame is at most 1/12 s of it): the
+      // wall cap stretches, up to fourfold, to what the measured pace needs, so a slow
+      // run is not counted a failure
+      const pace = ms > 2000 ? (s.realTime - e0) / (ms / 1000) : 1
+      const need = pace > 0 ? ((min + s.clockLeft) / pace) * 1.25 : 0
+      const cap = Math.min(max * 4, Math.max(max, need))
+      if (still || ms > cap * 1000) done({ settled: still, engineSec: +(s.realTime - e0).toFixed(3), ms: Math.round(ms), ...(cap > max ? { stretched: +cap.toFixed(1) } : {}) })
       else requestAnimationFrame(check)
     }
     check()
