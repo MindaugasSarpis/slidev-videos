@@ -791,6 +791,14 @@ export async function staticKey(dist, o, renderer, whole = WHOLE) {
 const sha1 = (s) => createHash('sha1').update(s).digest('hex');
 
 // What makes a run exit 3, frame by frame.
+// --changed keeps a frame only when it came out clean of what load or chance
+// decides (a failure, an unsettled world, a page error, a failed request): a
+// run under load must not hand its failure to the next. An overflow is the
+// slide's own and is kept.
+export function cacheable(r) {
+  return !!r && !r.error && r.settled !== false && !(r.pageErrors?.length) && !(r.httpErrors || []).some((h) => h.local);
+}
+
 export function problemsOf(r) {
   const p = [];
   if (r.error) p.push(`failed: ${r.error}`);
@@ -1010,7 +1018,7 @@ export async function shoot(o, logTo = console.log) {
                 if (o.changed && b === 0 && !o.dev) {
                   key = sha1(key0 + (await deck.page.evaluate((n) => window.__shots.fingerprint(n), n)));
                   const hit = cache[rec.frame];
-                  if (hit?.key === key && existsSync(join(o.outDir, `${rec.frame}.png`)) && o.burst === 1) {
+                  if (hit?.key === key && cacheable(hit.record) && existsSync(join(o.outDir, `${rec.frame}.png`)) && o.burst === 1) {
                     await emit({ ...hit.record, unchanged: true });
                     log(`${rec.frame}  unchanged`);
                     continue;
@@ -1018,7 +1026,7 @@ export async function shoot(o, logTo = console.log) {
                 }
                 const r = await shootFrame(deck, o, rec, { sec: b > 0 ? o.every : null });
                 await emit(r);
-                if (key) cache[rec.frame] = { key, record: r };
+                if (key && cacheable(r)) cache[rec.frame] = { key, record: r };
                 const p = problemsOf(r);
                 log(`${r.frame}  station=${r.station ?? '-'}  settle ${(r.settleMs / 1000).toFixed(1)} s (${r.engineSec} engine-s) + ${(r.shotMs / 1000).toFixed(1)} s  overflow=${r.overflowPx ?? '-'}px  words=${r.wordsOnScreen}${p.length ? `  ! ${p.join('; ')}` : ''}`);
               } catch (e) {

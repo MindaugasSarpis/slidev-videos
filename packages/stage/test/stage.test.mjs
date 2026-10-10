@@ -11,7 +11,7 @@ import { resolvePalette, PALETTES, DEFAULT_PALETTE, LOOKS, hexToRgb, rgbTriplet,
 import { checkStage, readStageConfig, deckPoses, deckSlides, deckTypes, deckClocks, deckComponents, readYaml, deckPlaces, deckPlaceList, deckPlaceGroups, deckPages, main as checkMain } from '../bin/check.mjs';
 import { formatCount, countRun, countAt, countSpan, COUNT_DOWN_MS } from '../stage/count.js';
 import { deckHasThree } from '../vite.config.js';
-import { parseSlides, parseArgs, detectBase, clicksFor, frameName, parseProcLocks, problemsOf, split, serve, staticKey, clipName } from '../bin/shots.mjs';
+import { parseSlides, parseArgs, detectBase, clicksFor, frameName, parseProcLocks, problemsOf, cacheable, split, serve, staticKey, clipName } from '../bin/shots.mjs';
 import { placesDecl, placeGroupsAt } from '../stage/place-groups.js';
 
 const here = (p) => new URL(p, import.meta.url);
@@ -827,4 +827,13 @@ test('a slide\'s rate, cameraRate and timed path are checked: their shape, and t
   const got = r.issues.map((p) => [p.slide, p.code]);
   assert.deepEqual(got, [[2, 'unknown-station'], [3, 'bad-pose']]);
   assert.match(r.issues[0].msg, /did you mean lhc/);
+});
+
+test('--changed never keeps a failure: an unsettled, failed or erroring frame is shot again', () => {
+  assert.equal(cacheable({ settled: true, overflowPx: 30 }), true);          // the slide's own problem stays known
+  assert.equal(cacheable({ settled: false }), false);
+  assert.equal(cacheable({ error: 'timeout' }), false);
+  assert.equal(cacheable({ settled: true, pageErrors: ['x'] }), false);
+  assert.equal(cacheable({ settled: true, httpErrors: [{ local: true }] }), false);
+  assert.equal(cacheable({ settled: true, httpErrors: [{ local: false }] }), true);
 });
