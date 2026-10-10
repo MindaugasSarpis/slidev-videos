@@ -184,7 +184,17 @@ async function rebuild() {
   if (space) try { window.dispatchEvent(new CustomEvent('slidev-stage:rebuilt', { detail: { tier } })) } catch {}
 }
 
-const frontmatter = computed(() => nav.currentSlideRoute.value?.meta?.slide?.frontmatter || {})
+// The slide's frontmatter. On a print page, the page's own slide: Slidev 52.14's
+// print route keeps nav.currentSlideRoute at slide 1, so a deck opening at
+// dim: 1 printed every page under a near-opaque scrim (Užsikrauk karjerai's
+// PDF, pages 5–15 near black). The page's context knows its slide.
+const pageRoute = () => {
+  const ctxRoute = pageCtx?.nav?.currentSlideRoute
+  const r = ctxRoute?.value ?? ctxRoute
+  if (r?.meta?.slide && Number(r.no) === pageNo.value) return r
+  return (nav.slides.value || []).find((x) => Number(x?.no) === pageNo.value) || null
+}
+const frontmatter = computed(() => (printing.value ? pageRoute() : nav.currentSlideRoute.value)?.meta?.slide?.frontmatter || {})
 const frontmatterSpace = computed(() => frontmatter.value.space || null)
 const clicks = computed(() => nav.clicks.value || 0)
 const clicksTotal = computed(() => nav.clicksTotal?.value || 0)   // on the root as data-clicks-total, for the headless tools

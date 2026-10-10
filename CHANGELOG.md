@@ -4,6 +4,21 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## v0.8.1 — 2026-10-11
+
+slidev-videos 0.8.1 · slidev-addon-stage 0.5.1 · slidev-addon-videos 0.8.1
+
+- **A printed page's scrim is its own slide's.** On Slidev 52.14's print
+  route, `nav.currentSlideRoute` stays at slide 1, and the stage read `dim`
+  (and the rest of `space`) from it. A deck opening at `dim: 1` therefore
+  printed every page under a near-opaque scrim: Užsikrauk karjerai's PDF,
+  pages 5–15 near black. On a print page the frontmatter now comes from the
+  page's own slide (its context, else the slide list by number), as the
+  stills already did. In an Innoday copy on 52.14 with slide 1 at `dim: 1`,
+  pages 4–7 went from a mean brightness of 5.9 / 14.3 / 8.7 / 2.8 to 31.1 /
+  50.6 / 29.6 / 6.7; pages 1–3 and 8–9 are unchanged. Slidev 52.19 is
+  unaffected: the example exports the same before and after.
+
 ## v0.8.0 — 2026-10-11
 
 slidev-videos 0.8.0 · slidev-addon-stage 0.5.0 · slidev-addon-videos 0.8.0
