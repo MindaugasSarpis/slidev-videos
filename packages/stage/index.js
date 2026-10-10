@@ -18,7 +18,7 @@ import { setLabelSegmenter, setLabelFont, makeLabel, makeText } from './stage/la
 import { orb, marble, shell, ball, setOrb } from './stage/materials.js';
 import { PALETTES, DEFAULT_PALETTE, LOOKS, definePalette, resolvePalette, resolveLook, liftGround, paletteVars } from './stage/palette.js';
 import { createSpace } from './stage/space.js';
-import { warmAudio, playCollision, playWhoosh, playRise, startHum, stopHum, humProbe } from './stage/sound.js';
+import { warmAudio, playCollision, playWhoosh, playRise, startHum, stopHum, humProbe, stageOut } from './stage/sound.js';
 import { shared } from './stage/shared.js';
 import { formatCount, countLang } from './stage/count.js';
 
@@ -55,6 +55,6 @@ export {
   setLabelSegmenter, setLabelFont, makeLabel, makeText,
   orb, marble, shell, ball, setOrb,
   PALETTES, DEFAULT_PALETTE, LOOKS, definePalette, resolvePalette, resolveLook, liftGround, paletteVars,
-  warmAudio, playCollision, playWhoosh, playRise, startHum, stopHum, humProbe,
+  warmAudio, playCollision, playWhoosh, playRise, startHum, stopHum, humProbe, stageOut,
   formatCount, countLang,
 };

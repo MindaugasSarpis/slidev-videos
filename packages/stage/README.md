@@ -26,18 +26,13 @@ the halo layer over them by itself.
     stage:
       space: data/space.json      # the stations, under the deck's public/
       palette: blue               # classic | blue | ember | { base, accent, dust, … }
-    layout: cover
     space:
       at: wide
     ---
 
-    # kicker
-
-    # The title
-
-    ## a subtitle
-
-    <div class="mt-md">Name · Place</div>
+The slide itself may be empty: the world is the picture, and the speaker
+says the rest (the talks put pictures and numbers on screen, no titles or
+captions; the CSS kit's cover and section type is for the decks that do).
 
 Then each slide steers the camera from its frontmatter:
 
@@ -53,9 +48,24 @@ Then each slide steers the camera from its frontmatter:
 | `dim` | how far the world steps back behind the slide, 0–1. Default 0.15 on cover / section / statement / fact / quote layouts, 0.6 on content slides |
 | `stops` | `[id, …]` with `clicks: n`: click *k* flies to `stops[k-1]`, lights it and shows its record |
 | `asof` | tell a stop's record as of this year (`status_year`, `note_year`) |
+| `rate` | how fast the world runs on this slide: a number (`0.08`), eased to over `rateEase` seconds (default 1), or keyframes `[[0, 1], [1.5, 0.05], [5, 3]]` in seconds from the slide's opening, eased between, the last holding. 0 stands it still, at most 8. A slide without one eases back to 1 |
+| `cameraRate` | the camera's own rate, the same way (default: the world's). `cameraRate: 1` keeps the camera moving while the world freezes |
+| `path` | a timed camera move: `[[0, { at, dist, yaw, pitch }], [2.4, { … }], …]`, seconds on the camera clock from the slide's opening, through every key on a smooth curve, holding at the last. Before a first key later than 0 the camera flies there from where it was. With `path`, `at` and the rest are the last key's |
+| `hum` | `false`: no hum on this slide |
 
 A slide without `space` keeps the previous pose. Flights take 1.4–4.5 s by
 distance and ease in and out.
+
+**Time.** The world runs on one clock (every form, the dust, each builder's
+`t`); the camera on a second (flights, the idle sway, `path`), which follows
+the world's unless a slide sets `cameraRate`. A slow-down, a freeze and a
+burst are `rate` keyframes; a bullet-time shot is `rate` near 0 with
+`cameraRate: 1` and a `path` round the moment. By hand:
+`space.setRate(0.1, { over: 1.2, camera: 1 })`, `space.rate`,
+`space.cameraRate`; the `rate` event (`onEvent`) as a ramp is set. The
+headless tools settle in seconds at rate 1, wait for the last rate key and
+the path's end, and take a world and camera stood still as settled; a form
+assembling at a slowed rate takes as long as it looks.
 
 A slide's `places: { <group>: true | false }` (beside `space`, not in it)
 shows or hides a group of StagePhoto places from that slide on, with a 1 s
@@ -211,7 +221,15 @@ deck's own `styles/index.css`.
 
 A builder is `(object, ctx) => parts`, called once per object of its type
 when the world is built. `object` is the entry from space.json, `ctx` is
-`{ palette, records, anisotropy, asset(src), helpers }`.
+`{ palette, records, anisotropy, asset(src), helpers, tier, budget, rate(),
+cameraRate(), on('rate', fn), audio() }`:
+
+| ctx | |
+| --- | --- |
+| `tier` · `budget` | the quality tier (0 full … 3) and the grains a builder may draw there: 300k, 160k, 60k, 30k. A lost context rebuilds a tier lower, with the lower budget |
+| `rate()` · `cameraRate()` | the rates now. `t` follows the world's already; these are for what runs on real time (sound, streaks drawn from the rate) |
+| `on('rate', fn)` | `fn({ rate, cameraRate, keys, cameraKeys })` as a ramp is set (a slide opening, `setRate`); returns `off()` |
+| `audio()` | `{ context, out }`: the stage's AudioContext and its output (at `stage.sound.level`), once a gesture has unlocked audio; `null` before, in the presenter window, and with `sound: false`. Connect a deck's own voices to `out` |
 
 | part | |
 | --- | --- |
@@ -229,8 +247,13 @@ of the type must carry, for `slidev-stage-check`.
 **The clock.** `t` is the world's own time in seconds. It advances at most
 1/12 s a frame, so flights and assemblies keep their pace on a slow GPU and
 in a headless browser, and it stands still while a clip covers the slide.
-Animate from `t`, not from `performance.now()`, and what a builder does
-stays in step with the camera.
+Animate from `t`, not from `performance.now()` or a `setTimeout`, and what a builder does
+stays in step with the camera, and with the rate. The same goes for a
+slide's own timer (a component that shows a form a few seconds in): the
+headless tools wait on the world, not the wall clock, so a `setTimeout`
+races them, and a fast machine shoots the slide before it happens. Step it
+from the world's time (`window.__stage.state().elapsed`, or a builder that
+listens for the step) instead.
 
 **Building on arrival.** When the camera sets out from elsewhere for a pose
 *at* a station, the engine calls `arm()` on every api there that has

@@ -819,3 +819,12 @@ export function install(registerBuilder) {
   assert.deepEqual(r.issues.filter((p) => p.code === 'unsaid-clock').map((p) => p.level), ['warning']);   // steps is in no station
   assert.equal(r.problems.length, 0);
 });
+
+test('a slide\'s rate, cameraRate and timed path are checked: their shape, and the stations the path names', () => {
+  const space = { stations: [{ id: 'hero', pos: [0, 0, 0], look: { dist: 9 } }, { id: 'lhc', pos: [40, 0, 0], look: { dist: 9 } }] };
+  const deck = `---\ntheme: x\n---\n\n# a\n\n---\nspace:\n  at: lhc\n  rate: [[0, 1], [1.5, 0.05]]\n  cameraRate: 1\n  hum: false\n  path: [[0, { at: hero }], [2.4, { at: lhc, dist: 4 }], [7, { at: lhcc }]]\n---\n\n# b\n\n---\nspace:\n  at: hero\n  rate: fast\n---\n\n# c\n`;
+  const r = checkStage({ space, deck });
+  const got = r.issues.map((p) => [p.slide, p.code]);
+  assert.deepEqual(got, [[2, 'unknown-station'], [3, 'bad-pose']]);
+  assert.match(r.issues[0].msg, /did you mean lhc/);
+});

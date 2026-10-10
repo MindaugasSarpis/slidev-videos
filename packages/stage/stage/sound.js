@@ -35,6 +35,20 @@ export function warmAudio() {
   return ac;
 }
 
+// The stage's output: every voice, and a deck's own (ctx.audio().out), goes
+// through one gain at `stage.sound.level`.
+let out = null;
+let outLevel = 1;
+export function stageOut(level) {
+  if (level != null && Number.isFinite(Number(level))) outLevel = Math.max(0, Number(level));
+  const ac = getContext();
+  if (!ac) return null;
+  if (!out) { try { out = ac.createGain(); out.connect(ac.destination); } catch { out = null; return null; } }
+  out.gain.value = outLevel;
+  return out;
+}
+const dest = (ac) => stageOut() || ac.destination;
+
 const LENGTH = 0.45;      // s to silence
 const NOISE_PEAK = 0.55;  // pre-filter; the band-pass keeps a fraction of it
 const THUMP_PEAK = 0.28;
@@ -57,7 +71,7 @@ export function playCollision() {
     const t0 = ac.currentTime;
     const master = ac.createGain();
     master.gain.value = 1;
-    master.connect(ac.destination);
+    master.connect(dest(ac));
 
     // crack
     const src = ac.createBufferSource();
@@ -151,7 +165,7 @@ export function startHum() {
     const analyser = ac.createAnalyser(); analyser.fftSize = 8192;   // for humProbe()
     sawA.connect(filter); sawB.connect(sawBGain).connect(filter);
     octave.connect(octaveGain).connect(filter);
-    filter.connect(master).connect(analyser).connect(ac.destination);
+    filter.connect(master).connect(analyser).connect(dest(ac));
     const oscs = [sawA, sawB, octave, lfo];
     for (const o of oscs) o.start(t);
     hum = { ac, oscs, nodes: [...oscs, sawBGain, octaveGain, lfoGain, filter, master, analyser], master, filter, analyser, stopTimer: 0 };
@@ -236,7 +250,7 @@ export function playWhoosh(seconds = 2, { level = 1 } = {}) {
     g.gain.setValueAtTime(0.0001, t0);
     g.gain.linearRampToValueAtTime(peak, t0 + dur * 0.45);
     g.gain.linearRampToValueAtTime(0.0001, t0 + dur);
-    src.connect(bp).connect(g).connect(ac.destination);
+    src.connect(bp).connect(g).connect(dest(ac));
     src.start(t0); src.stop(t0 + dur + 0.05);
     src.onended = () => { try { for (const n of [src, bp, g]) n.disconnect(); } catch { /* noop */ } };
     return { played: true, seconds: dur };
@@ -275,7 +289,7 @@ export function playRise(seconds = 1.8, { level = 1 } = {}) {
     src.connect(ng).connect(lp);
     src.start(t0); src.stop(t0 + dur + 0.5);
     nodes.push(src, ng);
-    lp.connect(out).connect(ac.destination);
+    lp.connect(out).connect(dest(ac));
     src.onended = () => { try { for (const n of nodes) n.disconnect(); } catch { /* noop */ } };
     return { played: true, seconds: dur };
   } catch (e) {

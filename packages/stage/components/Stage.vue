@@ -4,7 +4,7 @@ import '@fontsource/space-grotesk/500.css'
 import '@fontsource/space-grotesk/700.css'
 import { ref, computed, watch, nextTick, onMounted, onUnmounted, inject } from 'vue'
 import { useNav, configs } from '@slidev/client'
-import { createSpace, usePlugin, resolvePalette, resolveLook, liftGround, paletteVars, warmAudio, startHum, stopHum, humProbe, playWhoosh, playRise } from '../index.js'
+import { createSpace, usePlugin, resolvePalette, resolveLook, liftGround, paletteVars, warmAudio, startHum, stopHum, humProbe, playWhoosh, playRise, stageOut } from '../index.js'
 import StagePanel from './StagePanel.vue'
 import { placeGroupsAt } from '../stage/place-groups.js'
 import { probeGL, stageDebugOn, debugLines, deviceInfo, pickTier, MAX_TIER, stageOverrides } from '../stage/diagnose.js'
@@ -206,21 +206,21 @@ let changedAt = 0
 function apply(immediate = false) {
   if (!space) return
   if (immediate) applyPlaces(true)
-  changedAt = canvas.value?.__space?.elapsed ?? 0
+  changedAt = space.realTime ?? 0
   const sp = frontmatterSpace.value
-  if (!sp) { stopId.value = null; space.setStop(null); updateHum(); return }
+  if (!sp) { stopId.value = null; space.setStop(null); space.setRate(1); updateHum(); return }
   const stops = Array.isArray(sp.stops) ? sp.stops : null
   const k = clicks.value
   if (stops && stops.length && k >= 1) {
     const id = stops[Math.min(k, stops.length) - 1]
     stopId.value = id
     space.setStop(id)
-    space.setPose({ ...sp, at: id }, { immediate })
+    space.setPose({ ...sp, at: id }, { immediate, key: nav.currentSlideNo.value })
     arrived.value = immediate || space.arrived
   } else {
     stopId.value = null
     space.setStop(null)
-    space.setPose(sp, { immediate })
+    space.setPose(sp, { immediate, key: nav.currentSlideNo.value })
   }
   updateHum()
 }
@@ -234,7 +234,7 @@ let audioUnlocked = false
 let covered = false
 function updateHum() {
   if (!soundOn.value) return
-  const on = VOICES.hum !== false && audioUnlocked && !!space && !document.hidden && !covered && !nav.isPresenter?.value && (humEverywhere || humAt.has(space.atStation))
+  const on = VOICES.hum !== false && audioUnlocked && !!space && !document.hidden && !covered && !nav.isPresenter?.value && frontmatterSpace.value?.hum !== false && (humEverywhere || humAt.has(space.atStation))
   if (on) startHum()
   else stopHum()
   if (root.value) root.value.dataset.hum = on ? 'on' : 'off'
@@ -322,6 +322,8 @@ async function boot() {
       palette,
       options: { ...OPTIONS, hero: CFG.hero, tier, ...(OVERRIDES.post === false ? { post: false } : {}), ...(OVERRIDES.targets ? { targets: OVERRIDES.targets } : {}) },
       asset,
+      // a builder's ctx.audio(): the stage's context and output once a gesture has unlocked it
+      audio: () => (soundOn.value && audioUnlocked && !nav.isPresenter?.value ? { context: warmAudio(), out: stageOut(VOICES.level) } : null),
       onArrive: (target) => {
         arrived.value = true
         // for whoever waits on the camera (StagePhoto's arrive="camera")
@@ -370,7 +372,7 @@ function onFlight(d) {
   if (root.value) root.value.dataset.flights = String(Number(root.value.dataset.flights || 0) + 1)
   if (!audible() || VOICES.flight === false || covered) return
   if (!d || d.distance < 6) return
-  playWhoosh(d.seconds, { level: VOICES.level * Math.min(1.2, 0.5 + d.distance / 60) })
+  playWhoosh(d.seconds, { level: Math.min(1.2, 0.5 + d.distance / 60) })
 }
 // `c` builds again what stands at the station the pose is at
 const onKey = (e) => {
@@ -384,6 +386,7 @@ const onGesture = () => {
   if (!soundOn.value || audioUnlocked) return
   audioUnlocked = true
   warmAudio()
+  stageOut(VOICES.level)   // every voice goes out through the stage's level
   updateHum()
 }
 const rest = () => space?.setPaused(document.hidden || covered)
@@ -400,7 +403,7 @@ const onVideoTransition = (e) => {
   if (!space || d.mode === 'cut') return
   if (d.phase === 'enter') {
     space.stir('gather', { seconds: (d.duration || 1400) / 1000 })
-    if (d.mode === 'dust' && audible() && VOICES.clip !== false) playRise((d.duration || 1400) / 1000, { level: VOICES.level })
+    if (d.mode === 'dust' && audible() && VOICES.clip !== false) playRise((d.duration || 1400) / 1000)
   } else if (d.phase === 'leave') {
     space.stir('burst', { strength: 0.8 })
     // the clip's colours stay in the dust it broke into, for a few seconds
@@ -453,6 +456,10 @@ function probeState() {
     static: staticBg.value,
     changedAt,
     elapsed: p?.elapsed ?? 0,
+    realTime: space?.realTime ?? 0,     // seconds at rate 1 (what settle counts)
+    rate: space?.rate ?? 1,
+    cameraRate: space?.cameraRate ?? 1,
+    clockLeft: space?.clockLeft ?? 0,   // real seconds until the rates and a timed path hold
     frames: p?.frames ?? 0,
     dpr: p?.dpr ?? null,
     guard: p?.guardStage ?? null,
@@ -461,12 +468,15 @@ function probeState() {
 }
 function settle({ min = 6, max = 30 } = {}) {
   return new Promise((done) => {
-    const t0 = performance.now(), e0 = canvas.value?.__space?.elapsed ?? 0
+    const t0 = performance.now(), e0 = space?.realTime ?? 0
     const check = () => {
       const s = probeState()
-      const still = !space || s.paused || (!s.flying && s.assembled && s.elapsed - changedAt >= min)
+      // counted in seconds at rate 1, so a slowed world settles in the same time; a
+      // world and camera stood still (rate 0) are as settled as they will get
+      const frozen = s.rate === 0 && s.cameraRate === 0 && s.clockLeft <= 0
+      const still = !space || s.paused || frozen || (!s.flying && s.assembled && s.clockLeft <= 0 && s.realTime - changedAt >= min)
       const ms = performance.now() - t0
-      if (still || ms > max * 1000) done({ settled: still, engineSec: +(s.elapsed - e0).toFixed(3), ms: Math.round(ms) })
+      if (still || ms > max * 1000) done({ settled: still, engineSec: +(s.realTime - e0).toFixed(3), ms: Math.round(ms) })
       else requestAnimationFrame(check)
     }
     check()

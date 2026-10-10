@@ -18,6 +18,7 @@ import { createPhotoPlace } from './photo-place.js';
 import { buildStation, helpers } from './builders.js';
 import { shell } from './materials.js';
 import { resolvePalette, hexToRgb } from './palette.js';
+import { rampKeys, rampAt, rampLeft, pathAt, readPath, BUDGETS } from './clock.js';
 
 // The stage: one persistent 3D world under a whole deck. A path of built
 // scenes (stations) stands in an ambient field of dust; slides steer the
@@ -27,7 +28,12 @@ import { resolvePalette, hexToRgb } from './palette.js';
 //   createSpace(canvas, container, { space, records, palette, options, onArrive, onEvent })
 //     space    { stations: [{ id, pos, look, gather?, pulse?, objects: [...] }], poses?, hero? }
 //     records  [{ id, … }]: things a stop can name; an object with an id anchors one
-//   → { setPose, setStop, setDim, setPaused, stir, assemble, record, value, dispose, … }
+//   → { setPose, setStop, setDim, setPaused, setRate, stir, assemble, record, value, dispose, … }
+//
+// Two clocks (stage/clock.js): the world's, which every form, the dust and
+// the builders' update(t) run on, and the camera's (flights, idle sway, a
+// slide's timed `path`). Each runs at a rate a slide or setRate() sets,
+// eased; the camera's follows the world's unless a slide sets `cameraRate`.
 //
 // The field is pulled toward the active station only faintly: the dust reads
 // as a uniform, bright ground behind the scenes, not a cloud clumped round them.
@@ -154,7 +160,7 @@ function pickTexSize(coarse, density) {
 
 const num = (v, d) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Number(v) : d);
 
-export function createSpace(canvas, container, { space, records = [], palette, options = {}, asset, onArrive, onEvent } = {}) {
+export function createSpace(canvas, container, { space, records = [], palette, options = {}, asset, audio, onArrive, onEvent } = {}) {
   const opt = { ...DEFAULTS, ...options };
   const pal = resolvePalette(palette);
   const coarse = matchMedia('(pointer: coarse)').matches;
@@ -230,7 +236,21 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     places.delete(String(id));
   };
   const forms = new Map();   // an object's `name` → its builder's api (value() for <StageCount for>)
-  const ctx = { records: byId, states: byId, palette: pal, anisotropy: renderer.capabilities.getMaxAnisotropy(), asset: asset || ((s) => s), helpers, twinkle: Math.max(0, num(opt.twinkle, 1)) };
+  // the clocks: real seconds (clamped as every frame is), the camera's, the rates and their ramps
+  let realT = 0, camT = 0, worldRate = 1, camRate = 1;
+  let rateKeys = [[0, 1]], rateT0 = 0, camKeys = null, camT0 = 0;
+  let pathKeys = null, pathT0 = 0, pathDone = true, clockSig = null;
+  const rateFns = new Set();
+  const ctx = {
+    records: byId, states: byId, palette: pal, anisotropy: renderer.capabilities.getMaxAnisotropy(), asset: asset || ((s) => s), helpers, twinkle: Math.max(0, num(opt.twinkle, 1)),
+    tier, budget: BUDGETS[tier],                       // the grains a builder may draw at this tier
+    rate: () => worldRate, cameraRate: () => camRate,  // what t runs at now (t follows it already)
+    // the stage's audio once a gesture has unlocked it: { context, out } (out: the stage's
+    // level; null in the presenter window, without sound, or before the first gesture)
+    audio: () => (typeof audio === 'function' ? audio() : null),
+    // 'rate': { rate, cameraRate, keys, cameraKeys } as a ramp is set → off()
+    on(kind, fn) { if (kind !== 'rate' || typeof fn !== 'function') return () => {}; rateFns.add(fn); return () => rateFns.delete(fn); },
+  };
   for (const st of space.stations || []) {
     const built = buildStation(st, ctx);
     scene.add(built.group);
@@ -366,6 +386,21 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     atStation = r.at;
   };
 
+  // where the camera stands for a pose, without the idle sway: a path's key
+  const camAt = (kp) => {
+    const r = resolve(kp);
+    const y = r.yaw * D2R, q = r.pitch * D2R;
+    return { pos: [r.target.x + r.dist * Math.sin(y) * Math.cos(q), r.target.y + r.dist * Math.sin(q), r.target.z + r.dist * Math.cos(y) * Math.cos(q)], look: r.target.toArray() };
+  };
+  // a new ramp for the world's rate (and the camera's: null follows the world)
+  function setClock(rate, over, camera) {
+    rateKeys = rampKeys(rate, worldRate, over); rateT0 = realT;
+    camKeys = camera == null ? null : rampKeys(camera, camRate, over); camT0 = realT;
+    const msg = { rate: rateKeys[rateKeys.length - 1][1], cameraRate: camKeys ? camKeys[camKeys.length - 1][1] : null, keys: rateKeys, cameraKeys: camKeys };
+    for (const fn of rateFns) { try { fn(msg); } catch { /* a builder's listener */ } }
+    onEvent?.('rate', msg);
+  }
+
   // --- post-processing: bloom, anti-aliasing, tone mapping, the finish ------------
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
@@ -479,20 +514,29 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     raf = requestAnimationFrame(frame);
     // the recorder sets __stageMaxDt to its frame time: at under 12 fps a frame is
     // still one frame of the world, not 1/12 s of it (the take ran slow)
-    const dt = Math.min(getDelta(), Math.max(MAX_DT, globalThis.__stageMaxDt || 0));
-    elapsed += dt; frames++;
+    const rd = Math.min(getDelta(), Math.max(MAX_DT, globalThis.__stageMaxDt || 0));
+    realT += rd;
+    worldRate = rampAt(rateKeys, realT - rateT0);
+    camRate = camKeys ? rampAt(camKeys, realT - camT0) : worldRate;
+    const dt = rd * worldRate, camDt = rd * camRate;
+    elapsed += dt; camT += camDt; frames++;
     resize();
 
-    applyPose(pose, elapsed);
+    applyPose(pose, camT);
     if (firstFrame) { curPos.copy(goalPos); curLook.copy(goalLook); firstFrame = false; }
-    if (flightT0 >= 0) {
-      const u = Math.min((elapsed - flightT0) / flightDur, 1);
+    if (pathKeys) {
+      // a slide's timed path, on the camera clock; it holds at its last key
+      const pp = pathAt(pathKeys, camT - pathT0);
+      curPos.set(pp.pos[0], pp.pos[1], pp.pos[2]); curLook.set(pp.look[0], pp.look[1], pp.look[2]);
+      if (pp.done && !pathDone) { pathDone = true; arrived = true; onArrive?.(currentTarget); if (armedFor != null && armedFor === atStation) startAssembly(armedFor); armedFor = null; }
+    } else if (flightT0 >= 0) {
+      const u = Math.min((camT - flightT0) / flightDur, 1);
       const e = smoother(u);
       flightU = u;
       curPos.lerpVectors(fromPos, goalPos, e); curLook.lerpVectors(fromLook, goalLook, e);
       if (u >= 1) { flightT0 = -1; flightU = 0; arrived = true; onArrive?.(currentTarget); if (armedFor != null && armedFor === atStation) startAssembly(armedFor); armedFor = null; }
     } else {
-      const k = 1 - Math.exp(-3.0 * dt);   // parked: follow the idle drift
+      const k = 1 - Math.exp(-3.0 * camDt);   // parked: follow the idle drift
       curPos.lerp(goalPos, k); curLook.lerp(goalLook, k);
     }
     camera.position.copy(curPos); camera.lookAt(curLook); camera.updateMatrixWorld();
@@ -514,7 +558,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     fill.position.copy(curLook).add(fillOffset);   // above and a little toward the camera, off the objects' faces
     fieldMat.uniforms.uFocus.value = curPos.distanceTo(curLook);
     finish.uniforms.uTime.value = elapsed;
-    if (!assembledOnce && elapsed > 0.6) { assembledOnce = true; if (!startAssembly(atStation)) onEvent?.('assembled', { station: null }); }
+    if (!assembledOnce && realT > 0.6) { assembledOnce = true; if (!startAssembly(atStation)) onEvent?.('assembled', { station: null }); }
 
     // ambient field: tile the wrap box so dust surrounds the camera anywhere,
     // and pull it gently toward the active station (in the field's own frame)
@@ -553,8 +597,8 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     // frame-rate guard: step the pixel ratio down, then halve the field, if slow —
     // before this frame's render, so the resized canvas is drawn at once (a resize
     // clears it, and a frame of page background showed through)
-    if (opt.guard !== false && elapsed > 4 && guardStage < 2) {
-      winFrames++; winTime += dt;
+    if (opt.guard !== false && realT > 4 && guardStage < 2) {
+      winFrames++; winTime += rd;
       if (winTime >= 2) {
         if (winFrames / winTime < 40) {
           guardScale = guardStage === 0 ? 0.7 : 0.5;
@@ -579,7 +623,19 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     get activeStation() { return activeStation; },
     get hero() { return heroId; },
     get atStation() { return atStation; },
-    get flying() { return flightT0 >= 0; },
+    get flying() { return flightT0 >= 0 || !pathDone; },
+    get rate() { return worldRate; },
+    get cameraRate() { return camRate; },
+    get realTime() { return realT; },
+    // real seconds until the rates and the path stop changing (a frozen camera's path: 0)
+    get clockLeft() {
+      const path = pathKeys && !pathDone && camRate > 0 ? (pathKeys[pathKeys.length - 1].t - (camT - pathT0)) / camRate : 0;
+      return Math.max(rampLeft(rateKeys, realT - rateT0), camKeys ? rampLeft(camKeys, realT - camT0) : 0, path);
+    },
+    // how fast the world runs: a number eased to over `over` seconds, or
+    // keyframes [[t, rate], …] in seconds from now. camera: the camera's own,
+    // the same way (null: it follows the world's)
+    setRate(rate, { over = 1, camera } = {}) { setClock(rate, over, camera); },
     get busy() { return formsBusy(); },
     get flightProgress() { return flightT0 >= 0 ? flightU : 1; },   // 0..1 in time through the flight, 1 when parked
     get paused() { return paused; },
@@ -617,14 +673,38 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     value(name) { const v = forms.get(String(name))?.value?.(); return Number.isFinite(v) ? v : null; },
     state(id) { return byId.get(String(id)) || null; },   // Startertalk's name for record()
     // pose: { at: <station id | record id | named pose | [x,y,z]>, dist?, yaw?, pitch?, sway? }
-    setPose(p, { immediate = false } = {}) {
-      pose = { at: 'wide', ...(p || {}) };
+    // key: the slide's own (Stage passes its number); the rates and the path start
+    // over when it, or what they say, changes, and not on a click within the slide
+    setPose(p, { immediate = false, key } = {}) {
+      p = p || {};
+      const sig = JSON.stringify([key ?? null, p.rate ?? null, p.rateEase ?? null, p.cameraRate ?? null, p.path ?? null]);
+      const fresh = sig !== clockSig;
+      if (fresh) { clockSig = sig; setClock(p.rate ?? 1, num(p.rateEase, 1), p.cameraRate ?? null); }
+      const path = readPath(p.path);
+      // with a path, the station, the flight's end and the hum are its last key's
+      pose = { at: 'wide', ...p, ...(path ? path[path.length - 1][1] : {}) };
       currentTarget = Array.isArray(pose.at) ? pose.at.join(',') : String(pose.at);
       container.dataset.spaceAt = currentTarget;
       const wasAt = atStation;
-      applyPose(pose, elapsed);   // resolve now, so activeStation is current when setPose returns (the hum follows it)
+      applyPose(pose, camT);   // resolve now, so activeStation is current when setPose returns (the hum follows it)
       container.dataset.spaceStation = activeStation ?? '';
       container.dataset.spaceAtStation = atStation ?? '';
+      if (!path) { pathKeys = null; pathDone = true; }
+      else if (fresh || !pathKeys) {
+        pathKeys = path.map(([t, kp]) => { const c = camAt(kp); return { t, pos: c.pos, look: c.look }; });
+        if (pathKeys[0].t > 0 && !(immediate || firstFrame)) pathKeys.unshift({ t: 0, pos: curPos.toArray(), look: curLook.toArray() });
+        pathT0 = camT; pathDone = false; flightT0 = -1; flightU = 0; arrived = false;
+        if (immediate || firstFrame) firstFrame = false;
+      }
+      if (path) {
+        armedFor = null;
+        if (fresh && atStation != null && atStation !== wasAt) {
+          const apis = selfBuilders(atStation);
+          for (const api of apis) api.arm();
+          if (apis.length) armedFor = atStation;
+        }
+        return;
+      }
       if (immediate || firstFrame) { firstFrame = true; flightT0 = -1; flightU = 0; arrived = true; armedFor = null; return; }
       fromPos.copy(curPos); fromLook.copy(curLook);
       // a flight to a station from elsewhere: scatter what builds itself there now, so it gathers on arrival
@@ -638,7 +718,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
       const [lo, hi2] = opt.flight;
       // a slide's own `flight` (seconds) beats the rule from the distance
       flightDur = num(pose.flight, 0) > 0 ? num(pose.flight, 0) : Math.min(hi2, Math.max(lo, 1.1 + d / 12));
-      flightT0 = elapsed; flightU = 0; arrived = false;
+      flightT0 = camT; flightU = 0; arrived = false;
       onEvent?.('flight', { seconds: flightDur, distance: d, to: currentTarget });
     },
     setStop(id) {

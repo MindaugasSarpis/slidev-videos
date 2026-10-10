@@ -457,11 +457,26 @@ export function checkStage({ space, records = null, deck = '', pages = [], plugi
     const where = { slide: s.no, line: s.line };
     if (typeof sp !== 'object' || Array.isArray(sp)) { add('bad-pose', `slide ${s.no}: space must be a map ({ at: …, dist: … })`, where); continue; }
     for (const k of Object.keys(sp)) if (!SPACE_KEYS.includes(k)) add('unknown-key', `slide ${s.no}: space.${k} is read by nothing (space keys: ${SPACE_KEYS.join(', ')})`, where, 'warning');
-    for (const k of ['dist', 'yaw', 'pitch', 'sway', 'dim', 'asof']) if (sp[k] != null && typeof sp[k] !== 'number') add('bad-pose', `slide ${s.no}: space.${k} must be a number: ${sp[k]}`, where);
+    for (const k of ['dist', 'yaw', 'pitch', 'sway', 'dim', 'asof', 'rateEase']) if (sp[k] != null && typeof sp[k] !== 'number') add('bad-pose', `slide ${s.no}: space.${k} must be a number: ${sp[k]}`, where);
     if (typeof sp.dist === 'number' && !(sp.dist > 0)) add('bad-pose', `slide ${s.no}: space.dist must be above 0: ${sp.dist}`, where);
     if (typeof sp.pitch === 'number' && Math.abs(sp.pitch) >= 90) add('bad-pose', `slide ${s.no}: space.pitch must lie within ±90: ${sp.pitch}`, where);
     if (typeof sp.dim === 'number' && (sp.dim < 0 || sp.dim > 1)) add('bad-pose', `slide ${s.no}: space.dim must lie within 0..1: ${sp.dim}`, where);
     const looks = [];
+    for (const k of ['rate', 'cameraRate']) {
+      const v = sp[k];
+      const ok = v == null || typeof v === 'number' || (Array.isArray(v) && v.every((x) => Array.isArray(x) && x.length === 2 && x.every((n) => typeof n === 'number')));
+      if (!ok) add('bad-pose', `slide ${s.no}: space.${k} must be a number or keyframes [[seconds, rate], …]`, where);
+    }
+    if (sp.path != null) {
+      if (!Array.isArray(sp.path) || !sp.path.every((x) => Array.isArray(x) && x.length === 2 && typeof x[0] === 'number' && x[1] && typeof x[1] === 'object')) add('bad-pose', `slide ${s.no}: space.path must be keyframes [[seconds, { at, dist, yaw, pitch }], …]`, where);
+      else for (const [, kp] of sp.path) {
+        if (kp.at == null || Array.isArray(kp.at)) continue;
+        if (!names.some(([n]) => n === String(kp.at))) {
+          const near = nearest(String(kp.at), names);
+          add('unknown-station', `slide ${s.no}: a path key's at does not resolve: ${kp.at}${near ? ` (did you mean ${near[0]}?)` : ''}`, where);
+        }
+      }
+    }
     if (sp.at != null) {
       nPoses++;
       if (Array.isArray(sp.at)) { if (!isVec(sp.at)) add('bad-vector', `slide ${s.no}: space.at must be [x, y, z] or a name: [${sp.at.join(', ')}]`, where); }
