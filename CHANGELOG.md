@@ -4,6 +4,56 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## v0.8.0 — 2026-10-11
+
+slidev-videos 0.8.0 · slidev-addon-stage 0.5.0 · slidev-addon-videos 0.8.0
+
+For the opening OpenData and Užsikrauk karjerai share (out of the LHC tunnel,
+into a collision in the black), and the fixes the talks' renders asked for.
+
+- **The stage's clocks.** A slide's `space.rate` sets how fast the world runs:
+  every form, the dust, each builder's `t`. It takes a number, eased over
+  `rateEase` seconds, or keyframes `[[s, rate], …]` from the slide's opening;
+  0 freezes the world, the maximum is 8, and a slide without one eases back
+  to 1.
+  - `cameraRate` gives the camera a clock of its own. Bullet time is the
+    world near 0 with `cameraRate: 1`.
+  - `path` flies the camera through timed keys (`[[s, { at, dist, yaw,
+    pitch }], …]`) on a smooth curve.
+  - `space.setRate()` and the `rate` event do the same by hand.
+  - stage:check reads all three.
+- **`space.ambient`** (0–1, eased the same way) takes the ground and its
+  glows, the nebula, the dust field, the halo, the scrim's tint and the film
+  grain to true black together; the deck's own forms stay lit. Measured on
+  the example: (0, 0, 0) at 0.
+- **Builders get more in `ctx`:**
+  - `tier` and `budget`: grains per tier, 300k / 160k / 60k / 30k.
+  - `rate()`, `cameraRate()` and `on('rate', fn)`.
+  - `audio()` → `{ context, out }`, the stage's output at `sound.level`,
+    which the stage's own voices now go through as well.
+  - Per slide, `space.hum: false` turns the hum off.
+- **`exit="push"` on a VideoPlayer** pushes the camera on into a point of the
+  clip's frame (`exit-at`):
+  - The live clip keeps playing as it zooms, accelerating. Grains stream
+    past the lens.
+  - The screen ends in black, held `exit-hold` ms (600), then lifted over
+    `exit-lift` ms (500).
+  - A clip from a release still plays on through the push: a 2D canvas may
+    draw a video it cannot read.
+- **Settling under load.** A frame `--changed` caught failing (not settled,
+  failed, a page error or a failed request) is no longer cached: it is shot
+  again. One slow run had blocked every later `talk ready` (OpenData,
+  Užsikrauk karjerai). Settle counts seconds at rate 1, waits for the last
+  rate key and the end of the path, and takes a frozen world as settled. Its
+  wall cap also stretches, up to fourfold, to the pace a loaded machine
+  measures. Two renders on one gluon node ran at about 2 fps.
+- **Docs.**
+  - The README's cover example carries no text. The talks put pictures and
+    numbers on screen.
+  - "Animate from `t`" now covers a slide's own timers too: a `setTimeout`
+    races the headless tools.
+  - A deck that opens on a clip needs `layout: default` on slide 1.
+
 ## v0.7.0 — 2026-10-09
 
 slidev-videos 0.7.0 · slidev-addon-stage 0.4.0 · slidev-addon-videos 0.7.0
