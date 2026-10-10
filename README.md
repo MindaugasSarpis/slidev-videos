@@ -67,6 +67,21 @@ the slide or taken a click on it since the clip started, the clip's end does
 nothing, and a looping clip never ends. The player also sends a
 `slidev-videos:advance` event (`{ src, from }`) as it goes on.
 
+**Push out of a clip:** `<VideoPlayer src="tunnel.mp4" transition="dust"
+exit="push" exit-at="0.44,0.40" />` leaves by pushing the camera on into that
+point of the frame (fractions of the clip's own frame): the clip keeps
+playing as it rushes at the lens, accelerating, over `exit-ms` (1200), its
+grains streaming outward past the camera; the screen ends in black, held
+`exit-hold` ms (600), then lifted over `exit-lift` ms (500) onto the next
+slide. A clip from a release, which the page may not read, still plays on
+through the push: the zoom draws the `<video>` itself, and the grains take
+their colours from the strip. On a stage deck, a next slide with
+`space: { ambient: 0 }` stays black under the lift.
+
+**A deck that opens on a clip:** Slidev gives the first slide the cover
+layout, whose box holds a full-bleed player at 0 px tall; set `layout:
+default` on slide 1.
+
 **StagePhoto:** a full-bleed photograph that arrives and leaves like a clip
 with `transition: dust`:
 

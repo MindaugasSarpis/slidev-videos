@@ -42,6 +42,8 @@ import { getOverlay, announce, warmStrip, stripFrame, liveFrame, fitPicture, mea
 //     dustFrom: lit               (lit | start — a clip that opens on black arrives as its first lit frame and plays from there)
 //     dustStyle: frame            (frame | flight — grains fill the frame and condense in place, or gather into a card that flies in)
 //     advanceOnEnd: false         (true — when a clip ends, the deck goes on to the next slide)
+//   per player: exit="push" exit-at="0.44,0.40" (the camera pushes on into that point
+//   of the frame and the screen ends in black; exit-ms, exit-hold, exit-lift)
 const CFG = (configs && configs.videos) || {}
 const ENV = import.meta.env
 const REPO    = CFG.repo    || ENV.VITE_VIDEO_REPO    || ''
@@ -113,6 +115,18 @@ const props = defineProps({
   // clip started on with no click taken since, and never for a looping clip.
   // `undefined` = `videos.advanceOnEnd`, else false.
   advanceOnEnd: { type: Boolean, default: undefined },
+  // How the clip leaves, beyond `transition`: `push` pushes the camera on into
+  // the point `exitAt` of the frame ("0.44,0.40", fractions of the clip's own
+  // frame): the clip keeps playing as it rushes at the lens, accelerating, over
+  // `exitMs` (default 1200), its grains streaming past; the screen ends in
+  // black, held `exitHold` ms (600), then lifted over `exitLift` ms (500) onto
+  // the next slide. Needs the dust overlay (else the clip leaves as
+  // `transition` says) and a strip or a readable frame for the grains.
+  exit:     { type: String, default: '' },
+  exitAt:   { type: String, default: '' },
+  exitMs:   { type: Number, default: 1200 },
+  exitHold: { type: Number, default: 600 },
+  exitLift: { type: Number, default: 500 },
 })
 const effHq     = computed(() => props.hq === undefined ? (CFG.hq ?? false) : props.hq)
 const effFit    = computed(() => props.fit || CFG.fit || 'cover')
@@ -125,6 +139,11 @@ const effTransition = computed(() => {
   return t === 'dust' && REDUCED_MOTION ? 'fade' : t
 })
 const effDust = computed(() => props.dust || CFG.dust || '#7dd3fc')
+const effPush = computed(() => String(props.exit || '').toLowerCase() === 'push')
+const exitVia = computed(() => {
+  const m = String(props.exitAt || '').split(/[\s,]+/).map(Number)
+  return m.length === 2 && m.every(Number.isFinite) ? m.map((v) => Math.min(1, Math.max(0, v))) : [0.5, 0.5]
+})
 const effDustStyle = computed(() => String(props.dustStyle || CFG.dustStyle || 'frame').toLowerCase() === 'flight' ? 'flight' : 'frame')
 const effVolume = computed(() => {
   const v = props.volume === undefined ? CFG.volume : props.volume
@@ -264,7 +283,8 @@ function seekTo(video, t) {
   })
 }
 
-async function raiseSheet(kind, time) {
+let lastFit = null           // the last sheet's picture rect (screen px) and visible part of the frame
+async function raiseSheet(kind, time, extra = {}) {
   const overlay = getOverlay()
   const wrap = wrapRef.value
   sheetColor = null
@@ -280,7 +300,8 @@ async function raiseSheet(kind, time) {
   if (sb && sb.width > 2 && (box.width < 2 || (Math.abs(box.width - sb.width) < 2 && Math.abs(box.height - sb.height) < 2))) box = sb
   if (box.width < 2 || box.height < 2) return null
   const { rect, uv } = fitPicture(box, frame.size, effFit.value)
-  return overlay[kind]({ image: frame.image, rect, uv, dust: effDust.value, style: effDustStyle.value, source: frame.source, duration: kind === 'enter' ? DUST_ENTER_MS : DUST_LEAVE_MS })
+  lastFit = { rect, uv }
+  return overlay[kind]({ image: frame.image, rect, uv, dust: effDust.value, style: effDustStyle.value, source: frame.source, duration: kind === 'enter' ? DUST_ENTER_MS : DUST_LEAVE_MS, ...extra })
 }
 
 async function enter() {
@@ -350,12 +371,19 @@ async function exit() {
   const video = videoRef.value
   announce('cover', { covered: false, src: props.src, fit: effFit.value })
   let handle = null
-  if (mode === 'dust' && wasShown && video) {
-    handle = await raiseSheet('leave', video.currentTime || 0)
+  const push = effPush.value && wasShown && !!video
+  if ((mode === 'dust' || push) && wasShown && video) {
+    handle = push
+      ? await raiseSheet('leave', video.currentTime || 0, { style: 'push', via: exitVia.value, duration: Math.max(200, props.exitMs), hold: Math.max(0, props.exitHold), lift: Math.max(0, props.exitLift) })
+      : await raiseSheet('leave', video.currentTime || 0)
     if (id !== run) { handle?.cancel(); return }
+    // the live clip rushes in under the grains, playing on
+    if (push && handle && lastFit) getOverlay()?.zoom?.({ video, rect: lastFit.rect, uv: lastFit.uv, via: exitVia.value, duration: Math.max(200, props.exitMs) })
   }
+  const pushing = push && !!handle
+  const leaveMs = pushing ? Math.max(200, props.exitMs) + Math.max(0, props.exitHold) + Math.max(0, props.exitLift) : mode === 'dust' ? DUST_LEAVE_MS : FADE_MS
   // `color`: what the picture was, on the whole, as it broke up — for whoever wants to carry it on
-  announce('transition', { phase: 'leave', mode, src: props.src, duration: mode === 'dust' ? DUST_LEAVE_MS : FADE_MS, color: handle ? sheetColor : null })
+  announce('transition', { phase: 'leave', mode: pushing ? 'push' : mode, src: props.src, duration: leaveMs, color: handle ? sheetColor : null })
   instant.value = !!handle     // the sheet is the picture now; the <video> goes at once
   revealed.value = false
   const rest = () => {
@@ -371,7 +399,12 @@ async function exit() {
   // The clip plays on, unseen, while its sound fades; then it rests. It rests
   // only once the picture has gone: back at its first frame while it still
   // showed, an ended or muted clip flashed that frame under the sheet.
-  if (video && wasShown && !video.paused && !video.muted) rampVolume(video, 0, AUDIO_OUT_MS, rest)
+  // Pushing, it plays on (unseen; the overlay draws it) through the push, its
+  // sound going with it, and rests once the push is over.
+  if (pushing) {
+    if (!video.paused && !video.muted) rampVolume(video, 0, Math.max(200, props.exitMs))
+    setTimeout(rest, Math.max(200, props.exitMs) + 50)
+  } else if (video && wasShown && !video.paused && !video.muted) rampVolume(video, 0, AUDIO_OUT_MS, rest)
   else setTimeout(rest, handle ? INSTANT_MS : FADE_MS)
 }
 

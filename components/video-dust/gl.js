@@ -16,7 +16,12 @@
 //   leaving    the picture breaks up from its edges in, its grains thrown
 //              toward and past the camera, so the viewer goes through them.
 //              They keep the picture's colours. In `flight` the picture first
-//              stands back a little, turned aside.
+//              stands back a little, turned aside. (style `push`) the camera
+//              pushes on into one point of the picture (`via`): the frame
+//              rushes at the lens, accelerating, centred on that point, its
+//              grains streaming outward past the camera, and the overlay ends
+//              in black, held, then lifted (exit="push" on a VideoPlayer, which
+//              zooms the live clip under it the same way).
 //
 // Several sheets can run at once: stepping from one clip straight to the next
 // scatters the first while the second assembles.
@@ -35,6 +40,8 @@ uniform float uFade, uTime, uLeave;
 uniform float uUp;      // leaving: how far the sheet has come up over the picture, 0..1 (over 0.2 s)
 uniform float uGlow;    // 1: the glow pass — the same grains again, wide and faint, added over
 uniform float uFlight;  // 1: style flight, the picture as a card off in the world; 0: frame, in place
+uniform float uPush;    // 1: style push (leaving only): into the point uVia, in canvas px
+uniform vec2 uVia;
 uniform vec3 uDust;
 out vec4 vColor;
 out float vLanded;
@@ -61,7 +68,8 @@ void main() {
 
   float p;        // how far the grain is home: 0 adrift … 1 in its cell
   float away;     // how far the plane stands from the frame: 1 out in the world … 0 filling the frame
-  bool frame = uFlight < 0.5;
+  bool push = uPush > 0.5 && uLeave > 0.5;
+  bool frame = uFlight < 0.5 && !push;
   bool arriving = uLeave < 0.5;
   if (arriving && frame) {
     p = ease(clamp(uU * 1.35 - late * 0.35, 0.0, 1.0));                // the centre is home by 0.74, the corners by 1
@@ -69,6 +77,9 @@ void main() {
   } else if (arriving) {
     p = ease(clamp(uU / 0.64 * 1.6 - late * 0.6, 0.0, 1.0));           // gathered by 0.64
     away = 1.0 - ease(clamp((uU - 0.36) / 0.64, 0.0, 1.0));            // then the flight to the frame
+  } else if (push) {
+    p = 1.0 - uU * uU;                                                 // adrift as the push gathers speed
+    away = 0.0;
   } else {
     float v = max(uU - 0.08, 0.0) / 0.92;                              // the sheet comes up first
     p = 1.0 - ease(clamp(v * 1.7 - (1.0 - late) * 0.7, 0.0, 1.0));
@@ -107,6 +118,22 @@ void main() {
     float cw = cos(w), sw = sin(w);
     d.xy = vec2(d.x * cw - d.y * sw, d.x * sw + d.y * cw);
     P = home + vec3(0.0, 0.0, -F) + d + fly * 0.05 * vec3(sin(uTime * 0.9 + aSeed.w * 40.0), cos(uTime * 0.7 + aSeed.z * 40.0), 0.0);
+  } else if (push) {
+    // The plane comes at the lens, accelerating (pushDepth), so on screen the
+    // picture grows about the point the camera pushes into; each grain at a
+    // depth of its own, more spread the faster it goes, and torn a little
+    // outward: the grains near the point stream past last, the rest leave
+    // the frame first.
+    vec2 viaPx = uVia;
+    vec3 via = vec3((viaPx.x / uCanvas.x * 2.0 - 1.0) * A, 1.0 - viaPx.y / uCanvas.y * 2.0, 0.0);
+    float v = uU * uU;
+    float d = F * (1.0 - 0.97 * v);
+    float dz = d * (1.0 + (aSeed.z - 0.5) * 0.9 * v);
+    vec2 rel = (home.xy - via.xy) * (1.0 + 0.5 * v * aSeed.x);
+    float tw = 0.25 * v * (aSeed.w - 0.5);
+    rel = vec2(rel.x * cos(tw) - rel.y * sin(tw), rel.x * sin(tw) + rel.y * cos(tw));
+    vec2 scr = via.xy + rel * (F / max(dz, 0.05));
+    P = vec3(scr * dz / F, -dz);
   } else {
     P += drift;
   }
@@ -151,6 +178,9 @@ void main() {
   // picture at a strip's resolution, and put up all at once over a sharp
   // frame it showed as a drop in quality before anything had moved.
   alpha *= uLeave < 0.5 ? smoothstep(0.0, 0.10, uU) : smoothstep(0.0, 1.0, uUp);
+  // pushing, the live clip carries the first half (the player zooms it the same
+  // way); the grains take over as it goes, and are gone as the black comes up
+  if (push) alpha *= smoothstep(0.15, 0.6, uU) * (1.0 - smoothstep(0.8, 1.0, uU));
   if (frame) {
     // Dispersed, a grain is never brighter than luminance 0.62 (a pale photo
     // must not turn the frame into a white veil) and takes its true colour
@@ -199,6 +229,11 @@ const MIN_COLS = 200, MAX_COLS = 448, PX_PER_CELL = 6;
 
 const smooth = (x) => x * x * (3 - 2 * x);
 
+// The push's plane: how many times nearer it stands at u (0..1) of the push,
+// the scale the picture has grown to about the point. The shader's maths; the
+// player zooms the live clip by it.
+export const pushScale = (u) => 1 / (1 - 0.97 * Math.min(1, Math.max(0, u)) ** 2);
+
 function compile(gl, type, src) {
   const sh = gl.createShader(type);
   gl.shaderSource(sh, src); gl.compileShader(sh);
@@ -238,7 +273,7 @@ export function createDust(canvas) {
     console.warn('[slidev-addon-videos]', e.message || e);
     return null;
   }
-  loc = Object.fromEntries(['uTex', 'uRect', 'uUv', 'uCanvas', 'uCellPx', 'uU', 'uFade', 'uTime', 'uLeave', 'uUp', 'uGlow', 'uFlight', 'uDust']
+  loc = Object.fromEntries(['uTex', 'uRect', 'uUv', 'uCanvas', 'uCellPx', 'uU', 'uFade', 'uTime', 'uLeave', 'uUp', 'uGlow', 'uFlight', 'uPush', 'uVia', 'uDust']
     .map((n) => [n, gl.getUniformLocation(prog, n)]));
 
   // One grid serves every sheet: cells are in picture fractions, so the same
@@ -301,7 +336,15 @@ export function createDust(canvas) {
     const box = resize();
     const k = bufW / cssW;
     gl.viewport(0, 0, bufW, bufH);
-    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    // a push ends in black: up over its last fifth, held `hold` ms, lifted over `lift` ms
+    let black = 0;
+    for (const s of sheets) {
+      if (s.style !== 'push' || s.mode !== 'leave') continue;
+      const t = now - s.start, d = s.duration;
+      black = Math.max(black, t < d ? smooth(Math.max(0, (t / d - 0.8) / 0.2)) : t < d + s.hold ? 1 : 1 - smooth(Math.min(1, (t - d - s.hold) / Math.max(1, s.lift))));
+    }
+    gl.clearColor(0, 0, 0, black); gl.clear(gl.COLOR_BUFFER_BIT);
+    canvas.dataset.black = black.toFixed(2);
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.useProgram(prog);
     gl.bindVertexArray(vao);
@@ -313,7 +356,12 @@ export function createDust(canvas) {
     for (const s of [...sheets]) {
       // a leaving sheet comes up over 0.2 s and can hold whole for `hold` ms before it breaks up
       const t = now - s.start;
-      const u = Math.min(1, Math.max(0, t - (s.mode === 'leave' ? s.hold : 0)) / s.duration);
+      const pushing = s.style === 'push' && s.mode === 'leave';
+      if (pushing && t >= s.duration) {                     // the black's hold and lift: no grains left
+        if (t >= s.duration + s.hold + s.lift) drop(s);
+        continue;
+      }
+      const u = Math.min(1, Math.max(0, t - (s.mode === 'leave' && !pushing ? s.hold : 0)) / s.duration);
       gl.uniform1f(loc.uUp, Math.min(1, t / UP_MS));
       if (s.mode === 'enter') {
         s.progress = u;
@@ -322,6 +370,9 @@ export function createDust(canvas) {
           s.fade = 1 - smooth(Math.min(1, (now - s.releaseAt) / s.releaseMs));
           if (s.fade <= 0) { drop(s); continue; }
         }
+      } else if (pushing) {
+        s.progress = 1 - u;
+        s.fade = 1;
       } else {
         s.progress = 1 - u;
         s.fade = 1 - smooth(Math.max(0, (u - 0.6) / 0.4));
@@ -336,6 +387,11 @@ export function createDust(canvas) {
       gl.uniform1f(loc.uFade, s.fade);
       gl.uniform1f(loc.uLeave, s.mode === 'leave' ? 1 : 0);
       gl.uniform1f(loc.uFlight, s.style === 'flight' ? 1 : 0);
+      gl.uniform1f(loc.uPush, pushing ? 1 : 0);
+      if (pushing) {
+        const vx = r.left + (s.via[0] - s.uv[0]) / s.uv[2] * r.width, vy = r.top + (s.via[1] - s.uv[1]) / s.uv[3] * r.height;
+        gl.uniform2f(loc.uVia, (vx - box.left) * k, (vy - box.top) * k);
+      }
       gl.uniform3f(loc.uDust, s.dust[0], s.dust[1], s.dust[2]);
       gl.bindTexture(gl.TEXTURE_2D, s.tex);
       gl.uniform1f(loc.uGlow, 0);
@@ -349,12 +405,12 @@ export function createDust(canvas) {
       }
     }
     gl.bindVertexArray(null);
-    if (sheets.size) raf = requestAnimationFrame(frame);
+    if (sheets.size || black > 0) raf = requestAnimationFrame(frame);
     else { canvas.dataset.dust = 'idle'; onIdle?.(); }
   }
 
   let onIdle = null;
-  function add(mode, { image, rect, uv = [0, 0, 1, 1], dust, duration, source = '', style = 'frame', hold = 0 }) {
+  function add(mode, { image, rect, uv = [0, 0, 1, 1], dust, duration, source = '', style = 'frame', hold = 0, via = [0.5, 0.5], lift = 500 }) {
     if (disposed || gl.isContextLost()) return null;
     resize();
     const cols = Math.min(MAX_COLS, Math.max(MIN_COLS, Math.round(bufW / PX_PER_CELL)));
@@ -362,8 +418,9 @@ export function createDust(canvas) {
     let tex;
     try { buildGrid(cols, rows); tex = texture(image); } catch { return null; }
     const sheet = {
-      mode, style: style === 'flight' ? 'flight' : 'frame', tex, rect, uv, dust: parseColor(dust), duration,
-      hold: Math.max(0, Number(hold) || 0),
+      mode, style: style === 'flight' ? 'flight' : style === 'push' && mode === 'leave' ? 'push' : 'frame', tex, rect, uv, dust: parseColor(dust), duration,
+      hold: Math.max(0, Number(hold) || 0), lift: Math.max(0, Number(lift) || 0),
+      via: [0, 1].map((i) => Math.min(1, Math.max(0, Number(via?.[i] ?? 0.5)))),
       start: performance.now(), progress: mode === 'enter' ? 0 : 1, fade: 1,
       assembled: false, releaseAt: null, releaseMs: 450,
     };
