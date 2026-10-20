@@ -21,12 +21,15 @@ import { createSpace } from './stage/space.js';
 import { warmAudio, playCollision, playWhoosh, playRise, startHum, stopHum, humProbe, stageOut } from './stage/sound.js';
 import { shared } from './stage/shared.js';
 import { formatCount, countLang } from './stage/count.js';
+import { setStep, setSteps, stepOf, hasStep, onStep, setStepLater, tickSteps, stepWaiting, stepper } from './stage/steps.js';
+import { GRAIN_GLSL, GRAIN_FRAG, NEAR, grainMaterial, grainPoints, grainGeometry } from './stage/grains.js';
 
 // Plugins shipped with the package, loaded on demand by name
 // (`stage.plugins: [hadron]`), so a deck that does not want one never
 // downloads it.
 const SHIPPED = {
   hadron: () => import('./stage/plugins/hadron.js'),
+  lhcb: () => import('./stage/plugins/lhcb.js'),
 };
 const installed = shared('plugins', () => new Set());   // one per page, whichever copy of the package installs
 const api = { registerBuilder, setLabelSegmenter, setLabelFont, definePalette, helpers };
@@ -57,4 +60,6 @@ export {
   PALETTES, DEFAULT_PALETTE, LOOKS, definePalette, resolvePalette, resolveLook, liftGround, paletteVars,
   warmAudio, playCollision, playWhoosh, playRise, startHum, stopHum, humProbe, stageOut,
   formatCount, countLang,
+  setStep, setSteps, stepOf, hasStep, onStep, setStepLater, tickSteps, stepWaiting, stepper,
+  GRAIN_GLSL, GRAIN_FRAG, NEAR, grainMaterial, grainPoints, grainGeometry,
 };

@@ -32,6 +32,12 @@ export const PLUGIN_TYPES = {
     spheres: ['pos', 'ids', 'origin', 'scale', 'rows'],
     planes: ['pos', 'planes', 'origin', 'scale', 'height', 'depth'],
   },
+  lhcb: {
+    detector: ['pos', 'name'],
+    emblem: ['pos', 'name'],
+    floor: ['pos', 'name'],
+    supports: ['name', 'parts'],
+  },
 };
 
 // The ids an object offers as anchors: places a pose (`at:`) or a stop can name.

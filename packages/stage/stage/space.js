@@ -14,6 +14,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { SIM_VERT, COPY_FRAG, VEL_FRAG, POS_FRAG, RENDER_VERT, RENDER_FRAG } from './shaders/passes.glsl.js';
 import { NOISE } from './shaders/noise.glsl.js';
+import { tickSteps } from './steps.js';
 import { createPhotoPlace } from './photo-place.js';
 import { buildStation, helpers } from './builders.js';
 import { shell } from './materials.js';
@@ -598,6 +599,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     [posA, posB] = [posB, posA]; [velA, velB] = [velB, velA];
     fieldMat.uniforms.uPos.value = posA.texture; fieldMat.uniforms.uVel.value = velA.texture;
 
+    tickSteps(elapsed);   // steps set for later (setStepLater) fall due on the world's clock
     for (const s of stations.values()) s.built.update(elapsed, curPos);
     for (const [id, p] of places) {
       const want = placeWanted(id, p) ? 1 : 0;

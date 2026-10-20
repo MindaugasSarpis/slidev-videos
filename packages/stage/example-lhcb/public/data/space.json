@@ -1,0 +1,12 @@
+{
+  "stations": [
+    {
+      "id": "lhcb", "pos": [0, 0, 0], "look": { "dist": 26, "yaw": -55, "pitch": 14 }, "gather": 0,
+      "objects": [
+        { "type": "detector", "name": "det", "pos": [-1, 0, 0], "src": "lhcb", "parts": "lhcb", "alpha": 0.5, "size": 1.4, "out": [14, 0, 0] },
+        { "type": "floor", "name": "floor", "of": "det", "pos": [4, -8.1, 0], "area": [30, 26] },
+        { "type": "emblem", "name": "ltFlag", "flag": "lt", "pos": [4, 9.5, 0], "width": 4, "wave": 0.12, "yaw": -55 }
+      ]
+    }
+  ]
+}

@@ -4,6 +4,7 @@
 // of the addon.)
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { stageData } from './stage/data.mjs';
 
 // Does `three` resolve from the deck's directory: its own node_modules, or a
 // workspace's above it?
@@ -31,5 +32,8 @@ export default {
     // with no three of its own keeps the addon's (dedupe would leave the
     // engine's import unresolved).
     config: (config) => (deckHasThree(config.root || process.cwd()) ? { resolve: { dedupe: ['three'] } } : null),
-  }],
+  },
+  // the data files a deck names (`src: lhcb`): fetched, checked, cached; served at
+  // stage-data/ in dev and emitted there by a build (stage/data.mjs)
+  stageData()],
 };
