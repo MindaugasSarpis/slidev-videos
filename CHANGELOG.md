@@ -4,6 +4,103 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## v0.9.0 — 2026-10-20
+
+slidev-videos 0.9.0 · slidev-addon-stage 0.6.0 · slidev-addon-videos 0.9.0
+
+The visuals the talks built for themselves, lifted into the stage so the
+next talk uses them instead of copying them.
+
+**Every v0.8.1 deck behaves the same under v0.9.0.**
+- Nothing here changes what an existing deck draws or how its steps run.
+- A detector without `parts` keeps its one `color`.
+- A talk's own buses (`master:grains`, `innoday:grains`) and its copies of
+  these files keep working beside the kit's.
+- A deck that names no data never fetches anything.
+
+So the talks adopt this one at a time: MasterTalk first, then Tokyo; the
+others after their dates.
+
+- **The step bus** is lifted from MasterTalk's and Užsikrauk karjerai's
+  `setup/grains.js`.
+  - `setStep`, `setSteps`, `stepOf`, `onStep`, `stepper` and
+    `setStepLater` are exported from the package for a deck's own builders.
+  - `setStepLater` is a step after a delay in world seconds: the engine now
+    ticks it, so a frozen world holds it.
+  - `<StageSteps :set :clicks>` is the talks' `Grains.vue`. It steers the
+    world only from the live slide, never from the overview or the previews.
+- **Grain helpers** come from the same files: `grainMaterial`,
+  `grainGeometry`, `grainPoints`, `GRAIN_GLSL`. The near fade and the size
+  cap are options (`near`), not constants.
+- **The gate:** `setStageGate((start) => off)` holds heavy work until a deck
+  says go. It replaces Innoday's `afterCover` latch for the kit's forms.
+- **`plugins: [lhcb]`**, a shipped plugin like `hadron`.
+  - **`detector`** is LHCb's real Run 3 geometry as grains. It reconciles
+    MasterTalk's `setup/route.js` with Innoday's `setup/detector.js`:
+    MasterTalk's keys, steps and frame (lhc-collision's, `W = [z·S, y·S·T,
+    x·S·T]`), plus Innoday's thinning on a lower tier, hidden while off,
+    `prewarm`, `hole` and `near`.
+  - **New in the detector:** `parts` colours it by sub-detector. `parts:
+    lhcb` is white and light blue only, the trackers brightest and the
+    magnet a frame; an object overrides single parts (Innoday's weights
+    become data). Hits stay `hot`. The event's tracks come from
+    `setLhcbTracks`.
+  - **`emblem`, `floor` and `supports`** come from Innoday's
+    `setup/emblems.js`: an image or the Lithuanian flag as grains, the
+    cavern floor, the cradles.
+- **The geometry's data is not in the package.** It lives on the new
+  `geometry-lhcb` release: `lhcb-grains.bin` (93 000 grains, MasterTalk's
+  bake) and `lhcb-grains-dense.bin` (446 400, Innoday's), with
+  `lhcb-grains.NOTICE.txt`.
+  - **Licence:** the grains are derived from LHCb's DD4hep description
+    (GPL-3.0, © CERN for the benefit of the LHCb Collaboration) through HSF
+    Phoenix's glTF (Apache-2.0), and are distributed under the GPL-3.0. The
+    toolkit's code stays MIT.
+  - **How a deck gets it:** `src: lhcb` / `lhcb-dense` makes a dev or build
+    run fetch the file under Node (a release asset sends no CORS header),
+    check it against the sha256 pinned in `stage/data.mjs` and cache it. The
+    file is served in dev and written to `stage-data/` in the build, with
+    its notice, so the Pages site and the venue zip carry it.
+  - **Failures stop the build:** a missing network or a changed file names
+    the file and the cache directory, and stops the build of that deck
+    alone.
+  - **Tested:** a build from a warm cache with the network off emits all
+    five files, and a zip of it holds them. A cold cache offline fails with
+    that message.
+- **`<StageDepthGrains>`, the still-and-depth hand-over,** is lifted from
+  Innoday's `<LisTakeover>`, `lisGrains.js`, and the sampling of
+  `takeover.js` and `view.js`, now `stage/depth-grains.js`.
+  - A clip's last frame becomes grains, each where its surface stood, at an
+    anchor in the world. The camera pulls back on the slide's `path` while
+    the picture shrinks to its mark.
+  - **Cues** fire on the camera's distance, or once it stands: steps on the
+    bus, window events, the fade-out. `reset` and `end` replace the
+    talk-specific choreography.
+  - The light injection system is its first use. `lis_flag.mp4` (10 s,
+    silent) joins the shared library, and its last frame, depth and camera
+    (`lis_last.jpg`, `lis_last.depth.png`, `lis.json`) are on
+    `videos-shared` and in `stage-data` by name. All four were added; no
+    asset there was replaced.
+- **`tools/`** holds Blender scripts outside the packages:
+  - `tools/lhcb/bake_grains.py` (with Innoday's density factor) and
+    `build_scene.py`, from MasterTalk;
+  - `tools/lis/lis_scene.py` and `lis_pose.py`, from Innoday.
+- **The example** is a second deck, `packages/stage/example-lhcb`: the
+  detector's steps, the floor, the flag and the hand-over. In headless
+  Chromium (SwiftShader) it shows the sweep, the hits leaving, the 320 000
+  grains of the hand-over, the detector cue at 3.2 units and the fade-out
+  once the camera stands.
+- **stage:check** knows the plugin's types.
+- **Tests:** stage tests 98 → 119 (the bus, part colours never gold, the
+  .bin's thinning and hits, the flag and image marks, the depth placement,
+  the scale law, the gate, the data pins and their failures); the Python
+  suite and every smoke pass.
+
+**Not lifted yet** (still in 3–5 talks): `Count.vue`, `AfterFlight.vue`,
+`WebTakeover.vue`, `CollisionStart.vue`, `OpenerStart.vue`, `Strands.vue`,
+`funnel.js`, `takeover.js` (beyond its sampling), `view.js`, `strands.js`,
+`plots.js`, and `components/lhc-opening`. These follow after 26 Oct.
+
 ## v0.8.1 — 2026-10-11
 
 slidev-videos 0.8.1 · slidev-addon-stage 0.5.1 · slidev-addon-videos 0.8.1

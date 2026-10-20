@@ -6,6 +6,7 @@
 //
 //   src: lhcb        → stage-data/lhcb-grains.bin        (+ its NOTICE)
 //   src: lhcb-dense  → stage-data/lhcb-grains-dense.bin  (+ its NOTICE)
+//   stage-data/<file> named anywhere in the deck or its JSON → that file (lis_last.jpg, …)
 //
 // The cache: $SLIDEV_STAGE_CACHE, else $XDG_CACHE_HOME/slidev-addon-stage, else
 // ~/.cache/slidev-addon-stage. Warm once (any build or dev run that uses them),
@@ -21,6 +22,10 @@ export const FILES = {
   'lhcb-grains.bin': { release: 'geometry-lhcb', size: 744000, sha256: 'd816eaf6af4c2b44348da5fb0f1b7a26485e491572e03bd2523ee483588bf490' },
   'lhcb-grains-dense.bin': { release: 'geometry-lhcb', size: 3571200, sha256: 'a2c895bfa102bea9ff82315fd79f11f4667e81f9510bf4c04d1640ebfdb52df9' },
   'lhcb-grains.NOTICE.txt': { release: 'geometry-lhcb', size: 948, sha256: '73407e0b426ee9c12ccd013c4dbfdc0e2e2f5db6d086a0b01bae4bb1f28e3b49' },
+  // the light injection system clip's last frame, its depth and its camera (tools/lis/lis_scene.py; lis_flag.mp4's)
+  'lis_last.jpg': { release: 'videos-shared', size: 106399, sha256: '06da73328ff7fe0519d776da46597b2c930cc9ddbd4cb5e0e0f465cde681a811' },
+  'lis_last.depth.png': { release: 'videos-shared', size: 11930, sha256: '91a110cf3c7f9ccb70c484d5044db4998d6a7b4f66c42cc649b8eefb25b305f0' },
+  'lis.json': { release: 'videos-shared', size: 846, sha256: '138026cb89c3e414372f82ca3cadd19d0a916f2531d5fbf3c3b68756df4d6898' },
 };
 // a name a deck writes → the files it brings (the data, then its notice)
 export const NAMES = {
@@ -33,12 +38,17 @@ export const cacheDir = (env = process.env) =>
 
 const sha = (buf) => createHash('sha256').update(buf).digest('hex');
 
-// The names a deck uses: `src: lhcb` / `"src": "lhcb-dense"` in its markdown or in
-// the JSON under public/ (its space.json), two levels deep at most.
+// The names a deck uses: `src: lhcb` / `"src": "lhcb-dense"`, or a file named as
+// stage-data/<file>, in its markdown or in the JSON under public/ (its space.json),
+// two levels deep at most.
 export function usedNames(root) {
   const found = new Set();
   const re = /["']?src["']?\s*:\s*["']?(lhcb(?:-dense)?)["']?\s*[,}\n\r]/g;
-  const scan = (text) => { for (const m of text.matchAll(re)) found.add(m[1]); };
+  const named = new RegExp(`stage-data/(${Object.keys(FILES).map((f) => f.replace(/\./g, '\\.')).join('|')})(?![\\w.-])`, 'g');
+  const scan = (text) => {
+    for (const m of text.matchAll(re)) found.add(m[1]);
+    for (const m of text.matchAll(named)) found.add(m[1]);
+  };
   const walk = (dir, depth) => {
     let names = [];
     try { names = readdirSync(dir); } catch { return; }
@@ -54,7 +64,7 @@ export function usedNames(root) {
   walk(join(root, 'public'), 2);
   return [...found].sort();
 }
-export const filesFor = (names) => [...new Set(names.flatMap((n) => NAMES[n] || []))];
+export const filesFor = (names) => [...new Set(names.flatMap((n) => NAMES[n] || (FILES[n] ? [n] : [])))];
 
 // The file's bytes from the cache, fetching it first if need be. Throws a clear error.
 export async function ensure(file, { dir = cacheDir(), fetchImpl = globalThis.fetch, base = RELEASE, tries = 2 } = {}) {

@@ -23,6 +23,8 @@ import { shared } from './stage/shared.js';
 import { formatCount, countLang } from './stage/count.js';
 import { setStep, setSteps, stepOf, hasStep, onStep, setStepLater, tickSteps, stepWaiting, stepper } from './stage/steps.js';
 import { GRAIN_GLSL, GRAIN_FRAG, NEAR, grainMaterial, grainPoints, grainGeometry } from './stage/grains.js';
+import { setStageGate, whenGateOpen } from './stage/gate.js';
+import { samplePixels, sampleFrame, decodeDepth, loadDepth, placeInDepth, makeDepthGrains, scaleLaw, poseOf, poseCamera, viewScale, POINT_GLSL } from './stage/depth-grains.js';
 
 // Plugins shipped with the package, loaded on demand by name
 // (`stage.plugins: [hadron]`), so a deck that does not want one never
@@ -62,4 +64,6 @@ export {
   formatCount, countLang,
   setStep, setSteps, stepOf, hasStep, onStep, setStepLater, tickSteps, stepWaiting, stepper,
   GRAIN_GLSL, GRAIN_FRAG, NEAR, grainMaterial, grainPoints, grainGeometry,
+  setStageGate, whenGateOpen,
+  samplePixels, sampleFrame, decodeDepth, loadDepth, placeInDepth, makeDepthGrains, scaleLaw, poseOf, poseCamera, viewScale, POINT_GLSL,
 };

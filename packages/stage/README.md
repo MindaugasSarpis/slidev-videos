@@ -13,7 +13,7 @@ quarks, clusters, particle names — is a plugin.
 
 ## Install
 
-    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.8.1&path:/packages/stage"
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.9.0&path:/packages/stage"
 
 ## Use
 
@@ -81,7 +81,7 @@ fade; see the root README's *Place groups*. The engine side is
 | `records` | — | `{ records: [{ id, label, rows?, … }], figures: { id: { src, caption, see } } }` |
 | `palette` | `classic` | a name, or an object over a `base` |
 | `look` | — | a named look over the palette: `broadcast` (see [Broadcast and recording](#broadcast-and-recording)) |
-| `plugins` | `[]` | shipped plugins to load: `hadron` |
+| `plugins` | `[]` | shipped plugins to load: `hadron`, `lhcb` |
 | `hero` | `space.hero`, else `hero` | the station the deck opens and closes on; what builds itself there does so on arrival |
 | `sound` | `true` | `false` is silent; `{ hum, flight, clip, level }` picks the voices: a low hum while the camera is at `humAt`, a soft whoosh for each flight of any length, a rising tone as a clip condenses. All start after the first key or click, none in the presenter window |
 | `humAt` | `[hero]` | the stations within reach of which the hum plays; `all` (or `'*'`) hums on every pose, out in the open dust too |
@@ -171,6 +171,58 @@ what stands where the camera is.
 With `plugins: [hadron]`: `pentaquark`, `cluster` (`ghost`, `orbit`, `core`),
 `molecule`, `spheres`, `planes`, and particle names in every world label set
 with their flavour as a subscript (Λb⁰, Σc⁺, Pc(4312)⁺).
+
+### LHCb: `plugins: [lhcb]`
+
+LHCb's real Run 3 geometry as grains, and what stands with it. Each form
+follows its `name` on the step bus (`<StageSteps>`, below).
+
+| type | fields | |
+| --- | --- | --- |
+| `detector` | `pos name` `src scale stretch sweep size alpha color hot parts out hitR hitMin hole near prewarm` | the detector as grains. Step 1 lights it behind a front running out from the collision; step 2 turns the grains the event's tracks pass through `hot` and sends them off to `out` every 3.4 s, while the rest dims; 0 hides it. A jump to a later step shows it whole at once |
+| `emblem` | `pos name` `flag src mode keep tint width yaw pitch grains size alpha wave scrim blend dur of` | an image (`src`) or a flag (`flag: lt`) as grains, gathering out of the dust on step 1 and fading on 0. Drawn over the world's grains unless `blend: add`. `of: det` follows another name's steps (a person for scale) |
+| `floor` | `pos name` `of area step grains size color alpha` | a cavern floor as a faint grid of grains, shown with `of` (default `det`) |
+| `supports` | `name parts` `of floor frame grains size color alpha` | the cradles the sub-detectors stand on, `parts: [[x0, x1, zHalf, yBottom], …]` |
+
+- **`src: lhcb`** (93 000 grains) or **`lhcb-dense`** (446 400) are data,
+  not part of the package. A build fetches them from this repository's
+  `geometry-lhcb` release, checks them against the sha256 pinned in
+  `stage/data.mjs`, and caches them in `$SLIDEV_STAGE_CACHE`, else
+  `~/.cache/slidev-addon-stage`. A build writes them to `stage-data/` with
+  `lhcb-grains.NOTICE.txt`, so the Pages site and the venue zip carry them;
+  dev serves them from the cache. Once the cache is warm, builds work offline.
+- **A failed fetch fails the build.** A file that can't be fetched or doesn't
+  match the pin stops the build with a message naming the file and the cache
+  directory. A deck that names neither file never fetches anything. A deck's
+  own file works too (`src: data/my-grains.bin`): little-endian Int16
+  `[x, y, z, part]` per grain, in mm, in LHCb's frame (z along the beam,
+  y up), baked by `tools/lhcb/bake_grains.py`.
+- **The licence is GPL-3.0.** The geometry is LHCb's DD4hep description
+  (© CERN for the benefit of the LHCb Collaboration), converted to glTF by
+  HSF Phoenix (Apache-2.0). A deck that shows it credits both.
+- **The frame is lhc-collision's:** `W(x, y, z) = [z·S, y·S·T, x·S·T]` for
+  LHCb metres, with `scale` S = 0.5 units a metre and `stretch` T = 2.4 across
+  the beam.
+- **`parts`** colours the detector by sub-detector, in the file's order:
+  `velo pipe rich1 ut magnet scifi rich2 ecal hcal muon`. `parts: lhcb` uses
+  white and light blue only: the trackers (velo, ut, scifi) brightest, the
+  pipe and the magnet deepest, and neighbours along the beam set apart. An
+  object overrides single parts, `parts: { pipe: { alpha: 0 }, velo: {
+  alpha: 0.25 } }`, over the one `color`, or over the kit's colours with
+  `preset: lhcb`. Without `parts`, one `color` (v0.8's behaviour). Hits are
+  `hot` whatever their part.
+- **The hits** come from the event's tracks. Call `setLhcbTracks([[[x, y, z],
+  …], …])` (LHCb metres, from `slidev-addon-stage/plugins/lhcb`) in
+  setup/main.ts, for instance from lhc-opening's `trajectories(event)`.
+- **`hole: [x, y, z, r]`** dims the grains on screen round a point, so a mark
+  in front of them keeps its colours. `<StageDepthGrains :hole>` drives it.
+- **`near: { size, from, to }`** sets the largest grain (px at 900 high,
+  48) and the camera distance over which grains fade in (1.5 → 5 units).
+  Innoday's close, whose camera pulls back past the detector, used 10 /
+  2.5 → 7.
+- **`prewarm`** names an event (default `slidev-stage:prewarm`) that draws
+  the form hidden for a few frames, so its buffers upload and its programs
+  compile before it's needed.
 
 ## Make it yours
 
@@ -288,12 +340,58 @@ steps land at once can say `busy: false`.
 | `.stage[data-flights]`, `[data-assemblies]` | counters, one up per flight and per assembly started |
 | `html[data-space-stop]` | while a stop's record is shown |
 
+
+### Steps
+
+A form that changes as the talk goes (hidden, lit, its readout) takes its step
+from the step bus, which `<StageSteps>` sets from the slides. A deck's own
+builder imports it from the package:
+
+```js
+import { stepper, setStep, stepOf, onStep, setStepLater } from 'slidev-addon-stage'
+
+const s = stepper(o.name)              // { step, prev, fresh, off }
+// in update(t): if (s.fresh) { s.fresh = false; apply(s.step, s.prev) }
+// in dispose: s.off()
+```
+
+- **`setStep(name, k)` and `setSteps({ … })`** set steps; `stepOf(name)`
+  reads one; `onStep(name, fn)` returns an unsubscribe.
+- **`setStepLater(name, k, s)`** sets `k` after `s` seconds of world time,
+  not at the next slide. A frozen world holds it and a faster rate brings it
+  sooner. It returns a cancel, and `stepWaiting(name)` says whether one is
+  pending.
+- **The bus is the event `slidev-stage:steps`,** one per page. A talk's own
+  older bus (`master:grains`, `innoday:grains`) is untouched until the talk
+  moves its forms onto this one.
+
+**Grain helpers.** For a builder's own points, `grainMaterial(vertexShader,
+uniforms, { near })`, `grainGeometry(n, { position, aSeed: [array, 1] })` and
+`grainPoints(geo, mat)` give the engine's linear-light additive grains.
+`GRAIN_GLSL` gives a vertex shader `place(p, size, alpha, color, seed)`,
+`hide()`, `hash()`, `ease()` and `turnY()`. Return `frameScale:
+mat.uniforms.uPixelRatio`, so a grain covers the same share of the picture on
+every screen.
+
+**The gate.** `setStageGate((start) => unsubscribe)` in setup/main.ts holds
+heavy work (the lhcb plugin's fetches and builds, `<StageDepthGrains>`'s load)
+until the deck calls `start`, for instance once the first slide's fly-in is
+over. With no gate set, the work starts at once.
+
 ## Components
 
 - `Stage` — the world. Mounted for you; mount it yourself (`auto: false`) for the `#hud` slot: `<Stage><template #hud="{ record, figure, rows }">…</template></Stage>`. `static-ground` draws the static gradient only.
 - `StageCount` — a number that counts when its slide arrives: `<StageCount name="open" :from="800" :to="4000" />`. Props: `to` (required), `from` (0), `ms` (2900) and `delay` (1000: up, it waits a second and runs on a smoothstep, the pace at which a step's grains arrive), `name`, `decimals` (0), `group`, `plain`, `lang`, `for`. Counts of one `name` continue each other across slides: entered again, a count starts from what that name last landed on, so an unchanged form shows its number at once, and going back counts down over 1.1 s with the scattering grains. Groups of three are set apart by a narrow no-break space (U+202F). `group: 'auto'` follows the language: `lt` groups from five digits up (1844, 55 000) and takes a decimal comma, `en` from four (1 844) with a decimal point; `true` groups from four digits in any language, `false` never (years), and `plain` says `false`. A count is grouped throughout its run when it starts or lands grouped, and lands written as its number alone. `lang` defaults to `stage.lang`, else the deck's `htmlAttrs.lang`, else `en`. `for="<name>"` shows the value of the object of that `name` while the slide is up (its builder's `api.value()`), so the count cannot run ahead of the form; without one it keeps its own clock. Printed, exported, in the overview and under reduced motion it shows `to`.
 
   It takes every prop of the `setup/Count.vue` the talks carried, with the defaults of its named-count version, so a talk moves to it by deleting `setup/Count.vue` and its two lines in `setup/main.ts` (`import Count …`, `app.component('Count', Count)`), and renaming the tags (`sed -i 's/<Count\b/<StageCount/g' deck.md`). A Lithuanian deck adds `lang: lt` to its `stage:` block. Two differences show: where a Count.vue wrote a thin space (U+2009) StageCount writes the narrower U+202F, which never breaks a number across lines; and the older Count.vue (2600 ms, a 350 ms wait, `plain`) eased out where StageCount counts up on a smoothstep, so its tags keep that wait with `:delay="350"` and their own `ms`, and the curve changes. The addon does not register a `Count` of its own: Slidev runs the theme's and the addons' `setup/main` before the deck's, so it cannot tell whether the deck brings one, and the deck's `app.component('Count', …)` would replace it with a warning, or a `components/Count.vue` in the addon would silently win over the deck's. A tag left over is the check's `unknown-component` warning.
+- `StageSteps` — sets named forms' steps when its slide arrives: `<StageSteps :set="{ det: 1, ltFlag: 0 }" />`, and per click with `:clicks="{ 1: { det: 2 } }"` (from that click on). A slide entered at a later click starts there. Only the live slide steers the world: the overview grid and the presenter's previews render every click done, and would step later slides' forms early. A builder reads the steps with `stepper(name)` / `onStep(name, fn)` (see *Steps*).
+- `StageDepthGrains` — a clip's last frame hands over to the world: `<StageDepthGrains src="stage-data/lis_last.jpg" depth="stage-data/lis_last.depth.png" camera="stage-data/lis.json" :anchor="[x, y, z]" :cues="[…]"><h1>Ačiū</h1></StageDepthGrains>`.
+  - **The still first.** The slide opens on the still, the clip's last frame. Under it the frame is already grains, each where its surface is in depth, at `anchor`. The still fades into them (`hold` 400 ms, then `fade` 1400 ms), and the slide's `path` pulls the camera back while the grains shrink.
+  - **The shrink** runs on a power law, from `d0` (the camera's start distance, the path's first key) to `sEnd` units a metre at the path's farthest key. A polygon in the camera JSON's `flagUV` keeps `sKeep` (20), so the mark stays visible.
+  - **`cues`** fire on the camera's distance from the anchor, or once it stands, never on a timer: `{ dist: 3.2, set: { det: 1 } }` sets steps on the bus; `{ dist: 13, emit: 'collision:start' }` sends a window event `slidev-stage:cue` with `{ name }`; `{ stopped: true, set: {…}, fadeOut: 1500 }` fires once the camera stands and fades the grains out.
+  - **`reset`** runs as the hand-over starts, and when the slide is left for anywhere but the next one. **`end`** runs on the next slide, including when that slide is opened directly. **`hole: { name, r }`** dims that detector round the mark until the fade-out.
+  - **The slot** (the word) shows `wordAfter` s (3.2) after the camera stops, and by `wordBy` s (34) at the latest. Without a running world, printed and in the previews, the slide is the still and the word.
+  - **The camera JSON, depth PNG and still** come from `tools/lis/lis_scene.py`. The light injection system's set is in `stage-data` by name (`lis_last.jpg`, `lis_last.depth.png`, `lis.json`, fetched like the geometry), its clip `lis_flag.mp4` in the shared library.
 - `StagePanel` — a translucent panel with a `kicker`, haloed.
 - `StageHalo` — the dust borders. Mounted for you.
 - `StageHero` — a full-bleed hero slide with its own live scene, for a deck without the persistent world: `<StageHero mode="galaxy" kicker="Part I" title="Line one|line two" sound counter />`, modes `proton | galaxy | collider`.

@@ -8,8 +8,9 @@ takes the ones it wants.
 | --- | --- | --- |
 | **`slidev-videos`** | `src/` (Python ≥3.11, stdlib only) | manifest-driven CLI: `fetch · sync · encode · encode-hq · publish · publish-hq · pull · pull-hq · check · shared-check · frames · clean · preflight · venue · build · discover · depth · doctor · contact-sheet`. Web tier is 1080p H.264 with EBU R128 loudness normalisation; clips are hosted as GitHub Release assets |
 | **`slidev-addon-videos`** | repo root | the full-bleed `VideoPlayer`: a local → own-release → shared-release fallback chain, slide-driven playback, look-ahead preload, `cut` / `fade` / `dust` transitions, advance-on-end, native auto-hide controls, keyboard volume; and `StagePhoto`, a photograph that arrives and leaves as grains, or stands in the world as a place |
-| **`slidev-addon-stage`** | [`packages/stage`](packages/stage/README.md) | one persistent 3D world under a whole deck: stations in a field of dust, a camera that flies from slide to slide, palettes, a broadcast look, a builder registry, halo borders, photo places, a validator, a screenshot tool, a per-slide video recorder and a safe-area check |
+| **`slidev-addon-stage`** | [`packages/stage`](packages/stage/README.md) | one persistent 3D world under a whole deck: stations in a field of dust, a camera that flies from slide to slide, palettes, a broadcast look, a builder registry, halo borders, photo places, a step bus, LHCb's geometry as grains (`plugins: [lhcb]`), a still-and-depth hand-over, a validator, a screenshot tool, a per-slide video recorder and a safe-area check |
 | **the shared clip library** | `src/slidev_videos/shared.toml` | the registry, with the encodes on this repo's `videos-shared` Release |
+| **data and the tools that make it** | [`tools/`](tools/README.md) | Blender scripts for the stage's data: LHCb's geometry as grains (on the `geometry-lhcb` Release, GPL-3.0, fetched at build time) and the light injection system clip; outside the packages |
 
 The two addons know of each other only through window events: a clip that
 arrives as dust draws the stage's dust with it, and the stage rests its
@@ -17,10 +18,10 @@ renderer under a clip that covers the slide. Either works alone.
 
 ## Install (per consumer repo)
 
-    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.8.1"
-    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.8.1
-    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.8.1&path:/packages/stage"   # the stage, if wanted
-    pip install "slidev-videos[depth] @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.8.1"   # + depth maps for photo places
+    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.9.0"
+    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.9.0
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.9.0&path:/packages/stage"   # the stage, if wanted
+    pip install "slidev-videos[depth] @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.9.0"   # + depth maps for photo places
 
 What changed between releases: [CHANGELOG.md](CHANGELOG.md).
 

@@ -245,3 +245,10 @@ notes   = "CERN-FOOTAGE-2024-010-002 — FCC-hh tunnel render (0:10). Source: ce
 name    = "mountain.mp4"
 profile = "high-motion"
 notes   = "Mountain aerial with edited audio, 3:07 — the Yaga 2026-07-18 opener. Raw is 4K30 H.264 207 Mbps + 24-bit PCM (4.9 GB); the web encode transcodes the PCM to AAC. Source: released/mountain.mov (outreach, promoted 2026-09-08)"
+
+# --- stage hand-overs (lifted 2026-10-20) --------------------------------------
+
+[[videos]]
+name    = "lis_flag.mp4"
+profile = "silent-loop"
+notes   = "A SciFi module's end with its light injection system, a laser engraving the Lithuanian flag on the cold box; 10 s, silent, played once (Innoday's close, Oct 2026). Rendered by tools/lis/lis_scene.py (Blender 4.5 LTS, Cycles) after the owner's SciFi drawing; H.264 25 fps; the raw is that render, not on gdrive. Its last frame, depth and camera (lis_last.jpg, lis_last.depth.png, lis.json, on this release too) are slidev-addon-stage's stage-data `lis`, which <StageDepthGrains> turns into grains in depth."

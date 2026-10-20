@@ -2,6 +2,7 @@ import { Group, Color, Vector3, Vector4, ShaderMaterial, NormalBlending, Additiv
 import { GRAIN_GLSL, grainMaterial, grainPoints, grainGeometry, rgb } from '../grains.js';
 import { stepper, stepOf, hasStep, onStep } from '../steps.js';
 import { shared } from '../shared.js';
+import { whenGateOpen } from '../gate.js';
 
 // The LHCb plugin: LHCb's real Run 3 geometry as grains, and what stands with it.
 // Lifted from MasterTalk (setup/route.js `detector`, d3dc728) and Innoday
@@ -49,7 +50,7 @@ export const DATA = { lhcb: 'stage-data/lhcb-grains.bin', 'lhcb-dense': 'stage-d
 const config = shared('lhcb', () => ({ tracks: null, gate: null }));
 export function setLhcbTracks(tracks) { config.tracks = tracks || null; }
 export function setLhcbGate(gate) { config.gate = typeof gate === 'function' ? gate : null; }
-const gated = (fn) => (config.gate ? config.gate(fn) || (() => {}) : (fn(), () => {}));
+const gated = (fn) => whenGateOpen(fn, config.gate);   // its own gate, else the stage's (stage/gate.js)
 
 const at3 = (v) => [v?.[0] || 0, v?.[1] || 0, v?.[2] || 0];
 const gauss = () => { let s = 0; for (let i = 0; i < 4; i++) s += Math.random(); return (s - 2) / 1.2; };
