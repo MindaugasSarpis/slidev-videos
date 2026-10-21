@@ -1,6 +1,7 @@
 <script>
 // Module scope (runs once): state shared by every VideoPlayer instance.
 import { ref } from 'vue'
+import { NAV_KEYS } from './video-dust/advance.js'
 
 // ---- session volume ---------------------------------------------------------
 // `+` / `-` set a presenter-chosen level that sticks for every later clip in
@@ -22,12 +23,24 @@ function setSessionVolume(v) {
   sessionVolume.value = v
   try { localStorage.setItem(VOLUME_KEY, String(v)) } catch {}
 }
+
+// ---- the last navigation gesture ----------------------------------------------
+// A press in a clip's last instant navigates by itself; the `ended` that
+// follows must not go on again (video-dust/advance.js). Slidev moves the route
+// a tick after the key, so the time of the press is what tells. One listener
+// each per page, on the capture phase, ahead of Slidev's own.
+let lastNavMs = null
+if (typeof window !== 'undefined') {
+  window.addEventListener('keydown', (e) => { if (NAV_KEYS.has(e.key) || e.code === 'Space') lastNavMs = performance.now() }, true)
+  window.addEventListener('pointerdown', () => { lastNavMs = performance.now() }, true)
+}
 </script>
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useIsSlideActive, useNav, useSlideContext, configs } from '@slidev/client'
 import { getOverlay, announce, warmStrip, stripFrame, liveFrame, fitPicture, meanColor, isLit, firstLitFrame, loadFrameIndex } from './video-dust/bus.js'
+import { advanceGate } from './video-dust/advance.js'
 
 // Config resolution (headmatter beats env beats built-ins):
 //   videos:                       VITE_VIDEO_REPO
@@ -611,21 +624,30 @@ const { currentPage, clicks, next, isPrintMode } = useNav()
 
 // ---- advance on end ---------------------------------------------------------
 // Armed each time the slide becomes the current one, with the click count it
-// stands at; disarmed by leaving. The clip's `ended` goes on only from the
-// arming it belongs to, and only once.
+// stands at; disarmed by leaving, read off the slide's `isActive` and off the
+// route itself (so no `ended` between the two can go on). The clip's `ended`
+// goes on only from the arming it belongs to, and only once; the rules, in
+// order, are video-dust/advance.js's — among them: not under
+// `slidev-stage-record`, which moves the deck itself; without a world (the
+// stage's html[data-stage-fallback]) only onto the next slide's loaded plate
+// (html[data-stage-plate-next]); and not within half a second of a press,
+// which has navigated already.
 const effAdvance = computed(() => props.advanceOnEnd === undefined ? CFG.advanceOnEnd === true : props.advanceOnEnd)
-let armed = null             // { clicks } while armed
-watch(isActive, (on) => { armed = on ? { clicks: clicks?.value ?? 0 } : null }, { immediate: true })
+const gate = advanceGate()
+watch(isActive, (on) => { if (on) gate.arm(clicks?.value ?? 0); else gate.disarm() }, { immediate: true })
+watch(() => currentPage?.value, (p) => { if (p !== $page?.value) gate.disarm() })
 function onEnded() {
-  const a = armed
-  armed = null
-  if (!a || !effAdvance.value || props.loop || videoRef.value?.loop) return
-  if ($renderContext.value !== 'slide' || isPrintMode?.value || !isActive.value) return
-  // slidev-stage-record drives the deck itself and plays clips to their end
-  // to stage the next slide's arrival: it moves on, not the clip
-  if (typeof window !== 'undefined' && window.__rec) return
-  if ($page?.value !== currentPage?.value || (clicks?.value ?? 0) !== a.clicks) return
-  announce('advance', { src: props.src, from: $page.value })
+  const html = document.documentElement.dataset
+  const d = gate.ended({
+    advance: effAdvance.value, loop: props.loop || !!videoRef.value?.loop,
+    context: $renderContext.value, printing: !!isPrintMode?.value, active: isActive.value,
+    rec: typeof window !== 'undefined' && !!window.__rec,
+    page: $page?.value, current: currentPage?.value, clicks: clicks?.value ?? 0,
+    fallback: html.stageFallback, plateNext: html.stagePlateNext,
+    lastNavMs, nowMs: performance.now(),
+  })
+  if (!d.go) return
+  announce('advance', { src: props.src, from: $page.value, reason: d.reason })
   next()
 }
 
