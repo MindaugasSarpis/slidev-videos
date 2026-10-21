@@ -101,6 +101,8 @@ export function parseArgs(argv) {
     else if (a === '--gl') o.gl = oneOf(...GL);
     else if (a === '--chromium') o.chromium = value();
     else if (a === '--encoder') o.encoder = oneOf('auto', 'nvenc', 'x264');
+    // slidev-stage-shots' switch: a fallback rehearsed in the browser leaves the recorder, which films the world, nothing
+    else if (a === '--force') throw new Error('--force: nothing to record under a forced fallback (the recorder films the world); rehearse it with slidev-stage-shots --force');
     else if (a === '-h' || a === '--help') o.help = true;
     else if (a.startsWith('-')) throw new Error(`unknown option ${a}`);
     else rest.push(a);

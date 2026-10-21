@@ -46,7 +46,7 @@ export function probeGL(doc = globalThis.document) {
   return out;
 }
 
-// The panel's lines. s: { status, reason, detail, gl, space, device, events }
+// The panel's lines. s: { status, reason, detail, forced, gl, space, device, events, overrides }
 export function debugLines(s = {}) {
   const gl = s.gl || {}, sp = s.space || {}, dev = s.device || {}, ev = s.events || {};
   const yes = (b) => (b ? 'yes' : 'no');
@@ -55,6 +55,8 @@ export function debugLines(s = {}) {
     `gpu: ${gl.gpu || '?'}`,
     `webgl2 ${yes(gl.webgl2)} · float ${yes(gl.float)} · half-float ${yes(gl.halfFloat)} · float-linear ${yes(gl.floatLinear)} · float-blend ${yes(gl.floatBlend)} · max texture ${gl.maxTexture || '?'}`,
   ];
+  // after the GPU's two lines, which the console line takes as they are
+  if (s.forced) lines.push(`forced: ${s.forced} — ?stage-force in the address, not this device's doing`);
   if (s.overrides && Object.keys(s.overrides).length) lines.push(`overrides: ${Object.entries(s.overrides).map(([k, v]) => `${k}=${v}`).join(' ')}`);
   if (sp.targets) lines.push(`tier ${sp.tier ?? '?'} · targets ${sp.targets}${sp.post === false ? ' · post off' : ''} · sim ${sp.sim}² · dpr ${fix(sp.dpr)} · canvas ${sp.canvas || '?'} · quality step ${sp.guard ?? '?'}`);
   if (sp.fps != null) lines.push(`fps ${fix(sp.fps, 0)} · frames ${sp.frames} · textures ${sp.textures ?? '?'} · programs ${sp.programs ?? '?'}`);
@@ -98,6 +100,17 @@ export function pickTier(gl = {}, dev = {}) {
 //   stage-post=off     the scene straight to the screen, no bloom or finish
 //   stage-targets=half half-float simulation targets even where float would do
 //   stage-tier=0..3    the quality tier
+// and for rehearsing the fallback on a device that has no need of it
+// (`slidev-stage-shots --force REASON` puts the first in the deck's address):
+//   stage-force=REASON  one of FALLBACK_REASONS: the stage falls back as it would
+//                       for that reason, before it probes the GL. reduced-motion
+//                       goes the media query's way (the world at its floor with
+//                       `stage.motion: floor`); context-lost boots the world and
+//                       then loses its live context past its last restore, so the
+//                       real handler takes it down. Shown as `forced` in the panel
+//   stage-plates=off    no plates this session: the living still where one would play
+//   stage-motion=floor|respect   `stage.motion` for this session
+// A value the stage does not know is dropped, never guessed at.
 export function stageOverrides(loc = globalThis.location) {
   if (!loc) return {};
   const q = new URLSearchParams([loc.search || '', (loc.hash || '').split('?').slice(1).join('?')].map((x) => x.replace(/^\?/, '')).filter(Boolean).join('&'));
@@ -106,5 +119,10 @@ export function stageOverrides(loc = globalThis.location) {
   if ((q.get('stage-targets') || '').toLowerCase() === 'half') out.targets = 'half';
   const t = q.get('stage-tier');
   if (t != null && /^[0-3]$/.test(t)) out.tier = Number(t);
+  const f = (q.get('stage-force') || '').trim().toLowerCase();
+  if (FALLBACK_REASONS.includes(f)) out.force = f;
+  if (/^(off|0|false|no)$/i.test(q.get('stage-plates') || '')) out.plates = false;
+  const m = (q.get('stage-motion') || '').trim().toLowerCase();
+  if (m === 'floor' || m === 'respect') out.motion = m;
   return out;
 }

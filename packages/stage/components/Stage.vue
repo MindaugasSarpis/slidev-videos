@@ -55,7 +55,10 @@ import { fallbackLayer, platesDir, plateRelease, plateLocalFirst } from '../stag
 // reduced motion the still stands alone. Why it fell back is on the root and
 // on <html> as data-stage-fallback, as `slidev-stage:fallback` on window and
 // in one console line; `?stage-debug` in the address shows it on screen
-// (stage/diagnose.js).
+// (stage/diagnose.js). `?stage-force=<reason>` rehearses a fallback on a
+// device that has no need of it (slidev-stage-shots --force puts it there),
+// `stage-plates=off` and `stage-motion=floor|respect` stand in for the deck's
+// keys for the session.
 // Printed and exported (`slidev export`, /print, the browser exporter) every
 // slide mounts its own global layers, so a world each would open a WebGL
 // context per page: there, and with `static-ground`, the stage draws no world
@@ -98,8 +101,10 @@ const CONTENT_DIM = Number.isFinite(Number(CFG.dim)) ? Number(CFG.dim) : 0.6
 // under public/ the recorder's NN-plate.mp4 are served from (default videos,
 // false: none); `stage.platesRelease`: where they are pulled from, else the
 // videos addon's own release, in the chain the player builds for a clip.
-const MOTION = CFG.motion === 'floor' ? 'floor' : 'respect'
-const PLATES = platesDir(CFG.plates)
+// `?stage-force`, `stage-plates=off`, `stage-motion` (and stage-post, stage-targets, stage-tier) in the address: stage/diagnose.js
+const OVERRIDES = typeof location !== 'undefined' ? stageOverrides(location) : {}
+const MOTION = OVERRIDES.motion || (CFG.motion === 'floor' ? 'floor' : 'respect')
+const PLATES = OVERRIDES.plates === false ? '' : platesDir(CFG.plates)
 const PLATE_REMOTE = plateRelease(CFG.platesRelease, configs && configs.videos, import.meta.env)
 const PLATE_LOCAL_FIRST = plateLocalFirst(import.meta.env)
 const LAYER_OPTS = { motion: MOTION, plates: PLATES || false }
@@ -152,7 +157,6 @@ const livingRest = computed(() => covered.value || plateState.value === 'playing
 
 // ---- why it runs as it does ---------------------------------------------------
 const debug = typeof location !== 'undefined' && stageDebugOn(location)
-const OVERRIDES = typeof location !== 'undefined' ? stageOverrides(location) : {}   // ?stage-post=off, ?stage-targets=half, ?stage-tier=n
 const debugText = ref('')
 let glInfo = {}
 const events = { contextLost: 0, shaderErrors: 0, lastShaderError: '' }
@@ -160,7 +164,7 @@ const events = { contextLost: 0, shaderErrors: 0, lastShaderError: '' }
 let tier = null
 const canvasKey = ref(0)
 const MAX_RESTORES = 2
-const status = { status: 'starting', reason: '', detail: '' }
+const status = { status: 'starting', reason: '', detail: '', forced: '' }   // forced: the ?stage-force reason, for the panel
 function fallback(reason, detail = '') {
   if (status.status === 'fallback') return
   Object.assign(status, { status: 'fallback', reason, detail: String(detail || '').slice(0, 160) })
@@ -360,11 +364,20 @@ async function boot() {
   if (space || staticBg.value || !canvas.value) return
   // a print page: no world (one WebGL context per page would run out), its still instead
   if (printing.value) { staticBg.value = true; assembled(true); return }
-  glInfo = probeGL(document)
+  // ?stage-force=<reason> (stage/diagnose.js): the fallback that reason brings on a
+  // device, rehearsed on this one — before the probe, whatever its GL. reduced-motion
+  // goes the media query's way below (world-floor with `motion: floor`); context-lost
+  // boots the world and loses its live context at the end of boot(), so the real
+  // handler (onContextLost) takes it down the way iOS would
+  const forced = OVERRIDES.force || ''
+  status.forced = forced
   // reduced motion: the still alone, unless the deck says `motion: floor` — then
   // the world all the same (world-floor; its floor is T1's: for now it runs as it does)
-  const worldLayer = matchMedia('(prefers-reduced-motion: reduce)').matches ? fallbackLayer('reduced-motion', LAYER_OPTS) : 'world'
-  if (worldLayer !== 'world' && worldLayer !== 'world-floor') return fallback('reduced-motion')
+  const reduced = forced === 'reduced-motion' || matchMedia('(prefers-reduced-motion: reduce)').matches
+  const worldLayer = reduced ? fallbackLayer('reduced-motion', LAYER_OPTS) : 'world'
+  if (worldLayer !== 'world' && worldLayer !== 'world-floor') return fallback('reduced-motion', forced === 'reduced-motion' ? 'forced' : '')
+  if (forced && forced !== 'reduced-motion' && forced !== 'context-lost') return fallback(forced, 'forced')
+  glInfo = probeGL(document)
   if (glInfo.reason) return fallback(glInfo.reason, glInfo.gpu)
   if (tier == null && OVERRIDES.tier != null) tier = OVERRIDES.tier
   if (tier == null) tier = Number.isFinite(Number(CFG.tier)) && CFG.tier !== null && CFG.tier !== ''
@@ -422,6 +435,16 @@ async function boot() {
   space.setDim(dim.value)
   apply(true)
   rest()          // a rebuild under a covering clip, or in a hidden tab, rests at once
+  // ?stage-force=context-lost: the world up, its live context is lost as past the
+  // last restore, so onContextLost runs its final branch (no rebuild: the fallback)
+  if (forced === 'context-lost') {
+    events.contextLost = MAX_RESTORES
+    console.warn('stage: forcing context-lost (?stage-force) — losing the live context')
+    try {
+      const gl = canvas.value.__space?.renderer?.getContext?.() || canvas.value.getContext('webgl2')
+      gl?.getExtension('WEBGL_lose_context')?.loseContext()
+    } catch (e) { console.warn('stage: the context could not be lost —', e?.message || e) }
+  }
 }
 
 // html[data-space-assembled]: set while no assembly runs (and always without WebGL), so the cover's title shows

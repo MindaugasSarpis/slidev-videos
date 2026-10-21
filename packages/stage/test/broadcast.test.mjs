@@ -106,6 +106,9 @@ test('record arguments', () => {
   assert.equal(recordArgs(['d', 'o']).gl, 'auto');
   for (const gl of ['gpu-nvidia', 'd3d12', 'llvmpipe', 'swiftshader', 'gl']) assert.equal(recordArgs(['d', 'o', '--gl', gl]).gl, gl);
   assert.throws(() => recordArgs(['d', 'o', '--gl', 'none']), /--gl wants/);
+  // --force is slidev-stage-shots' (a rehearsed fallback leaves the recorder nothing to film)
+  assert.throws(() => recordArgs(['d', 'o', '--force', 'no-webgl2']), /--force: nothing to record/);
+  assert.throws(() => recordArgs(['d', 'o', '--force']), /--force: nothing to record/);
   assert.throws(() => recordArgs(['d', 'o', '--fps', '0']));
   assert.throws(() => recordArgs(['d', 'o', '--size', '1920']));
 });

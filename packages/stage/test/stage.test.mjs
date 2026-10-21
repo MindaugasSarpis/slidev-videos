@@ -11,7 +11,7 @@ import { resolvePalette, PALETTES, DEFAULT_PALETTE, LOOKS, hexToRgb, rgbTriplet,
 import { checkStage, readStageConfig, deckPoses, deckSlides, deckTypes, deckClocks, deckComponents, readYaml, deckPlaces, deckPlaceList, deckPlaceGroups, deckPages, main as checkMain } from '../bin/check.mjs';
 import { formatCount, countRun, countAt, countSpan, COUNT_DOWN_MS } from '../stage/count.js';
 import { deckHasThree } from '../vite.config.js';
-import { parseSlides, parseArgs, detectBase, clicksFor, frameName, parseProcLocks, problemsOf, cacheable, split, serve, staticKey, clipName } from '../bin/shots.mjs';
+import { parseSlides, parseArgs, detectBase, clicksFor, frameName, parseProcLocks, problemsOf, cacheable, split, serve, staticKey, clipName, deckUrl } from '../bin/shots.mjs';
 import { placesDecl, placeGroupsAt } from '../stage/place-groups.js';
 
 const here = (p) => new URL(p, import.meta.url);
@@ -600,6 +600,25 @@ test('bad options are errors, not positionals', () => {
   for (const g of ['auto', 'gl', 'swiftshader', 'llvmpipe', 'gpu-nvidia']) assert.deepEqual(parseArgs(['d', 'o', '--gl', g]).errors, []);
   assert.match(parseArgs(['d']).errors.join(), /usage/);
   assert.deepEqual(parseArgs(['--help']).errors, []);
+});
+
+test('--force rehearses a fallback: the reason goes to the stage in the query, before the #', () => {
+  const o = parseArgs(['d', 'o', '--force', 'no-webgl2']);
+  assert.deepEqual(o.errors, []);
+  assert.equal(o.force, 'no-webgl2');
+  assert.equal(parseArgs(['d', 'o']).force, null);
+  for (const r of ['reduced-motion', 'no-float-target', 'plugin', 'data', 'init', 'context-lost']) assert.equal(parseArgs(['d', 'o', '--force', r]).force, r, r);
+  assert.match(parseArgs(['d', 'o', '--force', 'no-gpu']).errors.join(), /--force: reduced-motion, no-webgl2, no-float-target, plugin, data, init, context-lost; not no-gpu/);
+  assert.match(parseArgs(['d', 'o', '--force']).errors.join(), /--force needs a value/);
+  // a still is the world as it stands: a forced fallback has none
+  assert.match(parseArgs(['d', 'o', '--stills', '--force', 'no-webgl2']).errors.join(), /--force: not with --stills/);
+  assert.match(parseArgs(['d', 'o', '--force', 'no-webgl2', '--stills']).errors.join(), /--force: not with --stills/);
+  // the deck's address: ?stage-force before the #, where Slidev's hash navigation keeps it (stage/diagnose.js reads both)
+  assert.equal(deckUrl('http://localhost:1234/repo/talk/', { force: 'no-webgl2' }), 'http://localhost:1234/repo/talk/?stage-force=no-webgl2');
+  assert.equal(deckUrl('http://localhost:1234/#/3', { force: 'context-lost' }), 'http://localhost:1234/?stage-force=context-lost#/3');
+  assert.equal(deckUrl('http://localhost:1234/?x=1#/3?clicks=2', { force: 'init' }), 'http://localhost:1234/?x=1&stage-force=init#/3?clicks=2');
+  assert.equal(deckUrl('http://localhost:1234/', {}), 'http://localhost:1234/');
+  assert.equal(deckUrl('http://localhost:1234/', { force: null }), 'http://localhost:1234/');
 });
 
 test('the base a deck was built for', () => {

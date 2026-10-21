@@ -31,6 +31,7 @@ import { constants as osConstants } from 'node:os';
 import { spawn, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { launch, loadPlaywright, MODES } from './lib/chromium.mjs';
+import { FALLBACK_REASONS } from '../stage/diagnose.js';
 
 const MIME = {
   '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
@@ -155,6 +156,9 @@ export const USAGE = `usage: slidev-stage-shots <dist> <out-dir> [options]
   --stills             the world alone, no slide text, as <out-dir>/01.jpg …: the stills print,
                        PDF export and the static fallback show (write them to public/stills)
   --stills-at WHEN     last (default: each slide at its last click, as the export prints it) | first
+  --force REASON       rehearse the fallback: the deck under ?stage-force=REASON (${FALLBACK_REASONS.join(', ')}),
+                       photographed as a device with that fault would show it; every line says the
+                       fallback and the layer (plate, living, still, world-floor) that stood in. Not with --stills
 
 exit: 0 clean · 3 overflow, page errors, failed requests, failed or unsettled frames · 1 the run failed · 2 bad arguments · 128+n stopped by signal n`;
 
@@ -163,7 +167,7 @@ export function parseArgs(argv) {
     dist: null, out: null, dev: null, slides: null, clicks: 'none', clickMap: null,
     settle: 6, wait: 30000, dust: 12, size: [1600, 900], draft: false, burst: 1, every: 1, seed: 1,
     halo: true, base: null, changed: false, sheet: false, probe: false, console: false, jobs: null,
-    gl: null, json: null, lock: LOCK, stills: false, stillsAt: 'last', help: false, errors: [],
+    gl: null, json: null, lock: LOCK, stills: false, stillsAt: 'last', force: null, help: false, errors: [],
   };
   const rest = [];
   const num = (v, name, min = 0) => { const n = Number(v); if (!Number.isFinite(n) || n < min) o.errors.push(`${name}: not a number ≥ ${min}: ${v}`); return n; };
@@ -199,6 +203,7 @@ export function parseArgs(argv) {
     else if (a === '--no-lock') o.lock = null;
     else if (a === '--stills') o.stills = true;
     else if (a === '--stills-at') { const v = val(); if (!['last', 'first'].includes(v)) o.errors.push(`--stills-at: last or first, not ${v}`); else o.stillsAt = v; }
+    else if (a === '--force') { const v = val(); if (v !== undefined) { if (!FALLBACK_REASONS.includes(v)) o.errors.push(`--force: ${FALLBACK_REASONS.join(', ')}; not ${v}`); else o.force = v; } }
     else if (a === '-h' || a === '--help') o.help = true;
     else if (a.startsWith('--')) o.errors.push(`unknown option ${a}`);
     else rest.push(a);
@@ -209,8 +214,21 @@ export function parseArgs(argv) {
   // a still is the slide's world as it stands: one frame per slide, at its
   // last click (what Slidev's export prints) unless --stills-at first
   if (o.stills) { o.clicks = o.stillsAt === 'first' ? 'none' : 'last'; o.clickMap = null; o.burst = 1; o.halo = false; }
+  // a still is the world as it stands; a forced fallback has no world to photograph
+  if (o.stills && o.force) o.errors.push('--force: not with --stills (a still is the world alone; a forced fallback has none)');
   if (!o.help && !o.out) o.errors.push(o.dev ? 'usage: --dev deck.md <out-dir>' : 'usage: <dist> <out-dir>');
   return o;
+}
+
+// The deck's address for the run. --force goes to the stage as ?stage-force=REASON
+// in the query, before the #: Slidev's hash navigation changes the hash alone, so
+// the query stays for every slide (stage/diagnose.js reads it from either side).
+export function deckUrl(url, { force = null } = {}) {
+  if (!force) return url;
+  const u = String(url);
+  const i = u.indexOf('#');
+  const head = i < 0 ? u : u.slice(0, i), hash = i < 0 ? '' : u.slice(i);
+  return `${head}${head.includes('?') ? '&' : '?'}stage-force=${encodeURIComponent(force)}${hash}`;
 }
 
 // ---- the shared lock ------------------------------------------------------------------------
@@ -404,6 +422,9 @@ function pageInit(cfg) {
       dustTotal: g ? g.attributes.position.count : null,
       total: s.total ?? (nv ? Number(nv.total) : null),
       clicksTotal: s.clicksTotal ?? (nv ? Number(nv.clicksTotal) : null),
+      // why the stage fell back and what stands in for the world (stage/fallback.js, on <html>)
+      fallback: document.documentElement.dataset.stageFallback ?? null,
+      layer: s.layer ?? document.documentElement.dataset.stageLayer ?? null,
       probe: st ? 'stage' : p ? 'handles' : 'none',
       ...where(),
     };
@@ -755,6 +776,7 @@ async function shootFrame(deck, o, rec, { sec = null } = {}) {
     ...rec, png, station: s.station, at: s.at, atStation: s.atStation, renderer: deck.renderer,
     settled: st.settled, settleMs: st.settleMs, shotMs: Date.now() - t1, engineSec: st.engineSec, engineTime: +s.elapsed.toFixed(3),
     flying: s.flying, assembled: s.assembled, dpr: s.dpr, dust: s.dust, dustTotal: s.dustTotal, probe: s.probe,
+    fallback: s.fallback, layer: s.layer,
     ...m, ...deck.drain(),
   };
 }
@@ -799,7 +821,7 @@ export async function staticKey(dist, o, renderer, whole = WHOLE) {
     pub.push(`${r}:${await fileKey(f, whole)}`);
   }
   pub.sort();
-  return JSON.stringify([VERSION, o.size, o.draft, o.seed, o.halo, o.settle, o.dust, o.burst, o.every, renderer, css, pub]);
+  return JSON.stringify([VERSION, o.size, o.draft, o.seed, o.halo, o.settle, o.dust, o.burst, o.every, renderer, css, pub, ...(o.force ? [{ force: o.force }] : [])]);
 }
 
 const sha1 = (s) => createHash('sha1').update(s).digest('hex');
@@ -972,6 +994,8 @@ export async function shoot(o, logTo = console.log) {
       url = `http://localhost:${port}${base}`;
       if (base !== '/') log(`serving ${dist} under ${base}`);
     }
+    url = deckUrl(url, o);
+    if (o.force) log(`forcing the fallback: ${o.force} (?stage-force in the deck's address)`);
     const launched = await launch({
       chromium, backend: o.gl, webgl: false, tool: 'slidev-stage-shots',
       // signals are the run's to handle (see onSignal); Playwright still kills the browser if the process exits first
@@ -1017,7 +1041,7 @@ export async function shoot(o, logTo = console.log) {
           if (o.probe) {
             const f = await deck.page.evaluate(() => window.__shots.measureFps(2000));
             const s = await deck.state();
-            const r = { slide: n, probe: true, renderer, fps: f.fps, engineSecPerSec: f.engineSecPerSec, dpr: s.dpr, dust: s.dust, station: s.station, ...deck.drain() };
+            const r = { slide: n, probe: true, renderer, fps: f.fps, engineSecPerSec: f.engineSecPerSec, dpr: s.dpr, dust: s.dust, station: s.station, fallback: s.fallback, layer: s.layer, ...deck.drain() };
             await emit(r);
             log(`${frameName(n)}  ${String(f.fps).padStart(6)} fps  ${String(f.engineSecPerSec).padStart(6)} engine-s/s  station=${s.station ?? '-'}${f.engineSecPerSec < 0.5 ? '  slow: shots rely on settle here' : ''}`);
             continue;
@@ -1042,7 +1066,8 @@ export async function shoot(o, logTo = console.log) {
                 await emit(r);
                 if (key && cacheable(r)) cache[rec.frame] = { key, record: r };
                 const p = problemsOf(r);
-                log(`${r.frame}  station=${r.station ?? '-'}  settle ${(r.settleMs / 1000).toFixed(1)} s (${r.engineSec} engine-s) + ${(r.shotMs / 1000).toFixed(1)} s  overflow=${r.overflowPx ?? '-'}px  words=${r.wordsOnScreen}${p.length ? `  ! ${p.join('; ')}` : ''}`);
+                const stood = r.layer && r.layer !== 'world' ? `  layer=${r.layer}${r.fallback ? ` (${r.fallback})` : ''}` : '';
+                log(`${r.frame}  station=${r.station ?? '-'}${stood}  settle ${(r.settleMs / 1000).toFixed(1)} s (${r.engineSec} engine-s) + ${(r.shotMs / 1000).toFixed(1)} s  overflow=${r.overflowPx ?? '-'}px  words=${r.wordsOnScreen}${p.length ? `  ! ${p.join('; ')}` : ''}`);
               } catch (e) {
                 const r = { ...rec, png: null, renderer, error: String(e.message || e).split('\n')[0].slice(0, 300), ...deck.drain() };
                 await emit(r);
