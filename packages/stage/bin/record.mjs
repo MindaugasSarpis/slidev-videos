@@ -14,12 +14,14 @@
 //
 //   NN.mp4        slide NN as it arrives: the flight, the settle, then --hold seconds
 //   NN-cK.mp4     the same slide after its K-th click (a stop), when it has clicks
-//   NN-plate.mp4  with --plate: the same frames without the slide's text, the
-//                 halo or the stop HUD (the world alone, for the editor to set
+//   NN-plate.mp4  with --plate: the same frames as the world alone — without
+//                 the slide's text, the halo, the stop HUD, the scrim, the
+//                 paper grain or the videos addon's push overlay (the list is
+//                 lib/record-page.mjs's PLATE_HIDDEN) — for the editor to set
 //                 their own type over, and for the stage to play under the
-//                 slide where the world cannot run: stage/fallback.js); the
-//                 scrim stays, so the two cut together. --plate-only writes
-//                 the plates alone, half the frames shot
+//                 slide where the world cannot run (stage/fallback.js), which
+//                 draws its scrim and grain over the plate as over the world.
+//                 --plate-only writes the plates alone, half the frames shot
 //   index.json    the edit list: every file, its length, where the camera
 //                 stood, the clips it shows or could not record, flash warnings;
 //                 `hold` and `plateFps` (the plates' rate, the same as fps) for
@@ -30,11 +32,13 @@
 // end (a presenter waits for a clip), so the arrival starts over the clip's
 // last frame; the edit list names those clips (`from`).
 //
-// A clip slide has no plate: the clip is the picture itself. That is what
-// makes a deck of plates advance from a clip without a cut — the next slide's
-// plate begins on the clip's last frame, where the live world would have
+// A clip slide has no plate: the clip is the picture itself. The next slide's
+// plate begins on the world as it stood under the clip (the clip and the push
+// overlay are hidden in the plate), which is where the live world would have
 // been, so the stage's advance-on-end can go straight on to it (the player
-// goes on without a world only onto a loaded plate).
+// goes on without a world only onto a loaded plate): the clip's fade lands on
+// the plate's first frame, or its push, where the overlay runs, is drawn live
+// over it.
 //
 //   --hold    seconds held once a slide has settled (camera landed, forms
 //             built, type risen in); a clip slide holds for the rest of its clip
@@ -70,7 +74,7 @@ import { pathToFileURL } from 'node:url';
 import { serve, normaliseBase, parseSlides, checkSlides, parseSize } from './lib/record-serve.mjs';
 import { launch, loadPlaywright, MODES } from './lib/chromium.mjs';
 import { resolveFfmpeg, pickEncoder, encoder, decodeSmall } from './lib/record-ffmpeg.mjs';
-import { seedRandom, recorderHooks } from './lib/record-page.mjs';
+import { seedRandom, recorderHooks, PLATE_HIDDEN } from './lib/record-page.mjs';
 import { findFlashes } from './lib/record-flash.mjs';
 
 const USAGE = "usage: slidev-stage-record <dist> <out-dir> [--fps 50] [--size 1920x1080] [--slides 2-5] [--plate | --plate-only] [--hold 8] [--max 40] [--clicks all|none|'{\"3\":1}'] [--base auto] [--seed 1] [--flash] [--gl auto|gpu-nvidia|d3d12|llvmpipe|swiftshader|gl] [--chromium path] [--encoder auto|nvenc|x264]";
@@ -154,7 +158,7 @@ async function openDeck(browser, o, url, n, errors) {
   await page.clock.install({ time: 0 });
   await page.clock.pauseAt(1000);
   await page.addInitScript(seedRandom, o.seed);
-  await page.addInitScript(recorderHooks);
+  await page.addInitScript(recorderHooks, { hidden: PLATE_HIDDEN });
   // one recorded frame is 1/fps of the world: the engine's frame-time clamp
   // (1/12 s, the hero's 1/30 s) would make a take under 12 fps run slow
   await page.addInitScript((dt) => { globalThis.__stageMaxDt = dt; }, 1 / o.fps);
@@ -259,9 +263,9 @@ async function recordSegment({ page, cdp }, n, k, o, ff, enc) {
       if (!opened) {
         opened = true;
         // a clip is the picture itself: no plate for a clip slide (the next
-        // slide's plate begins on the clip's last frame: see the head of this file)
+        // slide's plate begins on the world under the clip: see the head of this file)
         if (o.plateOnly && clip) {
-          return { slide: n, clicks: k, skipped: true, note: 'a clip slide has no plate: the clip is the picture itself, and the next slide\'s plate begins on its last frame', clip: { src: clip.src }, at: s.at, station: s.station };
+          return { slide: n, clicks: k, skipped: true, note: 'a clip slide has no plate: the clip is the picture itself, and the next slide\'s plate begins on the world as it stood under the clip', clip: { src: clip.src }, at: s.at, station: s.station };
         }
         if (!o.plateOnly) pipe = encoder(ff, enc, { fps: o.fps, out: file });
         if (o.plate && !clip) platePipe = encoder(ff, enc, { fps: o.fps, out: plateFile });

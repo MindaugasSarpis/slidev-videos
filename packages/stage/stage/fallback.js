@@ -33,6 +33,17 @@ export function fallbackLayer(reason, { motion = 'respect', plates = 'videos' } 
   return platesOn(plates) ? 'plate' : 'living';
 }
 
+// How slide `to`'s plate enters when the deck moves there from `from` (null:
+// the layer mounting). A forward step from the slide before replays the
+// arrival the recorder filmed; a back-step, a jump or a mount mid-deck holds
+// the settled world, the plate's last frame: a still of the destination beats
+// a flight the audience saw the other way, and after a clip slide the clip's
+// end played again. The deck's opening at slide 1 is an arrival too.
+export function plateEntry(from, to) {
+  const f = from == null ? 0 : Number(from), t = Number(to);
+  return Number.isFinite(f) && Number.isFinite(t) && t === f + 1 ? 'replay' : 'hold';
+}
+
 // `stage.plates` → the folder under public/ ('' when off), as stills.js reads `stage.stills`
 export function platesDir(cfg) {
   if (cfg === false || cfg === 'false' || cfg === null) return '';

@@ -7,7 +7,8 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { fallbackLayer, plateName, plateUrls, plateRelease, platesDir, plateLocalFirst, LAYERS, PLATE_REASONS } from '../stage/fallback.js';
+import { fallbackLayer, plateName, plateUrls, plateRelease, platesDir, plateLocalFirst, plateEntry, LAYERS, PLATE_REASONS } from '../stage/fallback.js';
+import { STAGE_OVER_WORLD, PLATE_HIDDEN, recorderHooks } from '../bin/lib/record-page.mjs';
 import { FALLBACK_REASONS } from '../stage/diagnose.js';
 import { STAGE_KEYS } from '../stage/types.js';
 
@@ -106,6 +107,48 @@ test('local first in dev, or when the build says so', () => {
   assert.equal(plateLocalFirst(undefined), false);
 });
 
+// ---- how a plate enters ---------------------------------------------------------------------
+test('only a forward step from the slide before replays a plate\'s arrival; a back-step, a jump or a mount mid-deck holds the settled world', () => {
+  assert.equal(plateEntry(8, 9), 'replay');
+  assert.equal(plateEntry('8', '9'), 'replay');     // as a dataset would hand them
+  assert.equal(plateEntry(10, 9), 'hold');           // a back-step: the flight the audience saw, the other way — and after a clip slide, the clip's end again
+  assert.equal(plateEntry(9, 8), 'hold');
+  assert.equal(plateEntry(8, 10), 'hold');           // a jump
+  assert.equal(plateEntry(3, 12), 'hold');
+  assert.equal(plateEntry(12, 3), 'hold');
+  assert.equal(plateEntry(9, 9), 'hold');            // no step at all
+  // the layer mounting: the deck's opening at slide 1 is an arrival; mid-deck (a reload, a late fallback) the settled world
+  assert.equal(plateEntry(null, 1), 'replay');
+  assert.equal(plateEntry(undefined, 1), 'replay');
+  assert.equal(plateEntry(null, 2), 'hold');
+  assert.equal(plateEntry(undefined, 7), 'hold');
+  for (const bad of [NaN, 'x', {}]) { assert.equal(plateEntry(bad, 1), 'hold', String(bad)); assert.equal(plateEntry(1, bad), 'hold', String(bad)); }
+});
+
+// ---- what a plate holds ---------------------------------------------------------------------
+test('a plate is the world alone: the recorder\'s text-free pass hides what the stage draws live over it, as --stills does, and the push overlay', () => {
+  // what the stage draws over the world, live, over a plate and a still alike: baked in, the scrim would be drawn twice (the world at dim² of its light)
+  assert.deepEqual(STAGE_OVER_WORLD, ['.stage .scrim', '.stage .grain', '.stage .hud']);
+  for (const s of STAGE_OVER_WORLD) assert.ok(PLATE_HIDDEN.includes(s), s);
+  // the slide's own layer (its clip with it), the halo, and the videos addon's push and dust overlay (components/VideoDust.vue's class names): a plate never holds a push
+  for (const s of ['.slidev-layout', '.halo-layer', '.video-dust', '.video-zoom']) assert.ok(PLATE_HIDDEN.includes(s), s);
+  assert.equal(new Set(PLATE_HIDDEN).size, PLATE_HIDDEN.length);
+  const dust = read('../../../components/VideoDust.vue');
+  for (const c of ['video-dust', 'video-zoom']) assert.match(dust, new RegExp(`class="${c}"`), c);
+  // addInitScript serialises the hooks: the list reaches the page as their argument, and the recorder passes it
+  const hooks = recorderHooks.toString();
+  assert.match(hooks, /^function recorderHooks\(\{ hidden = \[\] \} = \{\}\)/);
+  assert.match(hooks, /hidden\.map\(\(s\) => `html\[data-rec-plate\] \$\{s\}`\)\.join\(', '\)\} \{ visibility: hidden !important; \}/);
+  assert.doesNotMatch(hooks, /html\[data-rec-plate\] \.slidev-layout/);   // no list of its own
+  assert.match(read('../bin/record.mjs'), /addInitScript\(recorderHooks, \{ hidden: PLATE_HIDDEN \}\)/);
+  // --stills hides the same of the stage, from the same list
+  const shots = read('../bin/shots.mjs');
+  assert.match(shots, /import \{ STAGE_OVER_WORLD \} from '\.\/lib\/record-page\.mjs'/);
+  assert.match(shots, /addInitScript\(pageInit, \{[^}]*\bover: STAGE_OVER_WORLD\b[^}]*\}\)/);
+  assert.match(shots, /\$\{cfg\.over\.join\(', '\)\}, \.stage-debug \{ visibility: hidden !important; \}/);
+  assert.doesNotMatch(shots, /\.stage \.scrim, \.stage \.grain/);           // no list of its own either
+});
+
 // ---- the components -------------------------------------------------------------------------
 test('StagePlate plays the slide\'s plate muted, holds its last frame, says on <html> what it has, and keeps a slide each side', () => {
   const src = read('../components/StagePlate.vue');
@@ -138,6 +181,8 @@ test('StagePlate plays the slide\'s plate muted, holds its last frame, says on <
   assert.match(src, /@error="/);
   assert.match(src, /@canplay="/);
   assert.match(src, /@ended="/);
+  assert.match(src, /@loadedmetadata="sync"/);                             // a slide to hold is seeked as soon as it has its duration
+  assert.match(src, /@seeked="sync"/);                                     // and says `held` once the seek has landed
   assert.match(src, /dataset\.stagePlate = /);
   assert.match(src, /dataset\.stagePlateNext = String\(/);
   assert.match(src, /delete html\.dataset\.stagePlateNext/);
@@ -147,6 +192,15 @@ test('StagePlate plays the slide\'s plate muted, holds its last frame, says on <
   assert.match(src, /visibilitychange/);
   assert.match(src, /const KEEP_BEHIND = 1\b/);                             // n−1 stays loaded for a back-step
   assert.match(src, /const PRELOAD_AHEAD = 1\b/);                           // n+1 loads under this slide
+  // how a plate enters is plateEntry's: a forward step replays from 0, anything else seeks to the end and holds; the next slide's element goes back to its start while hidden
+  assert.match(src, /import \{[^}]*\bplateEntry\b[^}]*\} from '\.\.\/stage\/fallback\.js'/);
+  assert.match(src, /watch\(\(\) => props\.slide, \(n, was\) => \{/);
+  assert.match(src, /if \(plateEntry\(was, n\) === 'hold'\) hold\.add\(n\); else hold\.delete\(n\)/);
+  assert.match(src, /if \(plateEntry\(null, props\.slide\) === 'hold'\) hold\.add\(props\.slide\)/);   // mounted mid-deck
+  assert.match(src, /el\.currentTime = el\.duration/);
+  assert.match(src, /if \(el && el\.readyState > 0 && !hold\.has\(n\)\) \{ try \{ el\.currentTime = 0 \}/);
+  assert.match(src, /const ahead = els\.get\(n \+ 1\)\n\s+if \(ahead && ahead\.readyState > 0 && ahead\.currentTime > 0\) \{ try \{ ahead\.currentTime = 0 \}/);
+  assert.match(src, /if \(props\.covered \|\| hidden \|\| el\.ended \|\| hold\.has\(no\)\) \{ if \(!el\.paused\) el\.pause\(\) \}/);   // a slide to hold never plays from 0
   assert.match(src, /emit\('exhausted'/);
   assert.match(src, /emit\('state'/);
   assert.doesNotMatch(src, /\bconfigs\b/);                                  // it reads no headmatter: Stage.vue hands it everything
@@ -180,7 +234,7 @@ test('Stage.vue wires the layers: the still, the living still, the plate, then t
   assert.match(src, /new CustomEvent\('slidev-stage:fallback', \{ detail: \{ reason, detail, layer/);
   assert.match(src, /dataset\.stageLayer = /);
   assert.equal((src.match(/delete html\.dataset\.stageFallback/g) || []).length >= 2, true);    // rebuild and unmount
-  assert.equal((src.match(/delete html\.dataset\.stagePlateNext/g) || []).length >= 2, true);
+  assert.equal((src.match(/delete html\.dataset\.stagePlateNext/g) || []).length, 1);          // unmount alone: a rebuild has no StagePlate to take it from (the layer is `still` while restoring)
   assert.equal((src.match(/delete html\.dataset\.stageLayer/g) || []).length >= 1, true);
   // the new keys, read where the validator can see them
   for (const k of ['motion', 'plates', 'platesRelease']) assert.match(src, new RegExp(`CFG\\.${k}\\b`), k);

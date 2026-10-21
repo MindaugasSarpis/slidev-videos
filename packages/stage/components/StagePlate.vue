@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, reactive, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import { plateUrls } from '../stage/fallback.js'
+import { plateUrls, plateEntry } from '../stage/fallback.js'
 
 // The recorded plate (stage/fallback.js): where the world cannot run and the
 // deck has its plates (slidev-stage-record --plate: NN-plate.mp4 beside the
@@ -18,16 +18,22 @@ import { plateUrls } from '../stage/fallback.js'
 //              tracks slidev-videos:cover)
 //
 // One <video> per slide in a window of three, keyed by the slide's number so
-// a step keeps the elements it has: the slide before (a back-step plays at
-// once), this one, and the next, which loads under this slide so the advance
-// is one cut. Only this slide's is seen, over the one before it. A plate with
-// no frame yet is transparent, so the frame before stays until the plate's
-// first — which the recorder began on exactly that frame — and at the deck's
-// start the living still shows through; no poster, for the same reason. A
-// URL that errors is let go for the next in the chain; a slide whose chain is
-// exhausted (a clip slide has no plate: the clip is the picture) is given up
-// for the session and said so (`exhausted`), and the living still stands
-// alone there.
+// a step keeps the elements it has: the slide before (a back-step holds its
+// settled world at once), this one, and the next, which loads under this
+// slide, at its start, so the advance is one cut. Only this slide's is seen,
+// over the one before it. A plate with no frame yet is transparent, so the
+// frame before stays until the plate's first — which the recorder began on
+// exactly that frame — and at the deck's start the living still shows
+// through; no poster, for the same reason. A URL that errors is let go for
+// the next in the chain; a slide whose chain is exhausted (a clip slide has
+// no plate: the clip is the picture) is given up for the session and said so
+// (`exhausted`), and the living still stands alone there.
+//
+// How a plate enters is plateEntry's (stage/fallback.js): only a forward step
+// from the slide before replays the arrival the recorder filmed; a back-step,
+// a jump or a mount mid-deck seeks the plate to its end and holds the settled
+// world (`held`). A slide to hold whose plate has no metadata yet waits,
+// paused, and is seeked as soon as it has.
 //
 // On <html>, for the player's advance-on-end (video-dust/advance.js) and the
 // tools: data-stage-plate = loading | playing | paused | held | none (this
@@ -46,11 +52,12 @@ const props = defineProps({
 })
 const emit = defineEmits(['state', 'exhausted'])
 
-const KEEP_BEHIND = 1          // the slide before stays loaded: a back-step plays at once
-const PRELOAD_AHEAD = 1        // the next loads under this slide
+const KEEP_BEHIND = 1          // the slide before stays loaded: a back-step holds its settled world at once
+const PRELOAD_AHEAD = 1        // the next loads under this slide, at its start
 const tries = reactive({})     // slide → how far along its chain it is
 const dead = reactive({})      // slide → true once no URL of its chain answered
 const els = new Map()          // slide → its <video>
+const hold = new Set()         // slides whose plate is to hold its settled world (plateEntry), until the seek is made
 let said = ''
 
 const urlsOf = (no) => plateUrls(props.dir, no, { base: props.base, remote: props.remote, localFirst: props.localFirst })
@@ -86,14 +93,24 @@ function publish() {
   if (s !== said) { said = s; emit('state', s) }
 }
 
-// This slide's plays unless a clip covers it, the tab is hidden or it has
-// ended (play() on an ended element would start it over); the others rest
-// where they stand.
+// slide no's plate to its end, the settled world, once it has its metadata → whether it could be
+function seekEnd(no) {
+  const el = els.get(no)
+  if (!el || !(el.readyState > 0) || !Number.isFinite(el.duration)) return false
+  try { el.currentTime = el.duration } catch { return false }
+  return true
+}
+
+// This slide's plays unless a clip covers it, the tab is hidden, it has ended
+// (play() on an ended element would start it over) or it is to hold and has
+// no metadata yet (it is seeked to its end, and so ended, as soon as it has);
+// the others rest where they stand.
 function sync() {
   const hidden = document.hidden
   for (const [no, el] of els) {
     if (no === props.slide) {
-      if (props.covered || hidden || el.ended) { if (!el.paused) el.pause() }
+      if (hold.has(no) && seekEnd(no)) hold.delete(no)
+      if (props.covered || hidden || el.ended || hold.has(no)) { if (!el.paused) el.pause() }
       else if (el.paused) el.play().catch(() => {})
     } else if (!el.paused) el.pause()
   }
@@ -109,12 +126,19 @@ function onError(no) {
   publish()
 }
 
-// a new slide: its plate from its arrival (the one before it under it until the first frame is in)
-watch(() => props.slide, (n) => {
+// a new slide (plateEntry): a forward step from the slide before replays its
+// plate from its arrival (the one before it under it until the first frame is
+// in); a back-step or a jump holds its settled world. The next slide's
+// element, hidden, goes back to its start, so a forward step never shows a
+// stale frame.
+watch(() => props.slide, (n, was) => {
   publish()    // the next's mark moves at once: a back-step's next is loaded already, the old next is next no more
+  if (plateEntry(was, n) === 'hold') hold.add(n); else hold.delete(n)
   nextTick(() => {
     const el = els.get(n)
-    if (el && el.readyState > 0) { try { el.currentTime = 0 } catch { /* not seekable yet */ } }
+    if (el && el.readyState > 0 && !hold.has(n)) { try { el.currentTime = 0 } catch { /* not seekable yet */ } }
+    const ahead = els.get(n + 1)
+    if (ahead && ahead.readyState > 0 && ahead.currentTime > 0) { try { ahead.currentTime = 0 } catch { /* not seekable yet */ } }
     sync()
   })
 })
@@ -122,6 +146,7 @@ watch(() => props.covered, () => sync())
 
 onMounted(() => {
   document.addEventListener('visibilitychange', sync)
+  if (plateEntry(null, props.slide) === 'hold') hold.add(props.slide)   // mounted mid-deck (a reload, a late fallback): the settled world, not an arrival
   nextTick(sync)
 })
 onUnmounted(() => {
@@ -136,7 +161,7 @@ onUnmounted(() => {
 <template>
   <div class="plate" aria-hidden="true">
     <video v-for="no in slots" :key="no" :ref="(el) => bind(no, el)" :class="{ next: no === slide + 1 }" :src="srcOf(no)" muted playsinline preload="auto" disablepictureinpicture
-      @error="onError(no)" @canplay="sync" @playing="sync" @pause="sync" @waiting="sync" @emptied="sync" @ended="sync"></video>
+      @error="onError(no)" @loadedmetadata="sync" @canplay="sync" @playing="sync" @pause="sync" @waiting="sync" @seeked="sync" @emptied="sync" @ended="sync"></video>
   </div>
 </template>
 

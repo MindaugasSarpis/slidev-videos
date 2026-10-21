@@ -31,6 +31,7 @@ import { constants as osConstants } from 'node:os';
 import { spawn, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { launch, loadPlaywright, MODES } from './lib/chromium.mjs';
+import { STAGE_OVER_WORLD } from './lib/record-page.mjs';
 import { FALLBACK_REASONS } from '../stage/diagnose.js';
 
 const MIME = {
@@ -612,12 +613,14 @@ function pageInit(cfg) {
     });
   }
 
-  // --stills: only the world shows; the slide, the stage's scrim, HUD and paper
-  // grain, and the controls are drawn live over the still
+  // --stills: only the world shows; the slide, what the stage draws over the
+  // world (`over`: its scrim, paper grain and HUD, lib/record-page.mjs's
+  // STAGE_OVER_WORLD, the plates' list too), and the controls are drawn live
+  // over the still
   if (cfg.stills) {
     document.addEventListener('DOMContentLoaded', () => {
       const s = document.createElement('style');
-      s.textContent = `.slidev-page, .slidev-nav, .slidev-icon-btn, #slidev-goto-dialog, .stage .scrim, .stage .grain, .stage .hud, .stage-debug { visibility: hidden !important; }
+      s.textContent = `.slidev-page, .slidev-nav, .slidev-icon-btn, #slidev-goto-dialog, ${cfg.over.join(', ')}, .stage-debug { visibility: hidden !important; }
         .stage, .stage .field { visibility: visible !important; }`;
       document.head.append(s);
     });
@@ -635,7 +638,7 @@ class Deck {
     const { o } = this;
     this.context = await this.browser.newContext({ viewport: { width: o.size[0], height: o.size[1] }, deviceScaleFactor: o.draft ? 0.5 : 1 });
     const page = this.page = await this.context.newPage();
-    await page.addInitScript(pageInit, { seed: o.seed, step: STEP_MS, halo: o.halo, stills: o.stills });
+    await page.addInitScript(pageInit, { seed: o.seed, step: STEP_MS, halo: o.halo, stills: o.stills, over: STAGE_OVER_WORLD });
     const origin = new URL(this.url).origin;
     page.on('pageerror', (e) => { if (!NOISE.test(e.message)) this.sink.errors.push(`pageerror: ${e.message.slice(0, 300)}`); });
     page.on('console', (m) => {

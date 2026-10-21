@@ -234,8 +234,7 @@ async function rebuild() {
   staticBg.value = false
   if (root.value) delete root.value.dataset.stageFallback
   const html = document.documentElement
-  delete html.dataset.stageFallback
-  delete html.dataset.stagePlateNext
+  delete html.dataset.stageFallback    // the plate's marks went with StagePlate: the layer was `still` while restoring
   await boot()
   if (space) try { window.dispatchEvent(new CustomEvent('slidev-stage:rebuilt', { detail: { tier } })) } catch {}
 }

@@ -664,7 +664,7 @@ from the others by about a level after its first frame).
 | --- | --- |
 | `NN.mp4` | slide NN arriving (1080p50 by default, H.264, BT.709) |
 | `NN-cK.mp4` | the same slide after its K-th click (a stop), for slides with clicks |
-| `NN-plate.mp4` | with `--plate`: the same frames without the slide's text, the halo or the stop HUD, for an editor's own type, and for the stage to play under the slide where the world cannot run ([When the world cannot run](#when-the-world-cannot-run)). The scrim stays, so a plate and its slide cut together. `--plate-only` writes the plates alone, half the frames shot. A clip slide has no plate: the clip is the picture itself, and the edit list says so |
+| `NN-plate.mp4` | with `--plate`: the same frames as the world alone — without the slide's text, the halo, the stop HUD, the scrim, the paper grain or the videos addon's push overlay — for an editor's own type, and for the stage to play under the slide where the world cannot run ([When the world cannot run](#when-the-world-cannot-run)): it draws its scrim and grain over the plate as over the world, so neither is in the plate. `--plate-only` writes the plates alone, half the frames shot. A clip slide has no plate: the clip is the picture itself, and the edit list says so |
 | `index.json` | the edit list: each file's length, when it settled, where the camera stood, its frame hashes, the renderer, flash warnings, the clips it shows or could not record (a clip in the dist by its path there), and the clips ended before it arrived; `hold`, `plateFps` (the plates' rate, the same as `fps`; `null` without plates) and `plateOnly`, for whoever plays the plates |
 
 Build the deck for it as for shots (`--base /`, or let `--base auto` read
@@ -778,7 +778,7 @@ times its own captions to the world shows them at once without one:
 
 `slidev-addon-videos` reads the same marks: a clip's `advance-on-end` goes on
 without a world only onto the next slide's loaded plate, which begins on the
-clip's last frame (the root README, *Advance on end*).
+world as it stood under the clip (the root README, *Advance on end*).
 
 **`stage.motion`.** The library's default is `respect`: under
 `prefers-reduced-motion` the still alone, as the setting asks. A deck a
@@ -804,12 +804,17 @@ builds for a clip — the deck's own copy first in `slidev dev` or with
 `VITE_VIDEOS_LOCAL_FIRST=1`, the release first on a deploy, the deck's own
 only when there is no release — a URL that errors let go for the next, and a
 slide whose chain is exhausted left on its living still for the session.
-Three are loaded at a time: the slide before (a back-step plays at once),
-this one, and the next, loading unseen. A plate has no poster: one with no
-frame yet is transparent, so the plate before it holds the cut until the
-first frame is in, and the recorder began it on exactly that frame. The
-stills stay committed: each slide's picture for print and export, and the
-floor where there is no network, breathing under the plate that never comes.
+Three are loaded at a time: the slide before, this one, and the next,
+loading unseen at its start. Only a forward step from the slide before
+replays a plate's arrival, the flight the recorder filmed; a back-step or a
+jump holds the slide's settled world at once, the plate's last frame (a
+still of the destination beats a flight the audience saw the other way, and
+after a clip slide the clip's end again), and so does the layer mounting
+mid-deck. A plate has no poster: one with no frame yet is transparent, so
+the plate before it holds the cut until the first frame is in, and the
+recorder began it on exactly that frame. The stills stay committed: each
+slide's picture for print and export, and the floor where there is no
+network, breathing under the plate that never comes.
 
 **The recipe.** The plates alone (half the frames shot), at 25 fps with a
 20 s hold: the sway and the drift go on for 20 s, then the last frame holds,
@@ -830,16 +835,21 @@ copies the plates into `public/videos/`, writes the manifest block and prints
 the `pnpm videos:publish --only …` line.
 
 **A clip slide has no plate.** The clip is the picture itself, and the
-recorder skips it. That is what keeps the advance one cut: the next slide's
-plate begins on the clip's last frame, where the live world would have been,
-so `advance-on-end` goes straight on to it and the motion carries on. A clip
-after which no plate is loaded stops at its end, and the presenter goes on
-by hand.
+recorder skips it. The next slide's plate begins on the world as it stood
+under the clip, where the live world would have been (the clip and the push
+overlay are not in a plate), so `advance-on-end` goes straight on to it: the
+clip's 0.45 s fade lands on the plate's first frame, or, where the overlay
+has WebGL2, its `dust` leave or `exit="push"` is drawn live over the plate
+as it would be over the world. A clip after which no plate is loaded stops
+at its end, and the presenter goes on by hand.
 
 **Seeing it before the venue.** `?stage-force=<reason>` in the address
 (before or after the `#`, like every switch here) boots straight into that
 fallback, for any reason of the table; `context-lost` boots the world and
-drops its context, so the real handler takes its final branch. Beside it:
+drops its context, so the real handler takes its final branch. `no-webgl2`
+reaches the videos addon too: its dust and push overlay declines its WebGL2
+under `html[data-stage-fallback="no-webgl2"]`, so a clip leaves by its fade
+onto the plate, as at the venue. Beside it:
 `stage-plates=off`, `stage-motion=floor|respect`, and the older
 `stage-debug` (a panel with the reason, forced or found, the GPU, the render
 targets, the simulation size, the frame rate and any shader errors: the way
