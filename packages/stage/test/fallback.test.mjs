@@ -165,7 +165,13 @@ test('the hand-over without a world: the still stays unless a plate plays under 
   assert.deepEqual(handOverWithout('plate', 'loading'), { still: 'stay', word: false });   // a plate with no frame yet is transparent: the still covers it
   assert.deepEqual(handOverWithout('plate', 'playing'), { still: 'fade', word: false });   // the arrival the recorder filmed: the grains come in under the fading still
   assert.deepEqual(handOverWithout('plate', 'paused'), { still: 'fade', word: false });
-  assert.deepEqual(handOverWithout('plate', 'held'), { still: 'gone', word: true });       // the settled world (a back-step, a jump, the plate's end): the word
+  assert.deepEqual(handOverWithout('plate', 'held'), { still: 'gone', word: true });       // the settled world (a back-step, a jump, the plate's end): the word  // a plate that stalls once it has played (venue Wi-Fi, readyState down to 2) still has its frame: the
+  // fade goes on, the clip's last frame does not come back over the half-pulled-back world
+  assert.deepEqual(handOverWithout('plate', 'loading', { played: true }), { still: 'fade', word: false });
+  assert.deepEqual(handOverWithout('plate', 'loading', { played: false }), { still: 'stay', word: false });
+  // … but a plate given up (the layer drops to the living still) brings the still back, played or not
+  assert.deepEqual(handOverWithout('living', 'none', { played: true }), { still: 'stay', word: true });
+  assert.deepEqual(handOverWithout('plate', 'none', { played: true }), { still: 'stay', word: true });
 });
 
 test('StageDepthGrains reads the layer and the plate off <html> where the world cannot run, and follows them', () => {
@@ -182,6 +188,14 @@ test('StageDepthGrains reads the layer and the plate off <html> where the world 
   // plate (`held` at its end) until StagePlate's own watch has published this slide's
   assert.match(src, /later\(0, follow\)/);
   assert.doesNotMatch(src, /attributeFilter[^\n]*\n\s*follow\(\)/);
+  // once the plate has played, a stall is no reason to cover it again
+  assert.match(src, /handOverWithout\(html\.dataset\.stageLayer, html\.dataset\.stagePlate, \{ played \}\)/);
+  // a plate that never loads: the word by v0.9.0's 8 s all the same, not wordBy's 34
+  assert.match(src, /later\(LOADING_CAP, /);
+  assert.match(src, /const LOADING_CAP = 8000\b/);
+  // a fallback after the hand-over began (a context lost for good, a rebuild that fails): followed at once
+  assert.match(src, /addEventListener\('slidev-stage:fallback', onFallback\)/);
+  assert.match(src, /removeEventListener\('slidev-stage:fallback', onFallback\)/);
   // the observer goes when the slide is left or the component unmounts
   assert.match(src, /\.disconnect\(\)/);
 });

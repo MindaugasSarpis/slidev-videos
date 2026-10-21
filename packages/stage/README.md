@@ -957,8 +957,15 @@ filmed with the still hidden, like all of the slide: it begins on the world
 with no grains yet and films them coming in. Over a plate the still covers
 it while the plate has no frame, fades after `hold` as it does live while the
 plate plays, and is gone once the plate holds the settled world, where the
-word shows. Over the living still and the still alone, the still stays and
-the word shows at once (`handOverWithout`, `stage/fallback.js`).
+word shows. A plate that stalls once it has played keeps the fade going; a
+plate that never loads shows the word after 8 s. Over the living still and
+the still alone, the still stays and the word shows at once
+(`handOverWithout`, `stage/fallback.js`). A stage that falls back during
+the hand-over is followed at once. Two differences from live: the word comes
+with the plate's end, the recorder's `--hold` (8 s) after the camera stood,
+about 5 s later than live's `wordAfter`; and no cue fires without a world
+(no step, no `slidev-stage:cue`), so a deck's own listener on a cue stays
+silent there.
 
 **Seeing it before the venue.** `?stage-force=<reason>` in the address
 (before or after the `#`, like every switch here) boots straight into that

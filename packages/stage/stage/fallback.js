@@ -106,10 +106,13 @@ export function plateLocalFirst(env) {
 // grains yet and films them coming in, so over a plate the still keeps covering it
 // while the plate has no frame (loading), fades as the live hand-over does while it
 // plays, and is gone once it holds the settled world (its end, a back-step, a jump),
-// where the word shows. layer: html[data-stage-layer]; plate: html[data-stage-plate].
-export function handOverWithout(layer, plate) {
+// where the word shows. layer: html[data-stage-layer]; plate: html[data-stage-plate];
+// played: the plate has played on this slide, so a stall (loading again) keeps its
+// frame on screen and the fade goes on. The word comes with the plate's end, which
+// is the recorder's --hold (8 s) after the camera stood: later than live's wordAfter.
+export function handOverWithout(layer, plate, { played = false } = {}) {
   if (layer !== 'plate' || !plate || plate === 'none') return { still: 'stay', word: true };
-  if (plate === 'loading') return { still: 'stay', word: false };
+  if (plate === 'loading') return { still: played ? 'fade' : 'stay', word: false };
   if (plate === 'held') return { still: 'gone', word: true };
   return { still: 'fade', word: false };
 }

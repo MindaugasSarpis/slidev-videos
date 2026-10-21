@@ -144,22 +144,37 @@ function grains(s, got) {
 // Where the world cannot run: the still and the word follow the layer and the slide's
 // plate as Stage.vue and StagePlate.vue mark them on <html> (loading → playing → held,
 // or the plate given up for the living still), until the slide is left
+// A plate that never loads (a hanging URL) shows the word by LOADING_CAP, as v0.9.0
+// did after waiting for a world, not at wordBy.
+const LOADING_CAP = 8000
 function without(id) {
   const html = document.documentElement
-  let fadeSet = false
+  let played = false, holdTimer = 0
   const follow = () => {
     if (id !== run) return
-    const h = handOverWithout(html.dataset.stageLayer, html.dataset.stagePlate)
+    played ||= html.dataset.stageLayer === 'plate' && ['playing', 'held'].includes(html.dataset.stagePlate)
+    const h = handOverWithout(html.dataset.stageLayer, html.dataset.stagePlate, { played })
     if (h.word) word.value = true
     if (h.still === 'gone') still.value = false
-    else if (h.still === 'stay') { still.value = true; fading.value = false; fadeSet = false }
-    else if (!fadeSet) { fadeSet = true; later(props.hold, () => { if (id === run) fading.value = true }) }
+    else if (h.still === 'stay') { still.value = true; fading.value = false; clearTimeout(holdTimer); holdTimer = 0; played = false }
+    else if (!holdTimer && !fading.value) { holdTimer = setTimeout(() => { if (id === run) fading.value = true }, props.hold); timers.push(holdTimer) }
   }
+  later(LOADING_CAP, () => { if (id === run) word.value = true })
   marks = new MutationObserver(follow)
   marks.observe(html, { attributes: true, attributeFilter: ['data-stage-layer', 'data-stage-plate'] })
   // a task on: at slide enter <html> may still carry the slide before's plate (`held`
   // at its end) until StagePlate's own watch has published this slide's
   later(0, follow)
+}
+
+// the stage falls back after the hand-over began (a context lost for good, a rebuild
+// whose boot fails): this slide goes over to the plate or the still at once
+const onFallback = () => {
+  if (!live.value || nav.currentSlideNo?.value !== page()) return
+  const id = ++run
+  clear()
+  still.value = true; fading.value = false
+  without(id)
 }
 
 async function takeOver() {
@@ -255,9 +270,14 @@ const onRebuilt = () => {
 }
 onMounted(() => {
   window.addEventListener('slidev-stage:rebuilt', onRebuilt)
+  window.addEventListener('slidev-stage:fallback', onFallback)
   if (live.value && nav.currentSlideNo?.value === page()) takeOver()
 })
-onUnmounted(() => { window.removeEventListener('slidev-stage:rebuilt', onRebuilt); run++; clear() })
+onUnmounted(() => {
+  window.removeEventListener('slidev-stage:rebuilt', onRebuilt)
+  window.removeEventListener('slidev-stage:fallback', onFallback)
+  run++; clear()
+})
 watch(() => nav.currentSlideNo?.value, (n) => {
   if (!live.value) return
   const p = stage()?.h.scene.getObjectByName(NAME)

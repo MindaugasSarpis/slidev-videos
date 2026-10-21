@@ -23,9 +23,12 @@ a world it behaves as v0.8.2 says, and a v0.8.2 deck as under v0.8.2.
   `[data-stage-plate]` (`handOverWithout`, `stage/fallback.js`): over a plate
   the still covers it while the plate has no frame, fades after `hold` as
   live while it plays, and is gone with the word shown once the plate holds
-  the settled world. Over the living still and the still alone it stays
-  and the word shows at once, as before; it no longer waits 8 s for a world
-  that has fallen back.
+  the settled world. A stall after the plate has played keeps the fade
+  going; a plate that never loads shows the word by 8 s; a fallback during
+  the hand-over is followed at once. Over the living still and the still
+  alone it stays and the word shows at once, as before; it no longer waits
+  8 s for a world that has fallen back. Without a world the word comes with
+  the plate's end (about 5 s after live's) and no cue fires.
 - **What else met.** The step bus, the gate and the lhcb plugin need no
   change under the fallback: without a world no builder runs, and a missing
   detector `.bin` stays a console warning with the world running, not a
