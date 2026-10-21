@@ -1,4 +1,5 @@
 """deck.py: slides as Slidev numbers them, and each slide's speaker notes as plain text."""
+from pathlib import Path
 from slidev_videos import deck
 
 DECK = '''---
@@ -100,3 +101,14 @@ def test_click_notes_split_on_markers_or_repeat_with_a_click_line(tmp_path):
 def test_notes_text_strips_markdown_and_html_only():
     md = "<!--\n**Bold**, *em*, __b__, _i_, `code`, [t](u), <span class=\"x\">tag</span>, a_b_c, 2 * 3\n-->"
     assert deck.notes_text(md) == "Bold, em, b, i, code, t, tag, a_b_c, 2 * 3"
+
+
+def test_parse_reads_v090s_lhcb_example():
+    # main's second example deck (v0.9.0): one-line `space`, a block `space` with a
+    # `path` list, and a component whose props run over several lines
+    root = Path(__file__).resolve().parents[1]
+    slides = deck.parse(root / "packages/stage/example-lhcb/slides.md")
+    assert [s.number for s in slides] == [1, 2, 3, 4, 5]
+    assert "path:" in slides[4].frontmatter
+    assert "<StageDepthGrains" in slides[4].content
+    assert all(s.notes == "" for s in slides)
