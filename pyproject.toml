@@ -12,6 +12,8 @@ license = { text = "MIT" }
 [project.optional-dependencies]
 # `slidev-videos depth`: depth maps for StagePhoto (Depth Anything V2 Small, CPU)
 depth = ["onnxruntime>=1.17", "numpy", "pillow", "huggingface_hub"]
+# `slidev-videos pptx`: a PowerPoint file from the stage recorder's takes
+pptx = ["python-pptx>=1.0"]
 
 [project.scripts]
 slidev-videos = "slidev_videos.cli:main"

@@ -3050,9 +3050,9 @@ def cmd_build(args: argparse.Namespace) -> int:
 
 
 # Commands that answer `--json` with one object on stdout (text goes to stderr).
-JSON_COMMANDS = ("check", "preflight", "frames", "doctor")
+JSON_COMMANDS = ("check", "preflight", "frames", "doctor", "pptx")
 # Commands that run without a videos.toml.
-PROJECTLESS = ("doctor", "contact-sheet")
+PROJECTLESS = ("doctor", "contact-sheet", "pptx")
 
 
 class _Parser(argparse.ArgumentParser):
@@ -3222,6 +3222,9 @@ def main(argv: list[str] | None = None) -> int:
 
     from . import depth as _depth
     _depth.add_parser(sub)
+
+    from . import pptx as _pptx
+    _pptx.add_parser(sub, parents=[common])
 
     p_clean = add("clean", help="delete local video files that are verified recoverable (dry-run by default)")
     p_clean.add_argument("--yes", action="store_true", help="actually delete (default is a dry run)")

@@ -4,6 +4,47 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## v0.8.3 — unreleased
+
+slidev-videos 0.8.3 · slidev-addon-stage 0.5.3 · slidev-addon-videos 0.8.3
+
+The PPTX of a recorded talk, on the v0.8.2 line (the talks pinned there);
+the same change goes to `main` with v0.10.0. **No deck behaves differently**:
+the player and the stage are untouched; the recorder only writes more into
+`index.json`.
+
+- **`slidev-videos pptx <recording-dir> --deck deck.md --out talk.pptx`**
+  (`src/slidev_videos/pptx.py`): one 16:9 slide per segment of
+  `slidev-stage-record`'s `index.json` — a slide's clicks each a slide —
+  the take full-bleed with its first frame as the poster, starting on its
+  own when the slide is shown (a main-sequence `mediacall` effect,
+  `playFrom(0.0)`, as PowerPoint writes "Start: Automatically";
+  `--autoplay with` for "With Previous"), holding its last frame, no media
+  controls in the slide show (`p14:showMediaCtrls val="0"` in presProps);
+  the deck's speaker notes as plain text, a click's under a `[click K/N]`
+  line. Each take is re-encoded (`--profile pptx`: NVENC VBR CQ 24 or x264
+  CRF 21 under `--cap` 6M, a 12M buffer, 4:2:0 High, a key frame a second,
+  faststart; `small`: the plates' 4M; `copy`). A recorder's skipped segment
+  stops the build unless `--allow-skips` (a black slide naming the clip).
+  Projectless; `--json`; exit 0 / 1 (a skip, ffmpeg) / 2 (usage, no
+  index.json, no python-pptx). Needs the new `pptx` extra
+  (`pip install "slidev-videos[pptx]"`, python-pptx ≥ 1.0), imported only
+  by this command.
+- **A clip slide keeps its sound.** The takes are silent (PNG frames piped
+  to ffmpeg); the recorder now logs, per segment, where its clip played in
+  the take — `clip.sound: { start, t, end, muted, volume, loop }`, the take's
+  seconds of the first and last frame the clip played on and the clip's own
+  second at the first (`bin/record.mjs` `trackClip`; the page reports each
+  clip's `muted` and `volume`) — and `pptx` lays the source clip's audio
+  there (from the deck's build, `--clips` or `public/videos/`), AAC at the
+  web tier's -16 LUFS without a second loudnorm, at the player's `volume`,
+  none for a muted clip. World segments stay silent.
+- **Known limit:** the stage's own sounds — the hum, a `Soundtrack`'s music,
+  the flight — are drawn by the page's audio, which the recorder does not
+  capture: they are in neither the takes nor the PPTX.
+- `deck.py`: Slidev's slides (hidden ones unnumbered, as the recorder
+  numbers them) and their notes, ported from the talks' `talk_deck.py`.
+
 ## v0.8.2 — 2026-10-21
 
 slidev-videos 0.8.2 · slidev-addon-stage 0.5.2 · slidev-addon-videos 0.8.2
