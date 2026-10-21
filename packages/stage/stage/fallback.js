@@ -98,3 +98,18 @@ export function plateLocalFirst(env) {
   const e = env && typeof env === 'object' ? env : {};
   return !!e.DEV || e.VITE_VIDEOS_LOCAL_FIRST === '1';
 }
+
+// <StageDepthGrains> (v0.9.0's hand-over: a clip's last frame fading into grains of
+// the world) where the world cannot run: its still stays over the living still and
+// the still alone, and the word shows at once. A plate of that slide was filmed by
+// the recorder's text-free pass, the still hidden: it begins on the world with no
+// grains yet and films them coming in, so over a plate the still keeps covering it
+// while the plate has no frame (loading), fades as the live hand-over does while it
+// plays, and is gone once it holds the settled world (its end, a back-step, a jump),
+// where the word shows. layer: html[data-stage-layer]; plate: html[data-stage-plate].
+export function handOverWithout(layer, plate) {
+  if (layer !== 'plate' || !plate || plate === 'none') return { still: 'stay', word: true };
+  if (plate === 'loading') return { still: 'stay', word: false };
+  if (plate === 'held') return { still: 'gone', word: true };
+  return { still: 'fade', word: false };
+}

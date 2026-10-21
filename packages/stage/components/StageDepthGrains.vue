@@ -5,6 +5,7 @@ import { Vector3 } from 'three'
 import { sampleFrame, placeInDepth, loadDepth, makeDepthGrains, scaleLaw, poseCamera } from '../stage/depth-grains.js'
 import { setSteps } from '../stage/steps.js'
 import { whenGateOpen } from '../stage/gate.js'
+import { handOverWithout } from '../stage/fallback.js'
 
 // <StageDepthGrains src="figures/lis_last.jpg" depth="figures/lis_last.depth.png"
 //   camera="data/lis.json" :anchor="[x, y, z]" :cues="[…]"><h1>Ačiū</h1></StageDepthGrains>
@@ -25,7 +26,11 @@ import { whenGateOpen } from '../stage/gate.js'
 // directly). The slot (the word) shows `wordAfter` s after the camera stopped, by
 // `wordBy` s at the latest.
 // Without a running world (reduced motion, no WebGL, a lost context, a slow boot) the
-// still stays and the word shows over it; printed, in the overview and the presenter's
+// still stays and the word shows over it, unless the slide's recorded plate plays in
+// the world's place (slidev-addon-stage 0.7): the plate filmed the grains coming in
+// with the still hidden, so the still fades onto it after `hold`, as live, and is gone
+// once the plate holds the settled world, where the word shows (handOverWithout,
+// stage/fallback.js, on html[data-stage-layer] and [data-stage-plate]); printed, in the overview and the presenter's
 // previews it is the still and the word. Nothing loads before the stage gate opens
 // (setStageGate, stage/gate.js). From Innoday's <LisTakeover> (Oct 2026), the light
 // injection system's hand-over its first use.
@@ -83,17 +88,18 @@ function stage() {
   if (!api || !h?.scene || !camera) return null
   return { api, h, camera }
 }
-let run = 0, timers = [], watcher = 0
+let run = 0, timers = [], watcher = 0, marks = null
+const fellBack = () => !!document.documentElement.dataset.stageFallback
 async function waitStage(id) {
   for (let i = 0; i < 80; i++) {
     const s = stage()
-    if (s || id !== run) return s
+    if (s || id !== run || fellBack()) return s
     await new Promise((r) => setTimeout(r, 100))
   }
   return null
 }
 const later = (ms, fn) => timers.push(setTimeout(fn, ms))
-const clear = () => { timers.forEach(clearTimeout); timers = []; clearInterval(watcher); watcher = 0 }
+const clear = () => { timers.forEach(clearTimeout); timers = []; clearInterval(watcher); watcher = 0; marks?.disconnect(); marks = null }
 
 const A = new Vector3(...props.anchor)
 const NAME = 'depth-grains:' + page()
@@ -135,6 +141,25 @@ function grains(s, got) {
   return pts
 }
 
+// Where the world cannot run: the still and the word follow the layer and the slide's
+// plate as Stage.vue and StagePlate.vue mark them on <html> (loading → playing → held,
+// or the plate given up for the living still), until the slide is left
+function without(id) {
+  const html = document.documentElement
+  let fadeSet = false
+  const follow = () => {
+    if (id !== run) return
+    const h = handOverWithout(html.dataset.stageLayer, html.dataset.stagePlate)
+    if (h.word) word.value = true
+    if (h.still === 'gone') still.value = false
+    else if (h.still === 'stay') { still.value = true; fading.value = false; fadeSet = false }
+    else if (!fadeSet) { fadeSet = true; later(props.hold, () => { if (id === run) fading.value = true }) }
+  }
+  marks = new MutationObserver(follow)
+  marks.observe(html, { attributes: true, attributeFilter: ['data-stage-layer', 'data-stage-plate'] })
+  follow()
+}
+
 async function takeOver() {
   const id = ++run
   clear()
@@ -144,7 +169,10 @@ async function takeOver() {
   if (hole) hole.value.w = props.hole.r ?? 0.1
   try { window.dispatchEvent(new Event(props.prewarm)) } catch {}
   later(props.wordBy * 1000, () => { if (id === run) word.value = true })
+  if (fellBack()) return without(id)
   const s = await waitStage(id)
+  if (id !== run || !live.value) return
+  if (!s && fellBack()) return without(id)
   const got = s ? await load() : null
   if (id !== run || !live.value) return
   if (!s || !got) { word.value = true; return }

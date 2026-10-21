@@ -7,7 +7,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { fallbackLayer, plateName, plateUrls, plateRelease, platesDir, plateLocalFirst, plateEntry, LAYERS, PLATE_REASONS } from '../stage/fallback.js';
+import { fallbackLayer, plateName, plateUrls, plateRelease, platesDir, plateLocalFirst, plateEntry, handOverWithout, LAYERS, PLATE_REASONS } from '../stage/fallback.js';
 import { STAGE_OVER_WORLD, PLATE_HIDDEN, recorderHooks } from '../bin/lib/record-page.mjs';
 import { FALLBACK_REASONS } from '../stage/diagnose.js';
 import { STAGE_KEYS } from '../stage/types.js';
@@ -149,6 +149,39 @@ test('a plate is the world alone: the recorder\'s text-free pass hides what the 
   assert.doesNotMatch(shots, /\.stage \.scrim, \.stage \.grain/);           // no list of its own either
 });
 
+// ---- v0.9.0's hand-over without a world ----------------------------------------------------
+// <StageDepthGrains> opens on a clip's last frame and fades it into grains of the world. The
+// recorder's text-free pass hides the slide (the still with it), so a plate of that slide begins
+// on the world with no grains yet and films them come in: the still must fade onto it as live,
+// not cover it. Without a plate the still stays, as v0.9.0 has it.
+test('the hand-over without a world: the still stays unless a plate plays under it; it fades as the plate plays, and is gone once the plate holds', () => {
+  for (const layer of ['living', 'still', 'world-floor', 'world', '', undefined]) {
+    for (const plate of ['none', 'loading', 'playing', 'paused', 'held', undefined]) {
+      assert.deepEqual(handOverWithout(layer, plate), { still: 'stay', word: true }, `${layer}/${plate}`);
+    }
+  }
+  assert.deepEqual(handOverWithout('plate', 'none'), { still: 'stay', word: true });       // no plate for this slide: the living still comes
+  assert.deepEqual(handOverWithout('plate', undefined), { still: 'stay', word: true });
+  assert.deepEqual(handOverWithout('plate', 'loading'), { still: 'stay', word: false });   // a plate with no frame yet is transparent: the still covers it
+  assert.deepEqual(handOverWithout('plate', 'playing'), { still: 'fade', word: false });   // the arrival the recorder filmed: the grains come in under the fading still
+  assert.deepEqual(handOverWithout('plate', 'paused'), { still: 'fade', word: false });
+  assert.deepEqual(handOverWithout('plate', 'held'), { still: 'gone', word: true });       // the settled world (a back-step, a jump, the plate's end): the word
+});
+
+test('StageDepthGrains reads the layer and the plate off <html> where the world cannot run, and follows them', () => {
+  const src = read('../components/StageDepthGrains.vue');
+  assert.match(src, /import \{[^}]*\bhandOverWithout\b[^}]*\} from '\.\.\/stage\/fallback\.js'/);
+  assert.match(src, /dataset\.stageLayer/);
+  assert.match(src, /dataset\.stagePlate\b/);
+  // it follows them as they change (loading → playing → held, or the plate given up for the living still)
+  assert.match(src, /new MutationObserver\(/);
+  assert.match(src, /attributeFilter: \['data-stage-layer', 'data-stage-plate'\]/);
+  // the fade waits the live hand-over's `hold` and takes its `fade`: the plate was filmed on that timeline
+  assert.match(src, /props\.hold/);
+  // the observer goes when the slide is left or the component unmounts
+  assert.match(src, /\.disconnect\(\)/);
+});
+
 // ---- the components -------------------------------------------------------------------------
 test('StagePlate plays the slide\'s plate muted, holds its last frame, says on <html> what it has, and keeps a slide each side', () => {
   const src = read('../components/StagePlate.vue');
@@ -270,10 +303,10 @@ function compilerSfc() {
   return null;
 }
 
-test('Stage.vue, StagePlate.vue and StageLiving.vue compile', (t) => {
+test('Stage.vue, StagePlate.vue, StageLiving.vue and StageDepthGrains.vue compile', (t) => {
   const sfc = compilerSfc();
   if (!sfc) { t.skip('@vue/compiler-sfc not installed'); return; }
-  for (const f of ['Stage.vue', 'StagePlate.vue', 'StageLiving.vue']) {
+  for (const f of ['Stage.vue', 'StagePlate.vue', 'StageLiving.vue', 'StageDepthGrains.vue']) {
     const { descriptor, errors } = sfc.parse(read(`../components/${f}`), { filename: f });
     assert.deepEqual(errors, [], f);
     const id = f.replace(/\W/g, '');
