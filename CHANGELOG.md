@@ -4,6 +4,39 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## v0.10.0 — unreleased
+
+slidev-videos 0.10.0 · slidev-addon-stage 0.7.0 · slidev-addon-videos 0.10.0
+
+v0.8.2 (the live fallback) and v0.8.3 (the PPTX) on top of v0.9.0: both
+lines merged as they are, their entries below. The tag waits on v0.8.3's
+PowerPoint check, as v0.8.3's does.
+
+**A v0.9.0 deck behaves as under v0.9.0 while its world runs**, with v0.8.2's
+one exception (no `advance-on-end` within half a second of a press); without
+a world it behaves as v0.8.2 says, and a v0.8.2 deck as under v0.8.2.
+
+- **The hand-over over a plate.** v0.9.0's `<StageDepthGrains>` kept its
+  still over everything once the world was down, so the slide's plate,
+  filmed with the still hidden and the grains coming in, played unseen under
+  it. Without a world it now follows `html[data-stage-layer]` and
+  `[data-stage-plate]` (`handOverWithout`, `stage/fallback.js`): over a plate
+  the still covers it while the plate has no frame, fades after `hold` as
+  live while it plays, and is gone with the word shown once the plate holds
+  the settled world. Over the living still and the still alone it stays
+  and the word shows at once, as before; it no longer waits 8 s for a world
+  that has fallen back.
+- **What else met.** The step bus, the gate and the lhcb plugin need no
+  change under the fallback: without a world no builder runs, and a missing
+  detector `.bin` stays a console warning with the world running, not a
+  fallback. The plate's text-free pass hides `.slidev-layout`, so a hand-over
+  slide's plate holds its grains and not its still or word. `deck.py` reads
+  the lhcb example deck as Slidev numbers it.
+- **Tests:** stage 145 → 147 (the hand-over's rule over every layer and
+  plate state, the component's wiring; it joins the compile check); Python
+  183 → 184, and `test_shared_registry` counts the 44 clips v0.9.0's
+  `lis_flag.mp4` made (main had failed on 43 since v0.9.0); root 11.
+
 ## v0.9.0 — 2026-10-20
 
 slidev-videos 0.9.0 · slidev-addon-stage 0.6.0 · slidev-addon-videos 0.9.0

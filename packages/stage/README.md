@@ -13,7 +13,7 @@ quarks, clusters, particle names — is a plugin.
 
 ## Install
 
-    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.9.0&path:/packages/stage"
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.10.0&path:/packages/stage"
 
 ## Use
 
@@ -396,7 +396,7 @@ over. With no gate set, the work starts at once.
   - **The shrink** runs on a power law, from `d0` (the camera's start distance, the path's first key) to `sEnd` units a metre at the path's farthest key. A polygon in the camera JSON's `flagUV` keeps `sKeep` (20), so the mark stays visible.
   - **`cues`** fire on the camera's distance from the anchor, or once it stands, never on a timer: `{ dist: 3.2, set: { det: 1 } }` sets steps on the bus; `{ dist: 13, emit: 'collision:start' }` sends a window event `slidev-stage:cue` with `{ name }`; `{ stopped: true, set: {…}, fadeOut: 1500 }` fires once the camera stands and fades the grains out.
   - **`reset`** runs as the hand-over starts, and when the slide is left for anywhere but the next one. **`end`** runs on the next slide, including when that slide is opened directly. **`hole: { name, r }`** dims that detector round the mark until the fade-out.
-  - **The slot** (the word) shows `wordAfter` s (3.2) after the camera stops, and by `wordBy` s (34) at the latest. Without a running world, printed and in the previews, the slide is the still and the word.
+  - **The slot** (the word) shows `wordAfter` s (3.2) after the camera stops, and by `wordBy` s (34) at the latest. Without a running world, printed and in the previews, the slide is the still and the word; over a recorded plate the still fades onto it (see [When the world cannot run](#when-the-world-cannot-run)).
   - **The camera JSON, depth PNG and still** come from `tools/lis/lis_scene.py`. The light injection system's set is in `stage-data` by name (`lis_last.jpg`, `lis_last.depth.png`, `lis.json`, fetched like the geometry), its clip `lis_flag.mp4` in the shared library.
 - `StagePanel` — a translucent panel with a `kicker`, haloed.
 - `StageHalo` — the dust borders. Mounted for you.
@@ -951,6 +951,14 @@ clip's 0.45 s fade lands on the plate's first frame, or, where the overlay
 has WebGL2, its `dust` leave or `exit="push"` is drawn live over the plate
 as it would be over the world. A clip after which no plate is loaded stops
 at its end, and the presenter goes on by hand.
+
+**The hand-over over a plate.** A `<StageDepthGrains>` slide's plate is
+filmed with the still hidden, like all of the slide: it begins on the world
+with no grains yet and films them coming in. Over a plate the still covers
+it while the plate has no frame, fades after `hold` as it does live while the
+plate plays, and is gone once the plate holds the settled world, where the
+word shows. Over the living still and the still alone, the still stays and
+the word shows at once (`handOverWithout`, `stage/fallback.js`).
 
 **Seeing it before the venue.** `?stage-force=<reason>` in the address
 (before or after the `#`, like every switch here) boots straight into that
