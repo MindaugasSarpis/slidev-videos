@@ -17,6 +17,21 @@
 //
 // window.__rec then offers sync(), state(n) and plate(on) to the recorder.
 
+// What the stage draws live over a plate as over the world, so a plate (and
+// a still: shots.mjs --stills) must not carry it: the scrim, whose opacity is
+// the slide's `dim`, the paper grain and the stop HUD. Baked into a plate and
+// drawn again over it, the scrim left the world at dim² of its light and the
+// grain doubled — the picture darkened the moment a plate's first frame landed.
+export const STAGE_OVER_WORLD = ['.stage .scrim', '.stage .grain', '.stage .hud'];
+
+// The text-free pass (--plate) hides, besides: the slide's own layer (its
+// clip with it), the halo, and the videos addon's push and dust overlay
+// (components/VideoDust.vue), so a plate never holds a push. A plate after a
+// clip slide then begins on the world as it stood under the clip; at a venue
+// without WebGL2 the clip's fade lands on it, and where the overlay runs its
+// push is drawn live over the plate, as over the world.
+export const PLATE_HIDDEN = ['.slidev-layout', '.halo-layer', '.video-dust', '.video-zoom', ...STAGE_OVER_WORLD];
+
 export function seedRandom(seed) {
   // mulberry32
   let a = (Number(seed) >>> 0) || 1;
@@ -29,7 +44,9 @@ export function seedRandom(seed) {
   };
 }
 
-export function recorderHooks() {
+// addInitScript serialises the function: nothing of this module reaches the
+// page but the argument, so the hide-list comes in as `hidden` (PLATE_HIDDEN).
+export function recorderHooks({ hidden = [] } = {}) {
   const now = () => performance.now();
   // --- media
   const P = HTMLMediaElement.prototype;
@@ -71,11 +88,11 @@ export function recorderHooks() {
   let cover = null;
   addEventListener('slidev-videos:cover', (e) => { cover = e.detail || null; });
 
-  // The text-free pass: the slide's own layer, the halo and the stop HUD go;
+  // The text-free pass: the world alone (`hidden`, PLATE_HIDDEN above);
   // `visibility` keeps every box and animation where it is.
   document.addEventListener('DOMContentLoaded', () => {
     const st = document.createElement('style');
-    st.textContent = 'html[data-rec-plate] .slidev-layout, html[data-rec-plate] .halo-layer, html[data-rec-plate] .stage .hud { visibility: hidden !important; }';
+    st.textContent = `${hidden.map((s) => `html[data-rec-plate] ${s}`).join(', ')} { visibility: hidden !important; }`;
     document.head.appendChild(st);
   });
 

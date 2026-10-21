@@ -252,6 +252,14 @@ export function parseColor(value, fallback = [0.49, 0.83, 0.99]) {
   return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
 }
 
+// The stage's word that the device has no WebGL2 (html[data-stage-fallback],
+// its reason; `?stage-force=no-webgl2` says it of a device that has one, to
+// rehearse the venue): the overlay has none either, so a clip leaves by its
+// fade, onto the plate, and the rehearsal is the venue. The other reasons (no
+// float targets, a plugin, data, a context lost) leave WebGL2 to the overlay.
+export const NO_WEBGL2 = 'no-webgl2';
+export function declinesGL(fallback) { return String(fallback ?? '') === NO_WEBGL2; }
+
 // createDust(canvas) → { enter, leave, cancelAll, active, dispose } or null
 // when WebGL2 is not to be had.
 export function createDust(canvas) {

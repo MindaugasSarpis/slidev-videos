@@ -11,7 +11,7 @@ import { resolvePalette, PALETTES, DEFAULT_PALETTE, LOOKS, hexToRgb, rgbTriplet,
 import { checkStage, readStageConfig, deckPoses, deckSlides, deckTypes, deckClocks, deckComponents, readYaml, deckPlaces, deckPlaceList, deckPlaceGroups, deckPages, main as checkMain } from '../bin/check.mjs';
 import { formatCount, countRun, countAt, countSpan, COUNT_DOWN_MS } from '../stage/count.js';
 import { deckHasThree } from '../vite.config.js';
-import { parseSlides, parseArgs, detectBase, clicksFor, frameName, parseProcLocks, problemsOf, cacheable, split, serve, staticKey, clipName } from '../bin/shots.mjs';
+import { parseSlides, parseArgs, detectBase, clicksFor, frameName, parseProcLocks, problemsOf, cacheable, split, serve, staticKey, clipName, deckUrl, forcedSettled, LIVING_FRAMES } from '../bin/shots.mjs';
 import { placesDecl, placeGroupsAt } from '../stage/place-groups.js';
 
 const here = (p) => new URL(p, import.meta.url);
@@ -292,6 +292,8 @@ test('palettes and options are held to the engine\'s lists', () => {
   assert.deepEqual(run('  options: { blom: 0.4, reach: 20 }'), ['unknown-option']);
   assert.deepEqual(run('  options:\n    bloom: 0.4\n    nebula: 0'), []);
   assert.deepEqual(run('  pallete: blue'), ['unknown-key']);   // a warning
+  assert.deepEqual(run('  motion: floor\n  plates: videos\n  platesRelease: false'), []);   // the fallback layers' keys are known
+  assert.deepEqual(run('  plates: false\n  platesRelease: o/r@plates-1'), []);
   assert.equal(typo(() => ({ deck: head('  pallete: blue') })).problems.length, 0);
   assert.deepEqual(run('  plugins: [nope]'), ['unknown-plugin']);
 });
@@ -373,10 +375,12 @@ test('the validator\'s key lists are the keys the code reads', async () => {
   // a look's `halo` is the halo layer's (stage.halo) and `max` caps the palette's look: not engine options
   for (const [look, opts] of Object.entries(LOOKS)) for (const k of Object.keys(opts)) if (k !== 'halo' && k !== 'max') assert.ok(OPTION_KEYS.includes(k), `${look}.${k}`);
   const read = new Set();
-  for (const f of ['../components/Stage.vue', '../components/StageHalo.vue', '../components/StageCount.vue', '../global-top.vue', '../global-bottom.vue']) {
+  for (const f of ['../components/Stage.vue', '../components/StageHalo.vue', '../components/StageCount.vue', '../components/StageLiving.vue', '../components/StagePlate.vue', '../global-top.vue', '../global-bottom.vue']) {
     for (const m of readFileSync(here(f), 'utf8').matchAll(/\b(?:CFG|cfg)\.(\w+)/g)) read.add(m[1]);
   }
   assert.deepEqual([...read].filter((k) => !STAGE_KEYS.includes(k)), []);
+  // the fallback layers' keys (stage/fallback.js): read by Stage.vue, so the validator takes them
+  for (const k of ['motion', 'plates', 'platesRelease']) assert.ok(read.has(k) && STAGE_KEYS.includes(k), k);
   const stage = readFileSync(here('../components/Stage.vue'), 'utf8') + readFileSync(here('../stage/space.js'), 'utf8');
   for (const k of SPACE_KEYS) assert.ok(new RegExp(`\\b(sp|p|pose|frontmatterSpace\\.value\\?)\\.${k}\\b`).test(stage), `space.${k} is read`);
 });
@@ -598,6 +602,56 @@ test('bad options are errors, not positionals', () => {
   assert.deepEqual(parseArgs(['--help']).errors, []);
 });
 
+test('--force rehearses a fallback: the reason goes to the stage in the query, before the #', () => {
+  const o = parseArgs(['d', 'o', '--force', 'no-webgl2']);
+  assert.deepEqual(o.errors, []);
+  assert.equal(o.force, 'no-webgl2');
+  assert.equal(parseArgs(['d', 'o']).force, null);
+  for (const r of ['reduced-motion', 'no-float-target', 'plugin', 'data', 'init', 'context-lost']) assert.equal(parseArgs(['d', 'o', '--force', r]).force, r, r);
+  assert.match(parseArgs(['d', 'o', '--force', 'no-gpu']).errors.join(), /--force: reduced-motion, no-webgl2, no-float-target, plugin, data, init, context-lost; not no-gpu/);
+  assert.match(parseArgs(['d', 'o', '--force']).errors.join(), /--force needs a value/);
+  // a still is the world as it stands: a forced fallback has none
+  assert.match(parseArgs(['d', 'o', '--stills', '--force', 'no-webgl2']).errors.join(), /--force: not with --stills/);
+  assert.match(parseArgs(['d', 'o', '--force', 'no-webgl2', '--stills']).errors.join(), /--force: not with --stills/);
+  // the deck's address: ?stage-force before the #, where Slidev's hash navigation keeps it (stage/diagnose.js reads both)
+  assert.equal(deckUrl('http://localhost:1234/repo/talk/', { force: 'no-webgl2' }), 'http://localhost:1234/repo/talk/?stage-force=no-webgl2');
+  assert.equal(deckUrl('http://localhost:1234/#/3', { force: 'context-lost' }), 'http://localhost:1234/?stage-force=context-lost#/3');
+  assert.equal(deckUrl('http://localhost:1234/?x=1#/3?clicks=2', { force: 'init' }), 'http://localhost:1234/?x=1&stage-force=init#/3?clicks=2');
+  assert.equal(deckUrl('http://localhost:1234/', {}), 'http://localhost:1234/');
+  assert.equal(deckUrl('http://localhost:1234/', { force: null }), 'http://localhost:1234/');
+});
+
+test('a forced run photographs the fallback settled: the plate holding its last frame, the living still drawn', () => {
+  const t = (state, want) => assert.equal(forcedSettled(state), want, JSON.stringify(state));
+  // a plate's settled world is its last frame (held); on its way or still arriving, not yet
+  t({ layer: 'plate', plate: 'held' }, true);
+  t({ layer: 'plate', plate: 'held', livingFrames: 0 }, true);
+  t({ layer: 'plate', plate: 'playing', livingFrames: 40 }, false);
+  t({ layer: 'plate', plate: 'loading', livingFrames: 40 }, false);
+  t({ layer: 'plate', plate: 'paused' }, true);   // under a clip's cover, or the tab hidden: nothing of it will move
+  // no plate for this slide (its chain told no, or none asked for): the living still, once it has drawn
+  t({ layer: 'living', plate: 'none', livingFrames: 0 }, false);
+  t({ layer: 'living', plate: 'none', livingFrames: LIVING_FRAMES - 1 }, false);
+  t({ layer: 'living', plate: 'none', livingFrames: LIVING_FRAMES }, true);
+  t({ layer: 'living', plate: 'none', livingFrames: 300 }, true);
+  t({ layer: 'living', plate: null, livingFrames: 3 }, true);
+  t({ layer: 'living', livingFrames: 3 }, true);
+  t({ layer: 'living' }, false);
+  t({ layer: 'living', plate: 'loading', livingFrames: 9 }, false);   // a plate on its way under the still: wait for it
+  t({ layer: 'living', plate: 'held' }, true);
+  t({ layer: 'plate', plate: 'none', livingFrames: 3 }, true);
+  t({ layer: 'plate', plate: 'none', livingFrames: 2 }, false);
+  // the still alone, the world at its floor, the world itself: nothing of the fallback to wait for
+  t({ layer: 'still' }, true);
+  t({ layer: 'still', livingFrames: 0 }, true);
+  t({ layer: 'world-floor' }, true);
+  t({ layer: 'world', plate: 'loading' }, true);
+  t({ layer: null }, true);
+  t({}, true);
+  assert.equal(forcedSettled(), true);
+  assert.equal(LIVING_FRAMES, 3);
+});
+
 test('the base a deck was built for', () => {
   assert.equal(detectBase('<script type="module" crossorigin src="/assets/index-a.js"></script>'), '/');
   assert.equal(detectBase('<script type="module" crossorigin src="/cern_outreach_talks/2026_10_00_OpenData/assets/index-a.js"></script>'), '/cern_outreach_talks/2026_10_00_OpenData/');
@@ -634,6 +688,28 @@ test('what makes a run exit 3', () => {
   assert.deepEqual(problemsOf({ overflowPx: 12 }), ['runs 12px off the bottom']);
   assert.deepEqual(problemsOf({ pageErrors: ['x'], httpErrors: [{ status: 404, local: true }] }), ['1 page error(s)', '1 failed request(s)']);
   assert.deepEqual(problemsOf({ error: 'timeout' }), ['failed: timeout']);
+});
+
+test('a plate the stage asked for and was refused is no failure under a plate or the living still', () => {
+  // three plates are asked for at a time (the slide before, this one, the next), and a clip slide never has one
+  const plate = { status: 404, url: 'http://127.0.0.1:4000/videos/03-plate.mp4', local: true };
+  const release = { status: 404, url: 'https://github.com/o/r/releases/download/videos/03-plate.mp4', local: false };
+  const still = { status: 404, url: 'http://127.0.0.1:4000/stills/03.jpg', local: true };
+  assert.deepEqual(problemsOf({ settled: true, layer: 'plate', httpErrors: [plate, release] }), []);
+  assert.deepEqual(problemsOf({ settled: true, layer: 'living', httpErrors: [plate] }), []);
+  // a missing still is a real problem, counted beside the plate that is not
+  assert.deepEqual(problemsOf({ settled: true, layer: 'living', httpErrors: [plate, still] }), ['1 failed request(s)']);
+  // while the world runs, or the still stands alone, nothing should ask for plates
+  assert.deepEqual(problemsOf({ settled: true, layer: 'world', httpErrors: [plate] }), ['1 failed request(s)']);
+  assert.deepEqual(problemsOf({ settled: true, layer: 'world-floor', httpErrors: [plate] }), ['1 failed request(s)']);
+  assert.deepEqual(problemsOf({ settled: true, layer: 'still', httpErrors: [plate] }), ['1 failed request(s)']);
+  assert.deepEqual(problemsOf({ settled: true, httpErrors: [plate] }), ['1 failed request(s)']);   // a deck built before the mark
+  // only a refusal: a plate that is there and errors counts
+  assert.deepEqual(problemsOf({ settled: true, layer: 'plate', httpErrors: [{ ...plate, status: 500 }] }), ['1 failed request(s)']);
+  // --changed keeps the frame by the same rule
+  assert.equal(cacheable({ settled: true, layer: 'living', httpErrors: [plate] }), true);
+  assert.equal(cacheable({ settled: true, layer: 'plate', httpErrors: [plate, still] }), false);
+  assert.equal(cacheable({ settled: true, layer: 'world', httpErrors: [plate] }), false);
 });
 
 test('slides are split into contiguous runs, one per page', () => {

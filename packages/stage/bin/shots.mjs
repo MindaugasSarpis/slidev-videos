@@ -31,6 +31,8 @@ import { constants as osConstants } from 'node:os';
 import { spawn, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { launch, loadPlaywright, MODES } from './lib/chromium.mjs';
+import { STAGE_OVER_WORLD } from './lib/record-page.mjs';
+import { FALLBACK_REASONS } from '../stage/diagnose.js';
 
 const MIME = {
   '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
@@ -155,6 +157,11 @@ export const USAGE = `usage: slidev-stage-shots <dist> <out-dir> [options]
   --stills             the world alone, no slide text, as <out-dir>/01.jpg …: the stills print,
                        PDF export and the static fallback show (write them to public/stills)
   --stills-at WHEN     last (default: each slide at its last click, as the export prints it) | first
+  --force REASON       rehearse the fallback: the deck under ?stage-force=REASON (${FALLBACK_REASONS.join(', ')}),
+                       photographed as a device with that fault would show it, each frame once what stood in
+                       has settled (a plate played to its end and holding, the living still drawn; within --wait,
+                       stretched to the plate's length); every line says the fallback and the layer (plate,
+                       living, still, world-floor) that stood in. Not with --stills
 
 exit: 0 clean · 3 overflow, page errors, failed requests, failed or unsettled frames · 1 the run failed · 2 bad arguments · 128+n stopped by signal n`;
 
@@ -163,7 +170,7 @@ export function parseArgs(argv) {
     dist: null, out: null, dev: null, slides: null, clicks: 'none', clickMap: null,
     settle: 6, wait: 30000, dust: 12, size: [1600, 900], draft: false, burst: 1, every: 1, seed: 1,
     halo: true, base: null, changed: false, sheet: false, probe: false, console: false, jobs: null,
-    gl: null, json: null, lock: LOCK, stills: false, stillsAt: 'last', help: false, errors: [],
+    gl: null, json: null, lock: LOCK, stills: false, stillsAt: 'last', force: null, help: false, errors: [],
   };
   const rest = [];
   const num = (v, name, min = 0) => { const n = Number(v); if (!Number.isFinite(n) || n < min) o.errors.push(`${name}: not a number ≥ ${min}: ${v}`); return n; };
@@ -199,6 +206,7 @@ export function parseArgs(argv) {
     else if (a === '--no-lock') o.lock = null;
     else if (a === '--stills') o.stills = true;
     else if (a === '--stills-at') { const v = val(); if (!['last', 'first'].includes(v)) o.errors.push(`--stills-at: last or first, not ${v}`); else o.stillsAt = v; }
+    else if (a === '--force') { const v = val(); if (v !== undefined) { if (!FALLBACK_REASONS.includes(v)) o.errors.push(`--force: ${FALLBACK_REASONS.join(', ')}; not ${v}`); else o.force = v; } }
     else if (a === '-h' || a === '--help') o.help = true;
     else if (a.startsWith('--')) o.errors.push(`unknown option ${a}`);
     else rest.push(a);
@@ -209,8 +217,39 @@ export function parseArgs(argv) {
   // a still is the slide's world as it stands: one frame per slide, at its
   // last click (what Slidev's export prints) unless --stills-at first
   if (o.stills) { o.clicks = o.stillsAt === 'first' ? 'none' : 'last'; o.clickMap = null; o.burst = 1; o.halo = false; }
+  // a still is the world as it stands; a forced fallback has no world to photograph
+  if (o.stills && o.force) o.errors.push('--force: not with --stills (a still is the world alone; a forced fallback has none)');
   if (!o.help && !o.out) o.errors.push(o.dev ? 'usage: --dev deck.md <out-dir>' : 'usage: <dist> <out-dir>');
   return o;
+}
+
+// The deck's address for the run. --force goes to the stage as ?stage-force=REASON
+// in the query, before the #: Slidev's hash navigation changes the hash alone, so
+// the query stays for every slide (stage/diagnose.js reads it from either side).
+export function deckUrl(url, { force = null } = {}) {
+  if (!force) return url;
+  const u = String(url);
+  const i = u.indexOf('#');
+  const head = i < 0 ? u : u.slice(0, i), hash = i < 0 ? '' : u.slice(i);
+  return `${head}${head.includes('?') ? '&' : '?'}stage-force=${encodeURIComponent(force)}${hash}`;
+}
+
+// Under --force there is no world to settle, and what stands in for it moves
+// in real time, not on the stepped clock: a frame shot on arrival would show
+// the plate's first frame. The fallback is settled when the plate has played
+// to its end and holds its settled world (data-stage-plate = held; a plate
+// paused under a clip's cover, or the tab hidden, will not move either), or,
+// where this slide has no plate (its chain told no, or none was asked for),
+// when the living still has drawn a few frames (its root's data-frames), so
+// the canvas is not blank; a plate on its way under the still (loading) is
+// waited for. The still alone, the world at its floor and the world itself
+// have nothing of the fallback to wait for: the settle has run.
+export const LIVING_FRAMES = 3;
+export function forcedSettled({ layer = null, plate = null, livingFrames = 0 } = {}) {
+  if (layer !== 'plate' && layer !== 'living') return true;
+  if (plate === 'held' || plate === 'paused') return true;
+  if (plate === 'loading' || plate === 'playing') return false;
+  return livingFrames >= LIVING_FRAMES;
 }
 
 // ---- the shared lock ------------------------------------------------------------------------
@@ -404,6 +443,14 @@ function pageInit(cfg) {
       dustTotal: g ? g.attributes.position.count : null,
       total: s.total ?? (nv ? Number(nv.total) : null),
       clicksTotal: s.clicksTotal ?? (nv ? Number(nv.clicksTotal) : null),
+      // why the stage fell back and what stands in for the world (stage/fallback.js, on <html>)
+      fallback: document.documentElement.dataset.stageFallback ?? null,
+      layer: s.layer ?? document.documentElement.dataset.stageLayer ?? null,
+      // the plate's state (StagePlate.vue), how many frames the living still has drawn (StageLiving.vue),
+      // and the seconds the playing plate has left: what a forced run waits on (forcedSettled)
+      plate: s.plate ?? document.documentElement.dataset.stagePlate ?? null,
+      livingFrames: Number(root?.querySelector('.living')?.dataset.frames || 0),
+      plateLeft: Math.max(0, ...[...(root?.querySelectorAll('.plate video') ?? [])].filter((v) => !v.paused && Number.isFinite(v.duration)).map((v) => v.duration - v.currentTime)),
       probe: st ? 'stage' : p ? 'handles' : 'none',
       ...where(),
     };
@@ -591,12 +638,14 @@ function pageInit(cfg) {
     });
   }
 
-  // --stills: only the world shows; the slide, the stage's scrim, HUD and paper
-  // grain, and the controls are drawn live over the still
+  // --stills: only the world shows; the slide, what the stage draws over the
+  // world (`over`: its scrim, paper grain and HUD, lib/record-page.mjs's
+  // STAGE_OVER_WORLD, the plates' list too), and the controls are drawn live
+  // over the still
   if (cfg.stills) {
     document.addEventListener('DOMContentLoaded', () => {
       const s = document.createElement('style');
-      s.textContent = `.slidev-page, .slidev-nav, .slidev-icon-btn, #slidev-goto-dialog, .stage .scrim, .stage .grain, .stage .hud, .stage-debug { visibility: hidden !important; }
+      s.textContent = `.slidev-page, .slidev-nav, .slidev-icon-btn, #slidev-goto-dialog, ${cfg.over.join(', ')}, .stage-debug { visibility: hidden !important; }
         .stage, .stage .field { visibility: visible !important; }`;
       document.head.append(s);
     });
@@ -614,7 +663,7 @@ class Deck {
     const { o } = this;
     this.context = await this.browser.newContext({ viewport: { width: o.size[0], height: o.size[1] }, deviceScaleFactor: o.draft ? 0.5 : 1 });
     const page = this.page = await this.context.newPage();
-    await page.addInitScript(pageInit, { seed: o.seed, step: STEP_MS, halo: o.halo, stills: o.stills });
+    await page.addInitScript(pageInit, { seed: o.seed, step: STEP_MS, halo: o.halo, stills: o.stills, over: STAGE_OVER_WORLD });
     const origin = new URL(this.url).origin;
     page.on('pageerror', (e) => { if (!NOISE.test(e.message)) this.sink.errors.push(`pageerror: ${e.message.slice(0, 300)}`); });
     page.on('console', (m) => {
@@ -731,6 +780,26 @@ async function capture(deck, file, timeout) {
   }
 }
 
+// Under --force: wait for what stands in for the world to settle (forcedSettled),
+// polling the page on the real clock, within --wait; a plate longer than that
+// stretches the cap to its remaining time, up to fourfold, as the settle
+// stretches for a slow world. → { settled, forcedMs, plate, stretchedMs? }
+async function forcedWait(deck, o) {
+  const t0 = Date.now();
+  let cap = o.wait, stretched = 0;
+  for (;;) {
+    const s = await deck.state();
+    const wall = Date.now() - t0;
+    if (forcedSettled(s)) return { settled: true, forcedMs: wall, plate: s.plate, ...(stretched ? { stretchedMs: stretched } : {}) };
+    if (s.plateLeft > 0) {
+      const need = Math.min(o.wait * 4, Math.round(s.plateLeft * 1000) + 2000);
+      if (need > cap) { cap = need; stretched = cap; }
+    }
+    if (wall >= cap) return { settled: false, forcedMs: wall, plate: s.plate, ...(stretched ? { stretchedMs: stretched } : {}) };
+    await deck.page.waitForTimeout(100);
+  }
+}
+
 async function shootFrame(deck, o, rec, { sec = null } = {}) {
   const { page } = deck;
   const before = await deck.state();
@@ -739,6 +808,8 @@ async function shootFrame(deck, o, rec, { sec = null } = {}) {
   const st = await page.evaluate((a) => window.__shots.settle(a), {
     min: o.settle, since: before.clock ?? before.elapsed, capMs: o.wait, dust: o.dust, frames: 1, sec,
   });
+  // a forced fallback settles on the real clock, after the world's (none, or lost) settle
+  const forced = o.force ? await forcedWait(deck, o) : null;
   const t1 = Date.now();
   await page.evaluate(() => window.__shots.finish());
   await page.evaluate(() => window.__shots.frames(2));
@@ -753,8 +824,10 @@ async function shootFrame(deck, o, rec, { sec = null } = {}) {
   }
   return {
     ...rec, png, station: s.station, at: s.at, atStation: s.atStation, renderer: deck.renderer,
-    settled: st.settled, settleMs: st.settleMs, shotMs: Date.now() - t1, engineSec: st.engineSec, engineTime: +s.elapsed.toFixed(3),
+    settled: st.settled && (forced?.settled ?? true), settleMs: st.settleMs, shotMs: Date.now() - t1, engineSec: st.engineSec, engineTime: +s.elapsed.toFixed(3),
     flying: s.flying, assembled: s.assembled, dpr: s.dpr, dust: s.dust, dustTotal: s.dustTotal, probe: s.probe,
+    fallback: s.fallback, layer: s.layer, plate: s.plate,
+    ...(forced ? { forcedMs: forced.forcedMs, ...(forced.stretchedMs ? { forcedStretchedMs: forced.stretchedMs } : {}) } : {}),
     ...m, ...deck.drain(),
   };
 }
@@ -799,7 +872,7 @@ export async function staticKey(dist, o, renderer, whole = WHOLE) {
     pub.push(`${r}:${await fileKey(f, whole)}`);
   }
   pub.sort();
-  return JSON.stringify([VERSION, o.size, o.draft, o.seed, o.halo, o.settle, o.dust, o.burst, o.every, renderer, css, pub]);
+  return JSON.stringify([VERSION, o.size, o.draft, o.seed, o.halo, o.settle, o.dust, o.burst, o.every, renderer, css, pub, ...(o.force ? [{ force: o.force }] : [])]);
 }
 
 const sha1 = (s) => createHash('sha1').update(s).digest('hex');
@@ -810,7 +883,20 @@ const sha1 = (s) => createHash('sha1').update(s).digest('hex');
 // run under load must not hand its failure to the next. An overflow is the
 // slide's own and is kept.
 export function cacheable(r) {
-  return !!r && !r.error && r.settled !== false && !(r.pageErrors?.length) && !(r.httpErrors || []).some((h) => h.local);
+  return !!r && !r.error && r.settled !== false && !(r.pageErrors?.length) && !failedRequests(r).length;
+}
+
+// The same-origin requests a frame failed. A plate the stage asked for and was
+// told no is not one where a plate or the living still stands: three are
+// asked for at a time (the slide before, this one, the next), a clip slide
+// never has one, and a deck without plates asks once per slide, as the README
+// says. Where the world runs, or the still stands alone, nothing should ask
+// for plates, and the 404 counts; a missing still counts everywhere.
+const PLATE = /-plate\.(mp4|webm|mov|m4v)$/i;
+const plateRefused = (h) => h.status === 404 && PLATE.test(clipName(h.url) || '');
+export function failedRequests(r) {
+  const stood = r.layer === 'plate' || r.layer === 'living';
+  return (r.httpErrors || []).filter((h) => h.local && !(stood && plateRefused(h)));
 }
 
 export function problemsOf(r) {
@@ -820,7 +906,7 @@ export function problemsOf(r) {
   if ((r.overflowPx ?? 0) > 1) p.push(`runs ${r.overflowPx}px off the bottom`);
   if ((r.overflowRightPx ?? 0) > 1) p.push(`runs ${r.overflowRightPx}px off the right`);
   if (r.pageErrors?.length) p.push(`${r.pageErrors.length} page error(s)`);
-  const local = (r.httpErrors || []).filter((h) => h.local);
+  const local = failedRequests(r);
   if (local.length) p.push(`${local.length} failed request(s)`);
   return p;
 }
@@ -972,6 +1058,8 @@ export async function shoot(o, logTo = console.log) {
       url = `http://localhost:${port}${base}`;
       if (base !== '/') log(`serving ${dist} under ${base}`);
     }
+    url = deckUrl(url, o);
+    if (o.force) log(`forcing the fallback: ${o.force} (?stage-force in the deck's address)`);
     const launched = await launch({
       chromium, backend: o.gl, webgl: false, tool: 'slidev-stage-shots',
       // signals are the run's to handle (see onSignal); Playwright still kills the browser if the process exits first
@@ -1017,7 +1105,7 @@ export async function shoot(o, logTo = console.log) {
           if (o.probe) {
             const f = await deck.page.evaluate(() => window.__shots.measureFps(2000));
             const s = await deck.state();
-            const r = { slide: n, probe: true, renderer, fps: f.fps, engineSecPerSec: f.engineSecPerSec, dpr: s.dpr, dust: s.dust, station: s.station, ...deck.drain() };
+            const r = { slide: n, probe: true, renderer, fps: f.fps, engineSecPerSec: f.engineSecPerSec, dpr: s.dpr, dust: s.dust, station: s.station, fallback: s.fallback, layer: s.layer, ...deck.drain() };
             await emit(r);
             log(`${frameName(n)}  ${String(f.fps).padStart(6)} fps  ${String(f.engineSecPerSec).padStart(6)} engine-s/s  station=${s.station ?? '-'}${f.engineSecPerSec < 0.5 ? '  slow: shots rely on settle here' : ''}`);
             continue;
@@ -1042,7 +1130,9 @@ export async function shoot(o, logTo = console.log) {
                 await emit(r);
                 if (key && cacheable(r)) cache[rec.frame] = { key, record: r };
                 const p = problemsOf(r);
-                log(`${r.frame}  station=${r.station ?? '-'}  settle ${(r.settleMs / 1000).toFixed(1)} s (${r.engineSec} engine-s) + ${(r.shotMs / 1000).toFixed(1)} s  overflow=${r.overflowPx ?? '-'}px  words=${r.wordsOnScreen}${p.length ? `  ! ${p.join('; ')}` : ''}`);
+                const stood = r.layer && r.layer !== 'world' ? `  layer=${r.layer}${r.layer === 'plate' && r.plate ? `:${r.plate}` : ''}${r.fallback ? ` (${r.fallback})` : ''}` : '';
+                const waited = r.forcedMs != null ? ` + fallback ${(r.forcedMs / 1000).toFixed(1)} s` : '';
+                log(`${r.frame}  station=${r.station ?? '-'}${stood}  settle ${(r.settleMs / 1000).toFixed(1)} s (${r.engineSec} engine-s)${waited} + ${(r.shotMs / 1000).toFixed(1)} s  overflow=${r.overflowPx ?? '-'}px  words=${r.wordsOnScreen}${p.length ? `  ! ${p.join('; ')}` : ''}`);
               } catch (e) {
                 const r = { ...rec, png: null, renderer, error: String(e.message || e).split('\n')[0].slice(0, 300), ...deck.drain() };
                 await emit(r);

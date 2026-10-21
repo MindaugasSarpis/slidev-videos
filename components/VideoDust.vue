@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import { createDust, pushScale } from './video-dust/gl.js'
+import { createDust, pushScale, declinesGL } from './video-dust/gl.js'
 import { registerOverlay } from './video-dust/bus.js'
 
 // The particle layer of the `dust` video transition: one transparent canvas
@@ -8,7 +8,9 @@ import { registerOverlay } from './video-dust/bus.js'
 // global layers from every addon root, so a deck adds nothing). It draws only
 // while a clip is arriving or leaving and is `display: none` the rest of the
 // time; the WebGL context is made on first use, so a deck that never asks for
-// `dust` never pays for it.
+// `dust` never pays for it. By the stage's word that the device has no WebGL2
+// (html[data-stage-fallback="no-webgl2"], found or forced to rehearse the
+// venue) the overlay has none either: a clip leaves by its fade, as there.
 
 const canvas = ref(null)
 const shown = ref(false)
@@ -19,7 +21,10 @@ let dust = null
 let failed = false
 let unregister = null
 
+const declined = () => typeof document !== 'undefined' && declinesGL(document.documentElement.dataset.stageFallback)
+
 function renderer() {
+  if (declined()) return null
   if (dust || failed || !canvas.value) return dust
   dust = createDust(canvas.value)
   if (!dust) { failed = true; return null }
@@ -75,7 +80,7 @@ function zoom({ video, rect, uv, via, duration }) {
 }
 
 const api = {
-  get available() { return !failed },
+  get available() { return !failed && !declined() },
   enter: (opts) => start('enter', opts),
   leave: (opts) => start('leave', opts),
   zoom,

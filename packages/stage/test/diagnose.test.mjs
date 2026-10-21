@@ -64,3 +64,31 @@ test('switches in the address narrow a fault down on a device', () => {
   assert.ok(lines.includes('overrides: post=false'));
   assert.ok(lines.some((l) => l.includes('targets float · post off')));
 });
+
+// ---- a fallback rehearsed on a device that has no need of it (T5 of the live fallback plan)
+test('?stage-force names a fallback to rehearse; stage-plates and stage-motion stand in for the deck\'s keys', () => {
+  assert.deepEqual(stageOverrides({ search: '?stage-force=no-webgl2', hash: '#/4' }), { force: 'no-webgl2' });
+  assert.deepEqual(stageOverrides({ search: '', hash: '#/4?stage-force=context-lost&stage-plates=off&stage-motion=floor' }), { force: 'context-lost', plates: false, motion: 'floor' });
+  for (const r of FALLBACK_REASONS) assert.equal(stageOverrides({ search: `?stage-force=${r}`, hash: '' }).force, r, r);
+  // a reason the stage does not know is dropped, as are stage-plates=on and a motion that is neither
+  assert.deepEqual(stageOverrides({ search: '?stage-force=no-gpu&stage-plates=on&stage-motion=fast', hash: '' }), {});
+  assert.deepEqual(stageOverrides({ search: '?stage-force=', hash: '' }), {});
+  assert.deepEqual(stageOverrides({ search: '?stage-motion=respect&stage-plates=0', hash: '' }), { motion: 'respect', plates: false });
+  assert.deepEqual(stageOverrides({ search: '?stage-force=NO-WEBGL2', hash: '' }), { force: 'no-webgl2' });
+});
+
+test('the debug panel says a fallback was forced, and by what', () => {
+  const forced = debugLines({ status: 'fallback', reason: 'no-webgl2', detail: 'forced', forced: 'no-webgl2', gl: {}, overrides: { force: 'no-webgl2' } });
+  assert.equal(forced[0], 'stage: fallback — no-webgl2 (forced)');
+  assert.match(forced[1], /^gpu:/);   // the console line takes lines 1-2 as the GPU's: the forced line comes after them
+  assert.ok(forced.some((l) => /^forced: no-webgl2 .*stage-force/.test(l)), forced.join('\n'));
+  assert.ok(forced.includes('overrides: force=no-webgl2'));
+  // a lost context forced through the real handler: its own detail, the forced line all the same
+  const lost = debugLines({ status: 'fallback', reason: 'context-lost', detail: 'tier 0', forced: 'context-lost', events: { contextLost: 3 } });
+  assert.equal(lost[0], 'stage: fallback — context-lost (tier 0)');
+  assert.ok(lost.some((l) => /^forced: context-lost /.test(l)));
+  assert.ok(lost.some((l) => /context lost 3×/.test(l)));
+  // not forced: no such line
+  assert.ok(!debugLines({ status: 'running' }).some((l) => /forced/.test(l)));
+  assert.ok(!debugLines({ status: 'fallback', reason: 'no-webgl2' }).some((l) => /forced/.test(l)));
+});

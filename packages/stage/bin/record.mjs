@@ -7,23 +7,41 @@
 // same renderer give the same pictures.
 //
 //   slidev-stage-record <dist> <out-dir> [--fps 50] [--size 1920x1080] [--slides 2-5]
-//                       [--plate] [--hold 8] [--max 40] [--clicks all|none|'{"3":1}']
+//                       [--plate | --plate-only] [--hold 8] [--max 40] [--clicks all|none|'{"3":1}']
 //                       [--base auto] [--seed 1] [--flash]
 //                       [--gl auto|gpu-nvidia|d3d12|llvmpipe|swiftshader|gl]
 //                       [--chromium path] [--encoder auto|nvenc|x264]
 //
 //   NN.mp4        slide NN as it arrives: the flight, the settle, then --hold seconds
 //   NN-cK.mp4     the same slide after its K-th click (a stop), when it has clicks
-//   NN-plate.mp4  with --plate: the same frames without the slide's text, the
-//                 halo or the stop HUD (the world alone, for the editor to set
-//                 their own type over); the scrim stays, so the two cut together
+//   NN-plate.mp4  with --plate: the same frames as the world alone — without
+//                 the slide's text, the halo, the stop HUD, the scrim, the
+//                 paper grain or the videos addon's push overlay (the list is
+//                 lib/record-page.mjs's PLATE_HIDDEN) — for the editor to set
+//                 their own type over, and for the stage to play under the
+//                 slide where the world cannot run (stage/fallback.js), which
+//                 draws its scrim and grain over the plate as over the world.
+//                 Encoded on the plate profile, rate-capped at 4 Mbit/s (the
+//                 stage streams a plate from the talk's release; see
+//                 lib/record-ffmpeg.mjs), where the takes are near lossless.
+//                 --plate-only writes the plates alone, half the frames shot
 //   index.json    the edit list: every file, its length, where the camera
-//                 stood, the clips it shows or could not record, flash warnings
+//                 stood, the clips it shows or could not record, flash warnings;
+//                 `hold` and `plateFps` (the plates' rate, the same as fps) for
+//                 whoever plays the plates
 //
 // Each slide arrives from the slide before it, as a presenter's audience sees
 // it: that slide at its last click, settled, and its clips played to their
 // end (a presenter waits for a clip), so the arrival starts over the clip's
 // last frame; the edit list names those clips (`from`).
+//
+// A clip slide has no plate: the clip is the picture itself. The next slide's
+// plate begins on the world as it stood under the clip (the clip and the push
+// overlay are hidden in the plate), which is where the live world would have
+// been, so the stage's advance-on-end can go straight on to it (the player
+// goes on without a world only onto a loaded plate): the clip's fade lands on
+// the plate's first frame, or its push, where the overlay runs, is drawn live
+// over it.
 //
 //   --hold    seconds held once a slide has settled (camera landed, forms
 //             built, type risen in); a clip slide holds for the rest of its clip
@@ -58,11 +76,11 @@ import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { serve, normaliseBase, parseSlides, checkSlides, parseSize } from './lib/record-serve.mjs';
 import { launch, loadPlaywright, MODES } from './lib/chromium.mjs';
-import { resolveFfmpeg, pickEncoder, encoder, decodeSmall } from './lib/record-ffmpeg.mjs';
-import { seedRandom, recorderHooks } from './lib/record-page.mjs';
+import { resolveFfmpeg, pickEncoder, plateEncoder, encoder, decodeSmall } from './lib/record-ffmpeg.mjs';
+import { seedRandom, recorderHooks, PLATE_HIDDEN } from './lib/record-page.mjs';
 import { findFlashes } from './lib/record-flash.mjs';
 
-const USAGE = "usage: slidev-stage-record <dist> <out-dir> [--fps 50] [--size 1920x1080] [--slides 2-5] [--plate] [--hold 8] [--max 40] [--clicks all|none|'{\"3\":1}'] [--base auto] [--seed 1] [--flash] [--gl auto|gpu-nvidia|d3d12|llvmpipe|swiftshader|gl] [--chromium path] [--encoder auto|nvenc|x264]";
+const USAGE = "usage: slidev-stage-record <dist> <out-dir> [--fps 50] [--size 1920x1080] [--slides 2-5] [--plate | --plate-only] [--hold 8] [--max 40] [--clicks all|none|'{\"3\":1}'] [--base auto] [--seed 1] [--flash] [--gl auto|gpu-nvidia|d3d12|llvmpipe|swiftshader|gl] [--chromium path] [--encoder auto|nvenc|x264]";
 const GL = MODES.filter((m) => m !== 'none');
 const PREROLL_STEP = 83;     // ms: the engine's own frame-time clamp (12 fps), so the world gets there in the fewest frames
 const NOISE = /Wake Lock/;   // page errors that say nothing about the deck
@@ -70,7 +88,7 @@ const NOISE = /Wake Lock/;   // page errors that say nothing about the deck
 // A malformed or unknown option throws (a usage error, exit 2): a typo would
 // otherwise record something other than what was asked.
 export function parseArgs(argv) {
-  const o = { dist: null, out: null, fps: 50, size: [1920, 1080], slides: null, plate: false, hold: 8, max: 40, clicks: 'all', base: 'auto', seed: 1, flash: false, gl: 'auto', chromium: '', encoder: 'auto' };
+  const o = { dist: null, out: null, fps: 50, size: [1920, 1080], slides: null, plate: false, plateOnly: false, hold: 8, max: 40, clicks: 'all', base: 'auto', seed: 1, flash: false, gl: 'auto', chromium: '', encoder: 'auto' };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -80,6 +98,7 @@ export function parseArgs(argv) {
     else if (a === '--size') o.size = parseSize(value());
     else if (a === '--slides') o.slides = checkSlides(value());
     else if (a === '--plate') o.plate = true;
+    else if (a === '--plate-only') { o.plate = true; o.plateOnly = true; }   // the plates alone: the texted pipe is not shot
     else if (a === '--hold') o.hold = Number(value());
     else if (a === '--max') o.max = Number(value());
     else if (a === '--clicks') o.clicks = parseClicks(value());
@@ -89,6 +108,8 @@ export function parseArgs(argv) {
     else if (a === '--gl') o.gl = oneOf(...GL);
     else if (a === '--chromium') o.chromium = value();
     else if (a === '--encoder') o.encoder = oneOf('auto', 'nvenc', 'x264');
+    // slidev-stage-shots' switch: a fallback rehearsed in the browser leaves the recorder, which films the world, nothing
+    else if (a === '--force') throw new Error('--force: nothing to record under a forced fallback (the recorder films the world); rehearse it with slidev-stage-shots --force');
     else if (a === '-h' || a === '--help') o.help = true;
     else if (a.startsWith('-')) throw new Error(`unknown option ${a}`);
     else rest.push(a);
@@ -140,7 +161,7 @@ async function openDeck(browser, o, url, n, errors) {
   await page.clock.install({ time: 0 });
   await page.clock.pauseAt(1000);
   await page.addInitScript(seedRandom, o.seed);
-  await page.addInitScript(recorderHooks);
+  await page.addInitScript(recorderHooks, { hidden: PLATE_HIDDEN });
   // one recorded frame is 1/fps of the world: the engine's frame-time clamp
   // (1/12 s, the hero's 1/30 s) would make a take under 12 fps run slow
   await page.addInitScript((dt) => { globalThis.__stageMaxDt = dt; }, 1 / o.fps);
@@ -213,12 +234,13 @@ async function clipsToEnd(page, n, warn) {
 }
 
 // Frames of the slide on screen until it has settled and held, into one file
-// (and its plate). → the segment's entry for the edit list, or a skip.
-async function recordSegment({ page, cdp }, n, k, o, ff, enc) {
+// (and its plate, on the plate encoder; with --plate-only the plate alone).
+// → the segment's entry for the edit list, or a skip.
+async function recordSegment({ page, cdp }, n, k, o, ff, enc, plateEnc) {
   const name = k ? `${pad(n)}-c${k}` : pad(n);
   const file = join(o.out, `${name}.mp4`), plateFile = join(o.out, `${name}-plate.mp4`);
   const step = 1000 / o.fps;
-  let pipe = null, platePipe = null;
+  let pipe = null, platePipe = null, opened = false;
   const hash = createHash('sha1'), plateHash = createHash('sha1');
   let i = 0, settledAt = -1, holdFrames = Math.round(o.hold * o.fps), capped = false, last = null, clip = null;
   const warnings = [];
@@ -241,14 +263,21 @@ async function recordSegment({ page, cdp }, n, k, o, ff, enc) {
         return { slide: n, clicks: k, skipped: true, note, clip: { src: (undecodable || clip).src }, at: s.at, station: s.station };
       }
       if (s.seeking) await seeked(page, (w) => warnings.push(`frame ${i}: ${w}`));
-      if (!pipe) {
-        pipe = encoder(ff, enc, { fps: o.fps, out: file });
-        // a clip is the picture itself: no plate for a clip slide
-        if (o.plate && !clip) platePipe = encoder(ff, enc, { fps: o.fps, out: plateFile });
+      if (!opened) {
+        opened = true;
+        // a clip is the picture itself: no plate for a clip slide (the next
+        // slide's plate begins on the world under the clip: see the head of this file)
+        if (o.plateOnly && clip) {
+          return { slide: n, clicks: k, skipped: true, note: 'a clip slide has no plate: the clip is the picture itself, and the next slide\'s plate begins on the world as it stood under the clip', clip: { src: clip.src }, at: s.at, station: s.station };
+        }
+        if (!o.plateOnly) pipe = encoder(ff, enc, { fps: o.fps, out: file });
+        if (o.plate && !clip) platePipe = encoder(ff, plateEnc, { fps: o.fps, out: plateFile });
       }
-      const png = await snap(cdp);
-      hash.update(png);
-      await pipe.write(png);
+      if (pipe) {
+        const png = await snap(cdp);
+        hash.update(png);
+        await pipe.write(png);
+      }
       if (platePipe) {
         await page.evaluate(() => window.__rec.plate(true));
         const plain = await snap(cdp);
@@ -265,7 +294,7 @@ async function recordSegment({ page, cdp }, n, k, o, ff, enc) {
       if (settledAt >= 0 && i - settledAt >= holdFrames) break;
       if (i >= Math.round(o.max * o.fps)) { capped = true; break; }
     }
-    await pipe.close();
+    if (pipe) await pipe.close();
     if (platePipe) await platePipe.close();
   } catch (e) {
     pipe?.kill(); platePipe?.kill();
@@ -273,11 +302,11 @@ async function recordSegment({ page, cdp }, n, k, o, ff, enc) {
   }
   const seconds = (Date.now() - t0) / 1000;
   return {
-    slide: n, clicks: k, file: `${name}.mp4`, plate: platePipe ? `${name}-plate.mp4` : null,
+    slide: n, clicks: k, file: pipe ? `${name}.mp4` : null, plate: platePipe ? `${name}-plate.mp4` : null,
     frames: i, seconds: +(i / o.fps).toFixed(3), settle: settledAt >= 0 ? +(settledAt / o.fps).toFixed(3) : null, capped,
     at: last?.at ?? null, station: last?.station ?? null,
     clip: clip ? { src: clip.src, recorded: true } : null,
-    sha1: hash.digest('hex'), plateSha1: platePipe ? plateHash.digest('hex') : null,
+    sha1: pipe ? hash.digest('hex') : null, plateSha1: platePipe ? plateHash.digest('hex') : null,
     secondsPerFrame: +(seconds / i).toFixed(3),
     ...(warnings.length ? { warnings: warnings.slice(0, 10) } : {}),
   };
@@ -291,6 +320,7 @@ export async function record(o, log = console.log) {
   o.out = resolve(o.out);
   const ff = resolveFfmpeg();
   const enc = pickEncoder(ff, o.encoder);
+  const plateEnc = o.plate ? plateEncoder(enc) : null;   // the same codec, capped at 4 Mbit/s
   const base = normaliseBase(o.base, dist);
   const { server, url, misses } = await serve(dist, { base });
   // a backend asked for and not reached is an error before anything is written
@@ -300,10 +330,10 @@ export async function record(o, log = console.log) {
   await mkdir(o.out, { recursive: true });
   // what the backend set for the browser; a path by its name only
   const set = Object.entries(launched.env).map(([k, v]) => (v.length > 32 ? k : `${k}=${v}`)).join(' ');
-  log(`renderer: ${renderer}  (${backend}, Chromium ${version}${set ? `, ${set}` : ''})\nbrowser:  ${executablePath}\nffmpeg:   ${ff} (${enc.name})`);
+  log(`renderer: ${renderer}  (${backend}, Chromium ${version}${set ? `, ${set}` : ''})\nbrowser:  ${executablePath}\nffmpeg:   ${ff} (${enc.name}${plateEnc ? '; the plates capped at 4 Mbit/s' : ''})`);
   const errors = [];
   const report = {
-    deck: dist, base, size: o.size, fps: o.fps, seed: o.seed, hold: o.hold, renderer, backend, browser: version, ffmpeg: ff, encoder: enc.name,
+    deck: dist, base, size: o.size, fps: o.fps, seed: o.seed, hold: o.hold, plateFps: o.plate ? o.fps : null, plateOnly: o.plateOnly, renderer, backend, browser: version, ffmpeg: ff, encoder: enc.name,
     ...(warning ? { warning } : {}), look: null, segments: [],
   };
   const save = () => writeFile(join(o.out, 'index.json'), JSON.stringify(report, null, 2) + '\n');
@@ -346,18 +376,18 @@ export async function record(o, log = console.log) {
             await deck.page.waitForFunction((k) => window.__rec.state(0).clicks >= k, k, { polling: 20, timeout: 10000 }).catch(() => {});
           }
           const t0 = Date.now();
-          const seg = await recordSegment(deck, n, k, o, ff, enc);
+          const seg = await recordSegment(deck, n, k, o, ff, enc, plateEnc);
           if (seg.clip) seg.clip.src = named(seg.clip.src);
           // the arrival begins on the last frame of these
           if (k === 0 && ended.length) seg.from = { slide: from, clipsEnded: ended.map((c) => named(c.src)) };
           if (!seg.skipped) {
             if (o.flash) {
-              const small = await decodeSmall(ff, join(o.out, seg.file));
+              const small = await decodeSmall(ff, join(o.out, seg.file || seg.plate));
               const { transitions, warnings } = findFlashes(small, { w: 48, h: 27, fps: o.fps });
               seg.flash = { transitions: transitions.length, warnings };
             }
             frames += seg.frames; wall += (Date.now() - t0) / 1000;
-            log(`${seg.file}  ${seg.frames} frames  ${seg.seconds} s  settled at ${seg.settle ?? '-'} s${seg.capped ? ' (capped by --max)' : ''}  ${seg.secondsPerFrame} s/frame${seg.flash?.warnings.length ? `  FLASH: ${seg.flash.warnings.map((w) => `${w.flashes}/s at ${w.t} s`).join(', ')}` : ''}${seg.warnings ? `\n  ${seg.warnings.join('\n  ')}` : ''}`);
+            log(`${seg.file || seg.plate}  ${seg.frames} frames  ${seg.seconds} s  settled at ${seg.settle ?? '-'} s${seg.capped ? ' (capped by --max)' : ''}  ${seg.secondsPerFrame} s/frame${seg.flash?.warnings.length ? `  FLASH: ${seg.flash.warnings.map((w) => `${w.flashes}/s at ${w.t} s`).join(', ')}` : ''}${seg.warnings ? `\n  ${seg.warnings.join('\n  ')}` : ''}`);
           } else log(`${pad(n)}${k ? `-c${k}` : ''}  skipped: ${seg.note} (${seg.clip.src})`);
           report.segments.push(seg);
           await save();

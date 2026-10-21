@@ -471,6 +471,11 @@ class VideoEntry:
     # The print poster's moment (seconds or M:SS), where the first lit frame is
     # not the picture: an animation that opens on a speck on black.
     poster: str | None = None
+    # A file the toolkit made, with no raw: the stage's recorded plates
+    # (`talk record --plates` writes the block). sync, encode and fetch leave
+    # it alone, check accepts it unreferenced in the deck; publish, pull,
+    # venue and preflight carry it like any clip.
+    generated: bool = False
 
 
 def _videos_from_data(data: dict) -> list[VideoEntry]:
@@ -487,6 +492,7 @@ def _videos_from_data(data: dict) -> list[VideoEntry]:
             loudnorm=v.get("loudnorm"),
             trim=tuple(v["trim"]) if v.get("trim") else None,
             poster=str(v["poster"]) if v.get("poster") not in (None, "") else None,
+            generated=bool(v.get("generated", False)),
         )
         for v in data.get("videos", [])
     ]
@@ -543,11 +549,22 @@ def human_size(n: int) -> str:
 # fetch — download a video from a URL (yt-dlp) into raw/ + manifest entry
 # ---------------------------------------------------------------------------
 
+def _without_generated(videos: list[VideoEntry], doing: str) -> list[VideoEntry]:
+    """The entries a raw-side step works on: a generated one has no raw, so it is named and left."""
+    for v in videos:
+        if v.generated:
+            print(f"  ~ {v.name}: generated (recorded by the stage), nothing to {doing}")
+    return [v for v in videos if not v.generated]
+
+
 def cmd_fetch(args: argparse.Namespace) -> int:
     if not shutil.which("yt-dlp"):
         print("error: yt-dlp not installed. https://github.com/yt-dlp/yt-dlp", file=sys.stderr)
         return 2
     name = args.name if args.name.endswith(".mp4") else f"{args.name}.mp4"
+    if any(v.name == name and v.generated for v in load_manifest()[1]):
+        print(f"error: {name} is a generated entry (a stage plate): it is recorded, not fetched", file=sys.stderr)
+        return 2
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     raw = RAW_DIR / name
     if raw.exists() and not args.force:
@@ -592,6 +609,7 @@ def _rclone_progress() -> list[str]:
 
 def cmd_sync(args: argparse.Namespace) -> int:
     defaults, videos = load_manifest()
+    videos = [v for v in videos if not v.generated]      # no raw to mirror
     remote = defaults.get("source_remote")
     if not remote:
         print("error: [defaults].source_remote not set in manifest.toml", file=sys.stderr)
@@ -792,6 +810,9 @@ def cmd_encode(args: argparse.Namespace) -> int:
         if not videos:
             print(f"error: no manifest entries match {args.only}", file=sys.stderr)
             return 2
+    videos = _without_generated(videos, "encode")
+    if not videos:
+        return 0
     if not _tools().ffmpeg:
         print("error: ffmpeg not installed. brew install ffmpeg", file=sys.stderr)
         return 2
@@ -1309,6 +1330,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     defaults, videos = load_manifest()
     _, shared_videos = load_shared_manifest()
     manifest_names = {v.name for v in videos}
+    generated = {v.name for v in videos if v.generated}     # no raw ever: recorded by the stage
     shared_names = {v.name for v in shared_videos}
     raw_files = {p.name for p in RAW_DIR.glob("*") if p.is_file() and not p.name.startswith(".")}
     web_files = {p.name for p in WEB_DIR.glob("*") if p.is_file() and not p.name.startswith(".")}
@@ -1341,9 +1363,11 @@ def cmd_check(args: argparse.Namespace) -> int:
             infos.append(
                 f"not local, on release ({human_size(release_sizes[name])}) — videos:pull on demand: {name}"
             )
+        elif name in generated:
+            problem("MISSING LOCAL", name, "  (no local copy, not on the release — pnpm talk record NAME --plates, then videos:publish)")
         else:
             problem("MISSING LOCAL", name, "  (no local copy, not on the release — videos:sync + encode + publish)")
-    for name in sorted((manifest_names - raw_files) & (web_files | hq_files)):
+    for name in sorted((manifest_names - generated - raw_files) & (web_files | hq_files)):
         infos.append(f"raw not synced (encoded copy present): {name}")
 
     # Encoded web copies of talk-owned clips exceeding the size budget.
@@ -1372,9 +1396,9 @@ def cmd_check(args: argparse.Namespace) -> int:
         where = ", ".join(sorted(set(refs[name])))
         problem("UNKNOWN REF", name, f"  (in {where})")
 
-    # Manifest entries referenced nowhere.
+    # Manifest entries referenced nowhere (a generated plate is the stage's, not a slide's).
     for v in videos:
-        if v.name not in refs:
+        if v.name not in refs and not v.generated:
             problem("UNUSED MANIFEST", v.name)
 
     # Informational: deck refs satisfied ONLY by the shared registry
@@ -1411,6 +1435,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     report.update({
         "problems": found,
         "talk_owned": sorted(manifest_names),
+        "generated": sorted(generated),
         "inherited": inherited,
         "also_in_shared": duplicated,
         "referenced": sorted(refs),
@@ -1941,9 +1966,10 @@ def _preflight_one(src: str, key: str | None, cache: dict, measure: bool) -> dic
 
 def cmd_preflight(args: argparse.Namespace) -> int:
     report = _report(args)
-    defaults, _ = load_manifest()
+    defaults, videos = load_manifest()
     shared_defaults, _shared = load_shared_manifest()
-    refs = sorted(_slide_references())
+    # what the deck's players will serve, and the plates the stage plays where WebGL is missing
+    refs = sorted(set(_slide_references()) | {v.name for v in videos if v.generated})
     if getattr(args, "only", None):
         wanted = set(args.only)
         refs = [r for r in refs if r in wanted]
@@ -2699,6 +2725,65 @@ def _contact_sheet(args: argparse.Namespace, src: str, is_url: bool, out: Path) 
 VENUE_BUILD_ENV = {"VITE_VIDEOS_LOCAL_FIRST": "1"}
 VENUE_BUILD_ENV_TEXT = " ".join(f"{k}={v}" for k, v in VENUE_BUILD_ENV.items())
 
+# Double-click launchers shipped beside RUN_ME.txt. Each serves the unzipped
+# folder on the first free port from 8000 up, bound to localhost, and opens
+# the deck; when python is missing they say what to install or to fall back
+# to the live URL. No server binary is bundled.
+VENUE_RUN_ME_COMMAND = r"""#!/bin/bash
+# Double-click to present offline: serves this folder on this Mac and opens the deck.
+cd "$(dirname "$0")" || exit 1
+
+if ! python3 --version >/dev/null 2>&1; then
+  echo "python3 is not installed yet."
+  echo "macOS asks to install the command-line tools (a dialog may be open now):"
+  echo "click Install, wait for it to finish, then double-click RUN_ME.command again."
+  echo "Or open the talk's live URL in any browser instead (that needs internet)."
+  read -n 1 -s -r -p "Press any key to close this window."
+  exit 1
+fi
+
+port=8000
+while nc -z 127.0.0.1 "$port" >/dev/null 2>&1; do port=$((port + 1)); done
+
+python3 -m http.server "$port" --bind 127.0.0.1 >/dev/null 2>&1 &
+server=$!
+sleep 1
+open "http://127.0.0.1:$port/"
+
+echo "The deck is served at http://127.0.0.1:$port/ - keep this window open while you present."
+read -n 1 -s -r -p "Press any key here to stop the server when you are done."
+kill "$server" 2>/dev/null
+"""
+
+VENUE_RUN_ME_BAT = r"""@echo off
+rem Double-click to present offline: serves this folder on this PC and opens the deck.
+cd /d "%~dp0"
+
+set PY=
+py -3 --version >nul 2>&1 && set "PY=py -3"
+if not defined PY (python --version >nul 2>&1 && set "PY=python")
+if not defined PY (
+  echo Python 3 was not found on this PC.
+  echo Install it from https://www.python.org/downloads/ and tick "Add python.exe to PATH",
+  echo then double-click RUN_ME.bat again.
+  echo Or open the talk's live URL in any browser instead ^(that needs internet^).
+  pause
+  exit /b 1
+)
+
+set PORT=8000
+:nextport
+netstat -an | findstr /c:":%PORT% " >nul && set /a PORT+=1 && goto nextport
+
+start "deck server" /min cmd /k %PY% -m http.server %PORT% --bind 127.0.0.1
+timeout /t 1 /nobreak >nul
+start "" http://127.0.0.1:%PORT%/
+
+echo The deck is served at http://127.0.0.1:%PORT%/
+echo Keep the minimised "deck server" window open while you present; close it when you are done.
+pause
+"""
+
 
 def cmd_venue(args: argparse.Namespace) -> int:
     """Self-contained venue bundle for this deck.
@@ -2741,13 +2826,24 @@ def cmd_venue(args: argparse.Namespace) -> int:
         print("error: dist-portable/ missing after build", file=sys.stderr)
         return 2
     (dist / "RUN_ME.txt").write_text(
-        "Offline venue bundle. Browsers refuse ES-module apps on file://,\n"
-        "so serve it over local HTTP:\n\n"
+        f"Offline venue bundle for {TALK.name}.\n\n"
+        "Double-click the launcher for this machine:\n"
+        "    RUN_ME.command   macOS   (if macOS refuses to open it, right-click it, then Open)\n"
+        "    RUN_ME.bat       Windows\n"
+        "It serves this folder on the machine itself and opens the deck in the browser;\n"
+        "keep its window open while you present. It needs Python 3 and nothing else,\n"
+        "and says what to install if that is missing.\n\n"
+        "By hand, from a terminal in this folder:\n\n"
         "    python3 -m http.server 8000\n"
         "    then open http://localhost:8000\n\n"
+        "Browsers refuse ES-module apps on file://, so the folder has to be served.\n"
+        "No Python at all? Open the talk's live URL in any browser (that needs internet).\n\n"
         f"Built by `slidev-videos venue` for {TALK.name}.\n",
         encoding="utf-8",
     )
+    (dist / "RUN_ME.command").write_text(VENUE_RUN_ME_COMMAND, encoding="utf-8", newline="\n")
+    (dist / "RUN_ME.command").chmod(0o755)
+    (dist / "RUN_ME.bat").write_text(VENUE_RUN_ME_BAT, encoding="utf-8", newline="\r\n")
     bundle = TALK / f"{TALK.name}-venue.zip"
     print(f"\n=== venue: zipping -> {bundle.name} ===")
     # ZIP_STORED: the payload is already-compressed video; deflate would
@@ -2755,7 +2851,12 @@ def cmd_venue(args: argparse.Namespace) -> int:
     with zipfile.ZipFile(bundle, "w", zipfile.ZIP_STORED) as zf:
         for path in sorted(dist.rglob("*")):
             if path.is_file():
-                zf.write(path, Path(f"{TALK.name}-venue") / path.relative_to(dist))
+                arcname = f"{TALK.name}-venue/{path.relative_to(dist).as_posix()}"
+                zf.write(path, arcname)
+                if path.name == "RUN_ME.command":
+                    # Archive Utility takes the mode from the entry, and the mode on
+                    # disk is whatever this filesystem kept of the chmod (NTFS: nothing).
+                    zf.getinfo(arcname).external_attr = 0o100755 << 16
     print(f"Done: {bundle.name} ({human_size(bundle.stat().st_size)})")
     print("Copy to the venue machine (or gdrive as backup), unzip, see RUN_ME.txt.")
     return 0
@@ -2907,6 +3008,9 @@ def cmd_encode_hq(args: argparse.Namespace) -> int:
         if not videos:
             print(f"error: no manifest entries match {args.only}", file=sys.stderr)
             return 2
+    videos = _without_generated(videos, "encode")
+    if not videos:
+        return 0
     if not _tools().ffmpeg:
         print("error: ffmpeg not installed. brew install ffmpeg", file=sys.stderr)
         return 2

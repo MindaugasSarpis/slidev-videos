@@ -65,8 +65,15 @@ fires once, from the audience's slide only: not in the presenter window, the
 overview, the next-slide preview or a print or export, and not under
 `slidev-stage-record`, which moves the deck itself. If the speaker has left
 the slide or taken a click on it since the clip started, the clip's end does
-nothing, and a looping clip never ends. The player also sends a
-`slidev-videos:advance` event (`{ src, from }`) as it goes on.
+nothing, and a looping clip never ends. A navigation key, or a pointer press
+outside the player, in the clip's last half-second is the navigation, and
+the end does nothing more (a press on the player's own controls, or a tap on
+its picture, is not one). Without a world (the stage has fallen back:
+`html[data-stage-fallback]`) the end goes on only onto the next slide's
+loaded plate (`html[data-stage-plate-next]`), which begins on the world as
+it stood under this clip: the clip's fade lands on it, or its push where the
+overlay runs; onto a still the speaker goes on by hand. The player also sends a
+`slidev-videos:advance` event (`{ src, from, reason }`) as it goes on.
 
 **Push out of a clip:** `<VideoPlayer src="tunnel.mp4" transition="dust"
 exit="push" exit-at="0.44,0.40" />` leaves by pushing the camera on into that
@@ -227,8 +234,10 @@ frames`** writes a small strip of frames per clip into
 150–350 KB a clip) for the deck to commit. Arriving uses the first tile,
 leaving the tile at the moment the presenter moved on. Where the clip is
 same-origin (dev mode, venue and portable builds) the frame on screen is read
-directly instead. No strip, no overlay, no WebGL2 or `prefers-reduced-motion`:
-the clip fades. `check` lists the `dust` clips that have no strip. `frames`
+directly instead. No strip, no overlay, no WebGL2 (or the stage's word that
+there is none, `html[data-stage-fallback="no-webgl2"]`, found or forced with
+`?stage-force=no-webgl2` to rehearse such a venue) or
+`prefers-reduced-motion`: the clip fades. `check` lists the `dust` clips that have no strip. `frames`
 cuts from the web tier, which a deployed deck plays: the local web copy, else
 the talk's release, else the shared release (a local HQ copy only as a last
 resort). Where the ffmpeg in use cannot read HTTPS the clip is downloaded
@@ -309,6 +318,8 @@ Manifest (`videos/manifest.toml`) entries:
     trim    = ["0:20", "1:50"]    # optional; remux trims on keyframes
     poster  = "0:24"              # optional; the print poster's moment (default: the first frame 5 % lit)
     notes   = "what it shows"
+    generated = true              # optional; a file the toolkit made with no raw (a stage plate): sync, encode
+                                  # and fetch leave it alone, check accepts it unreferenced, publish/pull/venue/preflight carry it
 
 A web profile is one quality target for both encoders. On NVENC its `-cq`
 is set to match or beat libx264 `-preset slow` at the profile's `-crf` on

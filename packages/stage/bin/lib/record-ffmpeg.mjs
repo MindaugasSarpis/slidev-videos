@@ -5,8 +5,18 @@
 // env under ~/micromamba/envs (or $MAMBA_ROOT_PREFIX/envs), then PATH. A
 // candidate that does not answer `ffmpeg -version` cleanly (some static
 // builds crash) is passed over. The encoder: NVENC when a test encode works,
-// else x264 at CRF 14 (visually lossless at 1080p; the broadcaster
-// re-encodes anyway); NVENC at a constant QP of 16, as for the OBS path.
+// else x264; --encoder nvenc or x264 picks one. Two profiles on either:
+//
+//   broadcast  the texted per-slide takes (NN.mp4, NN-cK.mp4): visually
+//              lossless at 1080p, the broadcaster re-encodes anyway — NVENC
+//              at a constant QP of 16, as for the OBS path; x264 at CRF 14
+//   plate      the plates (NN-plate.mp4): the stage pulls them from the
+//              talk's release and streams them where a venue PC cannot run
+//              the world, so they must be small — rate-capped at 4 Mbit/s
+//              (NVENC VBR at CQ 27, x264 at CRF 23, both under a 4M maxrate
+//              and an 8M buffer). Drifting dust under the broadcast profile
+//              came to 22-30 Mbit/s (a 20 s plate at 74 MiB); under this one
+//              a few MB a plate
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { join, delimiter } from 'node:path';
@@ -40,26 +50,50 @@ function encodes(bin, codec) {
   return r.status === 0 && !r.signal;
 }
 
-// pickEncoder(bin, 'auto' | 'nvenc' | 'x264') → { name, args }
-export function pickEncoder(bin, want = 'auto') {
-  if (want !== 'x264' && encodes(bin, 'h264_nvenc')) {
-    return { name: 'h264_nvenc', args: ['-c:v', 'h264_nvenc', '-preset', 'p7', '-tune', 'hq', '-rc', 'constqp', '-qp', '16'] };
-  }
+// The encoder options of each profile, by codec (see the head of this file).
+export const PROFILES = {
+  broadcast: {
+    h264_nvenc: ['-preset', 'p7', '-tune', 'hq', '-rc', 'constqp', '-qp', '16'],
+    libx264: ['-preset', 'medium', '-crf', '14'],
+  },
+  plate: {
+    h264_nvenc: ['-preset', 'p5', '-tune', 'hq', '-rc', 'vbr', '-cq', '27', '-b:v', '0', '-maxrate', '4M', '-bufsize', '8M', '-profile:v', 'high', '-pix_fmt', 'yuv420p'],
+    libx264: ['-preset', 'medium', '-crf', '23', '-maxrate', '4M', '-bufsize', '8M', '-pix_fmt', 'yuv420p'],
+  },
+};
+
+const withProfile = (name, profile) => ({ name, profile, args: ['-c:v', name, ...PROFILES[profile][name]] });
+
+// pickEncoder(bin, 'auto' | 'nvenc' | 'x264', { plate }) → { name, profile, args }:
+// the codec by the test encode (or as asked), on the broadcast profile, or
+// the plate one with `plate`.
+export function pickEncoder(bin, want = 'auto', { plate = false } = {}) {
+  const profile = plate ? 'plate' : 'broadcast';
+  if (want !== 'x264' && encodes(bin, 'h264_nvenc')) return withProfile('h264_nvenc', profile);
   if (want === 'nvenc') throw new Error('h264_nvenc does not work with this ffmpeg');
-  return { name: 'libx264', args: ['-c:v', 'libx264', '-preset', 'medium', '-crf', '14'] };
+  return withProfile('libx264', profile);
 }
 
-// encoder(bin, enc, { fps, out }) → { write(png), close() → Promise }: PNG
-// frames in on stdin (image2pipe), BT.709 limited-range 4:2:0 out, a key
-// frame every second so an editor can cut anywhere near.
-export function encoder(bin, enc, { fps, out }) {
-  const args = [
+// The plate profile on an encoder already picked: the same codec, no second
+// test encode.
+export const plateEncoder = (enc) => withProfile(enc.name, 'plate');
+
+// The pipe's command line: PNG frames in on stdin (image2pipe), BT.709
+// limited-range 4:2:0 out, a key frame every second so an editor can cut
+// anywhere near, the moov atom first so a plate plays as it streams.
+export function ffmpegArgs(enc, { fps, out }) {
+  return [
     '-hide_banner', '-loglevel', 'error', '-y',
     '-f', 'image2pipe', '-framerate', String(fps), '-c:v', 'png', '-i', '-',
     '-vf', 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv',
     ...enc.args,
     '-g', String(fps), '-movflags', '+faststart', out,
   ];
+}
+
+// encoder(bin, enc, { fps, out }) → { write(png), close() → Promise }
+export function encoder(bin, enc, { fps, out }) {
+  const args = ffmpegArgs(enc, { fps, out });
   const p = spawn(bin, args, { stdio: ['pipe', 'ignore', 'pipe'] });
   let err = '';
   p.stderr.on('data', (d) => { err += d; });
