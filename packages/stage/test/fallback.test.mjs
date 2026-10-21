@@ -7,7 +7,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { fallbackLayer, plateName, plateUrls, plateRelease, platesDir, plateLocalFirst, plateEntry, handOverWithout, LAYERS, PLATE_REASONS } from '../stage/fallback.js';
+import { fallbackLayer, plateName, plateUrls, plateRelease, platesDir, plateLocalFirst, plateEntry, plateStep, handOverWithout, LAYERS, PLATE_REASONS } from '../stage/fallback.js';
 import { STAGE_OVER_WORLD, PLATE_HIDDEN, recorderHooks } from '../bin/lib/record-page.mjs';
 import { FALLBACK_REASONS } from '../stage/diagnose.js';
 import { STAGE_KEYS } from '../stage/types.js';
@@ -123,6 +123,22 @@ test('only a forward step from the slide before replays a plate\'s arrival; a ba
   assert.equal(plateEntry(null, 2), 'hold');
   assert.equal(plateEntry(undefined, 7), 'hold');
   for (const bad of [NaN, 'x', {}]) { assert.equal(plateEntry(bad, 1), 'hold', String(bad)); assert.equal(plateEntry(1, bad), 'hold', String(bad)); }
+});
+
+// A back-step 10→9 at Innoday (v0.8.2, forced no-webgl2) read data-stage-plate="playing": sync()
+// let go of the hold as soon as the seek to the end was *issued*, and in the same call, the seek
+// not landed (el.ended still false), played the plate. A slide entered to hold never plays on that
+// visit: the seek is made once, and it rests until the seek lands and it is ended (`held`).
+test('plateStep: a slide to hold is seeked to its end once and never played on that visit, landed or not', () => {
+  const base = { current: true, hold: true, sought: false, covered: false, hidden: false, ended: false };
+  assert.deepEqual(plateStep(base), { seek: true, run: 'pause' });                           // the back-step: seek, rest
+  assert.deepEqual(plateStep({ ...base, sought: true }), { seek: false, run: 'pause' });    // the seek in flight (the bug: played here)
+  assert.deepEqual(plateStep({ ...base, sought: true, ended: true }), { seek: false, run: 'pause' });   // landed: held
+  // a forward step replays; covered, hidden or ended rests; a slide not on screen rests where it stands
+  assert.deepEqual(plateStep({ ...base, hold: false }), { seek: false, run: 'play' });
+  for (const k of ['covered', 'hidden', 'ended']) assert.deepEqual(plateStep({ ...base, hold: false, [k]: true }), { seek: false, run: 'pause' }, k);
+  assert.deepEqual(plateStep({ ...base, current: false }), { seek: false, run: 'pause' });
+  assert.deepEqual(plateStep({ ...base, current: false, hold: false }), { seek: false, run: 'pause' });
 });
 
 // ---- what a plate holds ---------------------------------------------------------------------
@@ -251,7 +267,11 @@ test('StagePlate plays the slide\'s plate muted, holds its last frame, says on <
   assert.match(src, /el\.currentTime = el\.duration/);
   assert.match(src, /if \(el && el\.readyState > 0 && !hold\.has\(n\)\) \{ try \{ el\.currentTime = 0 \}/);
   assert.match(src, /const ahead = els\.get\(n \+ 1\)\n\s+if \(ahead && ahead\.readyState > 0 && ahead\.currentTime > 0\) \{ try \{ ahead\.currentTime = 0 \}/);
-  assert.match(src, /if \(props\.covered \|\| hidden \|\| el\.ended \|\| hold\.has\(no\)\) \{ if \(!el\.paused\) el\.pause\(\) \}/);   // a slide to hold never plays from 0
+  // each element's step is plateStep's; the hold lasts the visit (it is not let go when the seek is issued), the seek is made once per visit
+  assert.match(src, /const step = plateStep\(\{ current: no === props\.slide, hold: hold\.has\(no\), sought: sought\.has\(no\), covered: props\.covered, hidden, ended: el\.ended \}\)/);
+  assert.match(src, /if \(step\.seek && seekEnd\(no\)\) sought\.add\(no\)/);
+  assert.doesNotMatch(src, /hold\.delete\(no\)/);
+  assert.match(src, /sought\.delete\(n\)/);                                // a new visit seeks again
   assert.match(src, /emit\('exhausted'/);
   assert.match(src, /emit\('state'/);
   assert.doesNotMatch(src, /\bconfigs\b/);                                  // it reads no headmatter: Stage.vue hands it everything

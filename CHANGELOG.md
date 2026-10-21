@@ -35,7 +35,7 @@ a world it behaves as v0.8.2 says, and a v0.8.2 deck as under v0.8.2.
   fallback. The plate's text-free pass hides `.slidev-layout`, so a hand-over
   slide's plate holds its grains and not its still or word. `deck.py` reads
   the lhcb example deck as Slidev numbers it.
-- **Tests:** stage 145 → 147 (the hand-over's rule over every layer and
+- **Tests:** stage 145 → 148 (v0.8.3's plateStep for the back-step; the hand-over's rule over every layer and
   plate state, the component's wiring; it joins the compile check); Python
   183 → 184, and `test_shared_registry` counts the 44 clips v0.9.0's
   `lis_flag.mp4` made (main had failed on 43 since v0.9.0); root 11.
@@ -177,6 +177,15 @@ the player and the stage are untouched; the recorder only writes more into
   capture: they are in neither the takes nor the PPTX.
 - `deck.py`: Slidev's slides (hidden ones unnumbered, as the recorder
   numbers them) and their notes, ported from the talks' `talk_deck.py`.
+- **A back-step holds its plate again** (a v0.8.2 bug, seen at Innoday under
+  a forced `no-webgl2`: a back-step read `data-stage-plate="playing"`).
+  StagePlate let go of the slide's hold as soon as the seek to the end was
+  issued, and in the same `sync()`, the seek not landed and `ended` still
+  false, played the plate from where it was left. The hold now lasts the
+  visit: the seek is made once, and the plate rests, `loading` while the
+  seek is in flight and `held` once it lands (`plateStep`,
+  `stage/fallback.js`). Smoke case 15 walks it headless on synthetic plates,
+  after the plate has ended and mid-way.
 
 ## v0.8.2 — 2026-10-21
 

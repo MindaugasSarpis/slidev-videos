@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, reactive, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import { plateUrls, plateEntry } from '../stage/fallback.js'
+import { plateUrls, plateEntry, plateStep } from '../stage/fallback.js'
 
 // The recorded plate (stage/fallback.js): where the world cannot run and the
 // deck has its plates (slidev-stage-record --plate: NN-plate.mp4 beside the
@@ -57,7 +57,8 @@ const PRELOAD_AHEAD = 1        // the next loads under this slide, at its start
 const tries = reactive({})     // slide → how far along its chain it is
 const dead = reactive({})      // slide → true once no URL of its chain answered
 const els = new Map()          // slide → its <video>
-const hold = new Set()         // slides whose plate is to hold its settled world (plateEntry), until the seek is made
+const hold = new Set()         // slides whose plate is to hold its settled world (plateEntry), for the whole visit
+const sought = new Set()       // … and whose seek to the end this visit has been made
 let said = ''
 
 const urlsOf = (no) => plateUrls(props.dir, no, { base: props.base, remote: props.remote, localFirst: props.localFirst })
@@ -102,17 +103,17 @@ function seekEnd(no) {
 }
 
 // This slide's plays unless a clip covers it, the tab is hidden, it has ended
-// (play() on an ended element would start it over) or it is to hold and has
-// no metadata yet (it is seeked to its end, and so ended, as soon as it has);
-// the others rest where they stand.
+// (play() on an ended element would start it over) or it is to hold: that one
+// is seeked to its end once it has its metadata, and rests for the visit, the
+// seek in flight or landed (plateStep, stage/fallback.js); the others rest
+// where they stand.
 function sync() {
   const hidden = document.hidden
   for (const [no, el] of els) {
-    if (no === props.slide) {
-      if (hold.has(no) && seekEnd(no)) hold.delete(no)
-      if (props.covered || hidden || el.ended || hold.has(no)) { if (!el.paused) el.pause() }
-      else if (el.paused) el.play().catch(() => {})
-    } else if (!el.paused) el.pause()
+    const step = plateStep({ current: no === props.slide, hold: hold.has(no), sought: sought.has(no), covered: props.covered, hidden, ended: el.ended })
+    if (step.seek && seekEnd(no)) sought.add(no)
+    if (step.run === 'pause') { if (!el.paused) el.pause() }
+    else if (el.paused) el.play().catch(() => {})
   }
   publish()
 }
@@ -134,6 +135,7 @@ function onError(no) {
 watch(() => props.slide, (n, was) => {
   publish()    // the next's mark moves at once: a back-step's next is loaded already, the old next is next no more
   if (plateEntry(was, n) === 'hold') hold.add(n); else hold.delete(n)
+  sought.delete(n)
   nextTick(() => {
     const el = els.get(n)
     if (el && el.readyState > 0 && !hold.has(n)) { try { el.currentTime = 0 } catch { /* not seekable yet */ } }

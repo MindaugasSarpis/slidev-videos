@@ -44,6 +44,19 @@ export function plateEntry(from, to) {
   return Number.isFinite(f) && Number.isFinite(t) && t === f + 1 ? 'replay' : 'hold';
 }
 
+// One plate element's step in StagePlate's sync(): whether to seek it to its end
+// now, and whether it plays or rests. The slide on screen plays unless a clip
+// covers it, the tab is hidden, it has ended (play() on an ended element starts it
+// over) or it was entered to hold (plateEntry): that one is seeked to its end once
+// (`sought`) and rests for the whole visit, the seek in flight or landed. Letting
+// go of the hold when the seek was issued played it before the seek landed (a
+// back-step at Innoday read `playing`, v0.8.2). Every other slide rests.
+export function plateStep({ current, hold, sought, covered, hidden, ended }) {
+  const seek = !!(current && hold && !sought);
+  const run = current && !covered && !hidden && !ended && !hold ? 'play' : 'pause';
+  return { seek, run };
+}
+
 // `stage.plates` → the folder under public/ ('' when off), as stills.js reads `stage.stills`
 export function platesDir(cfg) {
   if (cfg === false || cfg === 'false' || cfg === null) return '';

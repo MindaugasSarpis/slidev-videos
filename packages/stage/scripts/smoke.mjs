@@ -36,9 +36,14 @@
 //      live context is dropped past the last restore: the real handler takes
 //      it down (context-lost on <html>, the living still in, one event whose
 //      detail is the tier) and the panel names the forced reason and counts
-//      the three losses.
+//      the three losses;
+//  15. a back-step holds the settled world: on a copy of the build with
+//      synthetic plates (VP9 in MP4, as the test browser has no H.264), under
+//      stage-force=no-webgl2, 1→2 replays 2's plate; 2→3 and back to 2, once
+//      after 2's plate has ended and once mid-way, never reads `playing`, and
+//      ends `held` (v0.8.2 read `playing` on a back-step at Innoday).
 // Every assertion polls for the state it expects, so a slow runner is only slow.
-import { mkdtemp, rm, cp, readdir, utimes, readFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, cp, readdir, utimes, readFile } from 'node:fs/promises'
 import { readFileSync, readdirSync } from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
@@ -336,6 +341,68 @@ check('the panel says the fallback was forced and counts the three losses',
   panel.filter((l) => /^(stage|forced|context lost)/.test(l)).join(' | ') || '(no panel)')
 await p14.close()
 check('nothing threw on a forced page', forcedErrors.length === 0, forcedErrors.join(' | '))
+
+// 15. a back-step holds: plates on a copy of the build, every data-stage-plate value logged
+const plated = await mkdtemp(join(tmpdir(), 'stage-plates-'))
+await cp(DIST, plated, { recursive: true })
+await mkdir(join(plated, 'videos'), { recursive: true })
+const PLATE_S = 2
+const made = [1, 2, 3, 4].map((n) => spawnSync(process.env.FFMPEG || 'ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', `testsrc2=size=320x180:rate=25:duration=${PLATE_S}`,
+  '-c:v', 'libvpx-vp9', '-b:v', '200k', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', join(plated, 'videos', `0${n}-plate.mp4`)]).status)
+check('synthetic plates made (ffmpeg with libvpx-vp9)', made.every((c) => c === 0), made.join(','))
+const { server: plateServer, port: platePort } = await serve(plated)
+const p15 = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+p15.on('pageerror', (e) => { if (!/Wake Lock/i.test(e.message)) forcedErrors.push(`plates: ${e.message.slice(0, 200)}`) })
+await p15.addInitScript(() => {
+  window.__plateLog = []
+  new MutationObserver(() => window.__plateLog.push({ hash: location.hash, v: document.documentElement.dataset.stagePlate ?? null }))
+    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-stage-plate'] })
+})
+await p15.goto(`http://localhost:${platePort}/?stage-force=no-webgl2#/1`, { waitUntil: 'load' })
+await p15.waitForSelector('.slidev-layout', { timeout: 60000 })
+const plateNow = () => p15.evaluate(() => document.documentElement.dataset.stagePlate ?? null)
+const untilPlate = async (want, timeout = 20000) => {
+  const deadline = Date.now() + timeout
+  let v = await plateNow()
+  while (!want.includes(v) && Date.now() < deadline) { await p15.waitForTimeout(25); v = await plateNow() }
+  return v
+}
+const go = async (n) => { await p15.evaluate((k) => { location.hash = `#/${k}` }, n); await p15.waitForFunction((k) => document.querySelector('.stage')?.dataset && location.hash.startsWith(`#/${k}`), n) }
+const since = () => p15.evaluate(() => window.__plateLog.length)
+const valuesFrom = (i) => p15.evaluate((k) => window.__plateLog.slice(k).map((e) => e.v), i)
+
+await untilPlate(['held', 'playing', 'none'])
+await go(2)
+const played2 = await untilPlate(['playing'])
+check('a forward step 1→2 replays 2\'s plate (the browser plays the synthetic plate)', played2 === 'playing', String(played2))
+// (a) back-step after 2's plate has ended
+const ended2 = await untilPlate(['held'], (PLATE_S + 6) * 1000)
+await go(3)
+await untilPlate(['playing', 'held'])
+let mark = await since()
+await go(2)
+const backA = await untilPlate(['held'], 8000)
+await p15.waitForTimeout(500)
+let seen = await valuesFrom(mark)
+check('a back-step 3→2 after 2\'s plate ended holds: held, never playing', ended2 === 'held' && backA === 'held' && !seen.includes('playing') && (await plateNow()) === 'held', `${ended2} → ${seen.join(' ')}`)
+// (b) back-step after leaving 2 mid-way (the Innoday case: the plate not at its end)
+await go(1)
+await untilPlate(['held', 'playing', 'loading'])
+await go(2)
+await untilPlate(['playing'])
+await p15.waitForTimeout(PLATE_S * 250)
+await go(3)
+await untilPlate(['playing', 'held'])
+mark = await since()
+await go(2)
+const backB = await untilPlate(['held'], 8000)
+await p15.waitForTimeout(500)
+seen = await valuesFrom(mark)
+check('a back-step 3→2 after leaving 2 mid-way holds: held, never playing', backB === 'held' && !seen.includes('playing') && (await plateNow()) === 'held', seen.join(' '))
+await p15.close()
+plateServer.close()
+await rm(plated, { recursive: true, force: true })
+check('nothing threw on the plated page', !forcedErrors.some((e) => e.startsWith('plates:')), forcedErrors.filter((e) => e.startsWith('plates:')).join(' | '))
 
 await browser.close()
 server.close()
