@@ -157,7 +157,9 @@ function without(id) {
   }
   marks = new MutationObserver(follow)
   marks.observe(html, { attributes: true, attributeFilter: ['data-stage-layer', 'data-stage-plate'] })
-  follow()
+  // a task on: at slide enter <html> may still carry the slide before's plate (`held`
+  // at its end) until StagePlate's own watch has published this slide's
+  later(0, follow)
 }
 
 async function takeOver() {

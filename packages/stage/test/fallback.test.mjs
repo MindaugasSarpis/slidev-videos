@@ -178,6 +178,10 @@ test('StageDepthGrains reads the layer and the plate off <html> where the world 
   assert.match(src, /attributeFilter: \['data-stage-layer', 'data-stage-plate'\]/);
   // the fade waits the live hand-over's `hold` and takes its `fade`: the plate was filmed on that timeline
   assert.match(src, /props\.hold/);
+  // its first read waits a task: on slide enter <html> may still carry the slide before's
+  // plate (`held` at its end) until StagePlate's own watch has published this slide's
+  assert.match(src, /later\(0, follow\)/);
+  assert.doesNotMatch(src, /attributeFilter[^\n]*\n\s*follow\(\)/);
   // the observer goes when the slide is left or the component unmounts
   assert.match(src, /\.disconnect\(\)/);
 });
