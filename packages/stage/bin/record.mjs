@@ -21,6 +21,9 @@
 //                 their own type over, and for the stage to play under the
 //                 slide where the world cannot run (stage/fallback.js), which
 //                 draws its scrim and grain over the plate as over the world.
+//                 Encoded on the plate profile, rate-capped at 4 Mbit/s (the
+//                 stage streams a plate from the talk's release; see
+//                 lib/record-ffmpeg.mjs), where the takes are near lossless.
 //                 --plate-only writes the plates alone, half the frames shot
 //   index.json    the edit list: every file, its length, where the camera
 //                 stood, the clips it shows or could not record, flash warnings;
@@ -73,7 +76,7 @@ import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { serve, normaliseBase, parseSlides, checkSlides, parseSize } from './lib/record-serve.mjs';
 import { launch, loadPlaywright, MODES } from './lib/chromium.mjs';
-import { resolveFfmpeg, pickEncoder, encoder, decodeSmall } from './lib/record-ffmpeg.mjs';
+import { resolveFfmpeg, pickEncoder, plateEncoder, encoder, decodeSmall } from './lib/record-ffmpeg.mjs';
 import { seedRandom, recorderHooks, PLATE_HIDDEN } from './lib/record-page.mjs';
 import { findFlashes } from './lib/record-flash.mjs';
 
@@ -231,9 +234,9 @@ async function clipsToEnd(page, n, warn) {
 }
 
 // Frames of the slide on screen until it has settled and held, into one file
-// (and its plate; with --plate-only the plate alone). → the segment's entry
-// for the edit list, or a skip.
-async function recordSegment({ page, cdp }, n, k, o, ff, enc) {
+// (and its plate, on the plate encoder; with --plate-only the plate alone).
+// → the segment's entry for the edit list, or a skip.
+async function recordSegment({ page, cdp }, n, k, o, ff, enc, plateEnc) {
   const name = k ? `${pad(n)}-c${k}` : pad(n);
   const file = join(o.out, `${name}.mp4`), plateFile = join(o.out, `${name}-plate.mp4`);
   const step = 1000 / o.fps;
@@ -268,7 +271,7 @@ async function recordSegment({ page, cdp }, n, k, o, ff, enc) {
           return { slide: n, clicks: k, skipped: true, note: 'a clip slide has no plate: the clip is the picture itself, and the next slide\'s plate begins on the world as it stood under the clip', clip: { src: clip.src }, at: s.at, station: s.station };
         }
         if (!o.plateOnly) pipe = encoder(ff, enc, { fps: o.fps, out: file });
-        if (o.plate && !clip) platePipe = encoder(ff, enc, { fps: o.fps, out: plateFile });
+        if (o.plate && !clip) platePipe = encoder(ff, plateEnc, { fps: o.fps, out: plateFile });
       }
       if (pipe) {
         const png = await snap(cdp);
@@ -317,6 +320,7 @@ export async function record(o, log = console.log) {
   o.out = resolve(o.out);
   const ff = resolveFfmpeg();
   const enc = pickEncoder(ff, o.encoder);
+  const plateEnc = o.plate ? plateEncoder(enc) : null;   // the same codec, capped at 4 Mbit/s
   const base = normaliseBase(o.base, dist);
   const { server, url, misses } = await serve(dist, { base });
   // a backend asked for and not reached is an error before anything is written
@@ -326,7 +330,7 @@ export async function record(o, log = console.log) {
   await mkdir(o.out, { recursive: true });
   // what the backend set for the browser; a path by its name only
   const set = Object.entries(launched.env).map(([k, v]) => (v.length > 32 ? k : `${k}=${v}`)).join(' ');
-  log(`renderer: ${renderer}  (${backend}, Chromium ${version}${set ? `, ${set}` : ''})\nbrowser:  ${executablePath}\nffmpeg:   ${ff} (${enc.name})`);
+  log(`renderer: ${renderer}  (${backend}, Chromium ${version}${set ? `, ${set}` : ''})\nbrowser:  ${executablePath}\nffmpeg:   ${ff} (${enc.name}${plateEnc ? '; the plates capped at 4 Mbit/s' : ''})`);
   const errors = [];
   const report = {
     deck: dist, base, size: o.size, fps: o.fps, seed: o.seed, hold: o.hold, plateFps: o.plate ? o.fps : null, plateOnly: o.plateOnly, renderer, backend, browser: version, ffmpeg: ff, encoder: enc.name,
@@ -372,7 +376,7 @@ export async function record(o, log = console.log) {
             await deck.page.waitForFunction((k) => window.__rec.state(0).clicks >= k, k, { polling: 20, timeout: 10000 }).catch(() => {});
           }
           const t0 = Date.now();
-          const seg = await recordSegment(deck, n, k, o, ff, enc);
+          const seg = await recordSegment(deck, n, k, o, ff, enc, plateEnc);
           if (seg.clip) seg.clip.src = named(seg.clip.src);
           // the arrival begins on the last frame of these
           if (k === 0 && ended.length) seg.from = { slide: from, clipsEnded: ended.map((c) => named(c.src)) };

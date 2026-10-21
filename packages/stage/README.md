@@ -718,7 +718,12 @@ without them, plus a few seconds a slide to start. The recorder takes
 no lock of its own: where others render on the same machine, run it inside
 `flock /tmp/slidev-stage-shots.lock`, the lock shots queue on. ffmpeg comes
 from `$SLIDEV_VIDEOS_FFMPEG_DIR`, the active conda env, `~/micromamba/envs`
-or PATH; NVENC at QP 16 when it works, else x264 at CRF 14.
+or PATH; NVENC at QP 16 when it works, else x264 at CRF 14. A plate is
+encoded on its own profile, rate-capped at 4 Mbit/s (NVENC VBR at CQ 27 or
+x264 at CRF 23, both under a 4M maxrate and an 8M buffer, 4:2:0, the moov
+atom first), the stage streaming it from the talk's release: a 28 s plate
+of the example's drifting dust came to 12.8 MiB at 3.8 Mbit/s, where the
+broadcast profile gave 73.6 MiB for 20.6 s.
 
 ### By hand, with OBS
 
@@ -819,8 +824,9 @@ network, breathing under the plate that never comes.
 **The recipe.** The plates alone (half the frames shot), at 25 fps with a
 20 s hold: the sway and the drift go on for 20 s, then the last frame holds,
 and the living still's grains keep a trace of motion under it. The recorder
-encodes as for a broadcast take (x264 CRF 14, or NVENC); the files are what
-they are, a few MB each.
+encodes a plate on its rate-capped profile (4 Mbit/s at most, see
+[Recording](#recording-slidev-stage-record)): about half a megabyte a
+second, 12.8 MiB for a 28 s plate.
 
     slidev build deck.md --out /tmp/deck --base /
     slidev-stage-record /tmp/deck plates --plate-only --fps 25 --hold 20

@@ -51,7 +51,12 @@ one exception; without a world it differs. Precisely:
   world alone — no text, halo, HUD, scrim, paper grain or push overlay: the
   stage draws its scrim and grain over the plate as over the world —
   arriving from the slide before and holding (half the frames of `--plate`;
-  `index.json` gains `plateFps` and `plateOnly` beside `hold`). The stage
+  `index.json` gains `plateFps` and `plateOnly` beside `hold`). A plate is
+  encoded on its own rate-capped profile (`bin/lib/record-ffmpeg.mjs`:
+  NVENC VBR at CQ 27 or x264 at CRF 23, both under `-maxrate 4M -bufsize
+  8M`, 4:2:0, faststart) where the texted takes stay near lossless: a 28 s
+  plate of the example's drifting dust came to 12.8 MiB at 3.8 Mbit/s,
+  where the broadcast profile gave 73.6 MiB for 20.6 s. The stage
   plays the slide's `NN-plate.mp4` muted under the text, holding its last
   frame, three slides loaded at a time (the one before, this, the next);
   only a forward step from the slide before replays a plate's arrival, a

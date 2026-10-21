@@ -10,7 +10,7 @@ import { parseArgs as recordArgs, main as recordMain, glMode } from '../bin/reco
 import { parseArgs as safeArgs, main as safeMain, judge, RULES } from '../bin/safe.mjs';
 import { detectBase, normaliseBase, parseSlides, checkSlides, parseSize } from '../bin/lib/record-serve.mjs';
 import { findFlashes } from '../bin/lib/record-flash.mjs';
-import { ffmpegCandidates } from '../bin/lib/record-ffmpeg.mjs';
+import { ffmpegCandidates, PROFILES, pickEncoder, plateEncoder, ffmpegArgs } from '../bin/lib/record-ffmpeg.mjs';
 
 const here = (p) => new URL(p, import.meta.url);
 
@@ -109,6 +109,9 @@ test('record arguments', () => {
   // --force is slidev-stage-shots' (a rehearsed fallback leaves the recorder nothing to film)
   assert.throws(() => recordArgs(['d', 'o', '--force', 'no-webgl2']), /--force: nothing to record/);
   assert.throws(() => recordArgs(['d', 'o', '--force']), /--force: nothing to record/);
+  // --encoder picks the codec for the takes and the plates alike (the plates on their own profile)
+  assert.equal(recordArgs(['d', 'o']).encoder, 'auto');
+  for (const e of ['auto', 'nvenc', 'x264']) assert.equal(recordArgs(['d', 'o', '--encoder', e]).encoder, e);
   assert.throws(() => recordArgs(['d', 'o', '--fps', '0']));
   assert.throws(() => recordArgs(['d', 'o', '--size', '1920']));
 });
@@ -179,6 +182,38 @@ test('ffmpeg is looked for in the named dir first', () => {
   writeFileSync(join(dir, 'ffmpeg'), '');
   const c = ffmpegCandidates({ SLIDEV_VIDEOS_FFMPEG_DIR: dir, PATH: '' });
   assert.equal(c[0], join(dir, 'ffmpeg'));
+});
+
+test('a plate is rate-capped at 4 Mbit/s; a broadcast take is encoded as before', () => {
+  // the broadcast profile, unchanged: visually lossless, the broadcaster re-encodes
+  assert.deepEqual(PROFILES.broadcast.h264_nvenc, ['-preset', 'p7', '-tune', 'hq', '-rc', 'constqp', '-qp', '16']);
+  assert.deepEqual(PROFILES.broadcast.libx264, ['-preset', 'medium', '-crf', '14']);
+  // the plate profile: the stage pulls a plate from the release and streams it, so it is capped
+  assert.deepEqual(PROFILES.plate.h264_nvenc, ['-preset', 'p5', '-tune', 'hq', '-rc', 'vbr', '-cq', '27', '-b:v', '0', '-maxrate', '4M', '-bufsize', '8M', '-profile:v', 'high', '-pix_fmt', 'yuv420p']);
+  assert.deepEqual(PROFILES.plate.libx264, ['-preset', 'medium', '-crf', '23', '-maxrate', '4M', '-bufsize', '8M', '-pix_fmt', 'yuv420p']);
+  for (const name of ['h264_nvenc', 'libx264']) {
+    const p = PROFILES.plate[name], at = (k) => p[p.indexOf(k) + 1];
+    assert.equal(at('-maxrate'), '4M', name);
+    assert.equal(at('-bufsize'), '8M', name);
+    assert.ok(!p.includes('constqp') && !p.includes('-qp'), name);
+    assert.ok(!PROFILES.broadcast[name].includes('-maxrate'), name);
+  }
+  // --encoder x264 needs no test encode, so no ffmpeg; nvenc asked for and not working is an error
+  const x264 = pickEncoder('/no/ffmpeg', 'x264');
+  assert.deepEqual(x264, { name: 'libx264', profile: 'broadcast', args: ['-c:v', 'libx264', ...PROFILES.broadcast.libx264] });
+  assert.deepEqual(pickEncoder('/no/ffmpeg', 'x264', { plate: true }), { name: 'libx264', profile: 'plate', args: ['-c:v', 'libx264', ...PROFILES.plate.libx264] });
+  assert.throws(() => pickEncoder('/no/ffmpeg', 'nvenc'), /h264_nvenc does not work/);
+  // the plate profile on the encoder already picked: one test encode a run, the same codec for both
+  assert.deepEqual(plateEncoder(x264), { name: 'libx264', profile: 'plate', args: ['-c:v', 'libx264', ...PROFILES.plate.libx264] });
+  assert.deepEqual(plateEncoder({ name: 'h264_nvenc', profile: 'broadcast', args: [] }), { name: 'h264_nvenc', profile: 'plate', args: ['-c:v', 'h264_nvenc', ...PROFILES.plate.h264_nvenc] });
+  // the pipe around either: PNG frames in, BT.709 4:2:0 out, a key frame a second, faststart (a plate streams over HTTP)
+  const a = ffmpegArgs(plateEncoder(x264), { fps: 25, out: 'p.mp4' });
+  assert.deepEqual(a.slice(a.indexOf('-g')), ['-g', '25', '-movflags', '+faststart', 'p.mp4']);
+  assert.ok(a.indexOf('-vf') < a.lastIndexOf('-c:v') && a.lastIndexOf('-c:v') < a.indexOf('-maxrate'));   // the first -c:v is the PNG decoder
+  assert.deepEqual(a.slice(0, 2), ['-hide_banner', '-loglevel']);
+  const b = ffmpegArgs(x264, { fps: 50, out: 'b.mp4' });
+  assert.ok(b.includes('-crf') && !b.includes('-maxrate'));
+  assert.deepEqual(b.slice(-5), ['-g', '50', '-movflags', '+faststart', 'b.mp4']);
 });
 
 test('the flash check counts bursts over a quarter of the frame', () => {
