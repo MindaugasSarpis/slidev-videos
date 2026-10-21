@@ -1,7 +1,7 @@
 <script>
 // Module scope (runs once): state shared by every VideoPlayer instance.
 import { ref } from 'vue'
-import { NAV_KEYS } from './video-dust/advance.js'
+import { NAV_KEYS, navPress } from './video-dust/advance.js'
 
 // ---- session volume ---------------------------------------------------------
 // `+` / `-` set a presenter-chosen level that sticks for every later clip in
@@ -28,11 +28,12 @@ function setSessionVolume(v) {
 // A press in a clip's last instant navigates by itself; the `ended` that
 // follows must not go on again (video-dust/advance.js). Slidev moves the route
 // a tick after the key, so the time of the press is what tells. One listener
-// each per page, on the capture phase, ahead of Slidev's own.
+// each per page, on the capture phase, ahead of Slidev's own. A press on a
+// player — its own controls, a tap on the picture — is no navigation (navPress).
 let lastNavMs = null
 if (typeof window !== 'undefined') {
   window.addEventListener('keydown', (e) => { if (NAV_KEYS.has(e.key) || e.code === 'Space') lastNavMs = performance.now() }, true)
-  window.addEventListener('pointerdown', () => { lastNavMs = performance.now() }, true)
+  window.addEventListener('pointerdown', (e) => { if (navPress(e.target)) lastNavMs = performance.now() }, true)
 }
 </script>
 

@@ -6,8 +6,19 @@
 // (Slidev moves the route a tick after the key; the `ended` lands in between).
 export const NAV_GRACE_MS = 500;
 
-// The keys Slidev navigates on, as `e.key` (Space reads ' ').
-export const NAV_KEYS = new Set(['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown', ' ', 'PageUp', 'PageDown', 'Enter', 'Home', 'End']);
+// The keys Slidev navigates on from a slide (its setup/shortcuts.ts), as
+// `e.key` (Space reads ' '). Enter moves the deck from the overview only,
+// Home and End not at all.
+export const NAV_KEYS = new Set(['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown', ' ', 'PageUp', 'PageDown']);
+
+// A pointer press that may navigate: any but one on a player. The player's
+// own controls — the scrubber, play, a tap on the picture that shows them —
+// never move the deck, so they must not stop a clip's advance either. A press
+// in the native control bar's shadow tree arrives retargeted to the <video>,
+// inside the player.
+export function navPress(target) {
+  return !(target && typeof target.closest === 'function' && target.closest('.video-player'));
+}
 
 // s: { armed, armedClicks, clicks, advance, loop, context, printing, active,
 //      rec, page, current, fallback, plateNext, lastNavMs, nowMs }

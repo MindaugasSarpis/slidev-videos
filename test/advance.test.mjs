@@ -2,7 +2,7 @@
 // in one place from what the player sees (components/video-dust/advance.js).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { shouldAdvance, advanceGate, NAV_KEYS, NAV_GRACE_MS } from '../components/video-dust/advance.js';
+import { shouldAdvance, advanceGate, navPress, NAV_KEYS, NAV_GRACE_MS } from '../components/video-dust/advance.js';
 
 // slide 8's clip ends on slide 8, no click taken, the world running, no press
 const ended = {
@@ -57,9 +57,20 @@ test('a press in the clip\'s last half second has navigated already', () => {
   assert.deepEqual(decide({ lastNavMs: 9_800, fallback: 'no-webgl2', plateNext: '9' }), { go: false, reason: 'pressed' });
 });
 
-test('the keys Slidev navigates on, and not the player\'s own', () => {
-  for (const k of ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown', ' ', 'PageUp', 'PageDown', 'Enter', 'Home', 'End']) assert.ok(NAV_KEYS.has(k), k);
+test('the keys Slidev navigates on from a slide, and not the player\'s own', () => {
+  for (const k of ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown', ' ', 'PageUp', 'PageDown']) assert.ok(NAV_KEYS.has(k), k);
   for (const k of ['p', 'P', '+', '=', '-', '_', 'o', 'd', 'g', 'f', 'Escape', 'Shift']) assert.ok(!NAV_KEYS.has(k), k);
+  for (const k of ['Enter', 'Home', 'End']) assert.ok(!NAV_KEYS.has(k), k);   // Enter moves the deck from the overview only, Home and End not at all
+  assert.equal(NAV_KEYS.size, 7);
+});
+
+test('a pointer press is a navigation unless it lands on a player', () => {
+  const on = (hit) => ({ closest: (s) => (s === '.video-player' && hit ? {} : null) });
+  assert.equal(navPress(on(false)), true);     // the nav bar, the slide
+  assert.equal(navPress(on(true)), false);     // the picture, or the native controls (a press in their shadow tree arrives retargeted to the <video>)
+  assert.equal(navPress(null), true);          // no target at all: a press is a press
+  assert.equal(navPress(undefined), true);
+  assert.equal(navPress({}), true);            // a target with no closest (the window, a text node)
 });
 
 test('one arming, one advance: a second ended is refused', () => {
