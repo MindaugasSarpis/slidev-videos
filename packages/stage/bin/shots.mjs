@@ -832,7 +832,20 @@ const sha1 = (s) => createHash('sha1').update(s).digest('hex');
 // run under load must not hand its failure to the next. An overflow is the
 // slide's own and is kept.
 export function cacheable(r) {
-  return !!r && !r.error && r.settled !== false && !(r.pageErrors?.length) && !(r.httpErrors || []).some((h) => h.local);
+  return !!r && !r.error && r.settled !== false && !(r.pageErrors?.length) && !failedRequests(r).length;
+}
+
+// The same-origin requests a frame failed. A plate the stage asked for and was
+// told no is not one where a plate or the living still stands: three are
+// asked for at a time (the slide before, this one, the next), a clip slide
+// never has one, and a deck without plates asks once per slide, as the README
+// says. Where the world runs, or the still stands alone, nothing should ask
+// for plates, and the 404 counts; a missing still counts everywhere.
+const PLATE = /-plate\.(mp4|webm|mov|m4v)$/i;
+const plateRefused = (h) => h.status === 404 && PLATE.test(clipName(h.url) || '');
+export function failedRequests(r) {
+  const stood = r.layer === 'plate' || r.layer === 'living';
+  return (r.httpErrors || []).filter((h) => h.local && !(stood && plateRefused(h)));
 }
 
 export function problemsOf(r) {
@@ -842,7 +855,7 @@ export function problemsOf(r) {
   if ((r.overflowPx ?? 0) > 1) p.push(`runs ${r.overflowPx}px off the bottom`);
   if ((r.overflowRightPx ?? 0) > 1) p.push(`runs ${r.overflowRightPx}px off the right`);
   if (r.pageErrors?.length) p.push(`${r.pageErrors.length} page error(s)`);
-  const local = (r.httpErrors || []).filter((h) => h.local);
+  const local = failedRequests(r);
   if (local.length) p.push(`${local.length} failed request(s)`);
   return p;
 }

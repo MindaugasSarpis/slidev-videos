@@ -529,7 +529,7 @@ number. A second signal does not wait for the browser to close.
 | | |
 |---|---|
 | 0 | every frame settled and clean |
-| 3 | a frame runs off the slide (more than 1 px), has page errors or failed same-origin requests, failed, or did not settle |
+| 3 | a frame runs off the slide (more than 1 px), has page errors or failed same-origin requests, failed, or did not settle. A plate's 404 is no failed request under a plate or the living still (the stage asks for plates it may not have; a clip slide has none) and is one while the world runs or the still stands alone; a missing still is one everywhere |
 | 1 | the run itself failed (no browser, no deck, a crash) |
 | 2 | bad arguments |
 | 130, 143, 129 | stopped by SIGINT, SIGTERM or SIGHUP |

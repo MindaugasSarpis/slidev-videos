@@ -659,6 +659,28 @@ test('what makes a run exit 3', () => {
   assert.deepEqual(problemsOf({ error: 'timeout' }), ['failed: timeout']);
 });
 
+test('a plate the stage asked for and was refused is no failure under a plate or the living still', () => {
+  // three plates are asked for at a time (the slide before, this one, the next), and a clip slide never has one
+  const plate = { status: 404, url: 'http://127.0.0.1:4000/videos/03-plate.mp4', local: true };
+  const release = { status: 404, url: 'https://github.com/o/r/releases/download/videos/03-plate.mp4', local: false };
+  const still = { status: 404, url: 'http://127.0.0.1:4000/stills/03.jpg', local: true };
+  assert.deepEqual(problemsOf({ settled: true, layer: 'plate', httpErrors: [plate, release] }), []);
+  assert.deepEqual(problemsOf({ settled: true, layer: 'living', httpErrors: [plate] }), []);
+  // a missing still is a real problem, counted beside the plate that is not
+  assert.deepEqual(problemsOf({ settled: true, layer: 'living', httpErrors: [plate, still] }), ['1 failed request(s)']);
+  // while the world runs, or the still stands alone, nothing should ask for plates
+  assert.deepEqual(problemsOf({ settled: true, layer: 'world', httpErrors: [plate] }), ['1 failed request(s)']);
+  assert.deepEqual(problemsOf({ settled: true, layer: 'world-floor', httpErrors: [plate] }), ['1 failed request(s)']);
+  assert.deepEqual(problemsOf({ settled: true, layer: 'still', httpErrors: [plate] }), ['1 failed request(s)']);
+  assert.deepEqual(problemsOf({ settled: true, httpErrors: [plate] }), ['1 failed request(s)']);   // a deck built before the mark
+  // only a refusal: a plate that is there and errors counts
+  assert.deepEqual(problemsOf({ settled: true, layer: 'plate', httpErrors: [{ ...plate, status: 500 }] }), ['1 failed request(s)']);
+  // --changed keeps the frame by the same rule
+  assert.equal(cacheable({ settled: true, layer: 'living', httpErrors: [plate] }), true);
+  assert.equal(cacheable({ settled: true, layer: 'plate', httpErrors: [plate, still] }), false);
+  assert.equal(cacheable({ settled: true, layer: 'world', httpErrors: [plate] }), false);
+});
+
 test('slides are split into contiguous runs, one per page', () => {
   assert.deepEqual(split([1, 2, 3, 4, 5], 2), [[1, 2, 3], [4, 5]]);
   assert.deepEqual(split([1, 2], 4), [[1], [2]]);
