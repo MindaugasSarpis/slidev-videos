@@ -6,7 +6,7 @@ takes the ones it wants.
 
 | tool | where | what it is |
 | --- | --- | --- |
-| **`slidev-videos`** | `src/` (Python ≥3.11, stdlib only) | manifest-driven CLI: `fetch · sync · encode · encode-hq · publish · publish-hq · pull · pull-hq · check · shared-check · frames · clean · preflight · venue · build · discover · depth · doctor · contact-sheet`. Web tier is 1080p H.264 with EBU R128 loudness normalisation; clips are hosted as GitHub Release assets |
+| **`slidev-videos`** | `src/` (Python ≥3.11, stdlib only) | manifest-driven CLI: `fetch · sync · encode · encode-hq · publish · publish-hq · pull · pull-hq · check · shared-check · frames · clean · preflight · venue · build · discover · depth · pptx · doctor · contact-sheet`. Web tier is 1080p H.264 with EBU R128 loudness normalisation; clips are hosted as GitHub Release assets |
 | **`slidev-addon-videos`** | repo root | the full-bleed `VideoPlayer`: a local → own-release → shared-release fallback chain, slide-driven playback, look-ahead preload, `cut` / `fade` / `dust` transitions, advance-on-end, native auto-hide controls, keyboard volume; and `StagePhoto`, a photograph that arrives and leaves as grains, or stands in the world as a place |
 | **`slidev-addon-stage`** | [`packages/stage`](packages/stage/README.md) | one persistent 3D world under a whole deck: stations in a field of dust, a camera that flies from slide to slide, palettes, a broadcast look, a builder registry, halo borders, photo places, a step bus, LHCb's geometry as grains (`plugins: [lhcb]`), a still-and-depth hand-over, a validator, a screenshot tool, a per-slide video recorder and a safe-area check |
 | **the shared clip library** | `src/slidev_videos/shared.toml` | the registry, with the encodes on this repo's `videos-shared` Release |
@@ -22,6 +22,7 @@ renderer under a clip that covers the slide. Either works alone.
     pnpm add -D github:MindaugasSarpis/slidev-videos#v0.9.0
     pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.9.0&path:/packages/stage"   # the stage, if wanted
     pip install "slidev-videos[depth] @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.9.0"   # + depth maps for photo places
+    pip install "slidev-videos[pptx] @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.9.0"    # + the PPTX of a recorded talk
 
 What changed between releases: [CHANGELOG.md](CHANGELOG.md).
 
@@ -366,6 +367,7 @@ Names changed when the outreach decks moved onto the library (2026-09-08):
     slidev-videos discover "cloud chamber" lhc --source cds,nasa   # find new clips; prints [[videos]] snippets
     slidev-videos doctor         # CLI version and install, the ffmpeg in use, gh, rclone, the deck's addon versions
     slidev-videos contact-sheet clip.mp4 --every 10   # one PNG of a candidate clip's frames (a file or https URL)
+    slidev-videos pptx rec/ --deck deck.md --out talk.pptx   # a PPTX from slidev-stage-record's takes (below)
 
 Run from anywhere inside a project (`videos.toml` is found by walking up), or
 pass `--project <dir>`, before or after the subcommand.
@@ -380,7 +382,7 @@ release asset's version, so a re-run reads only what changed. A track that
 measures `-inf` LUFS is reported as silent (use the `silent-loop` profile),
 not as a loudness miss.
 
-`check`, `preflight`, `frames` and `doctor` take `--json`: one JSON object on
+`check`, `preflight`, `frames`, `doctor` and `pptx` take `--json`: one JSON object on
 stdout, the usual text on stderr. Exit codes: 0 when all is well, 1 when
 problems were found, 2 for usage and setup errors (a bad flag, no
 `videos.toml`, a missing tool). `slidev-videos --version` prints the installed
@@ -396,6 +398,52 @@ nothing (a dry run does not create a missing release either):
     slidev-videos publish --prune --dry-run
     slidev-videos publish --prune --yes
     pnpm videos:publish -- --prune --yes   # through a talk's pnpm script
+
+## PPTX
+
+    slidev-videos pptx <recording-dir> [--deck deck.md] [--out talk.pptx]
+                       [--profile pptx|small|copy] [--cap 6M] [--encoder auto|nvenc|x264]
+                       [--size 1920x1080] [--clips DIR] [--allow-skips] [--keep-encodes]
+                       [--autoplay after|with] [--json]
+
+The talk as PowerPoint plays it, from `slidev-stage-record`'s takes (the
+stage README's [Recording](packages/stage/README.md#recording-slidev-stage-record)):
+one 16:9 slide per segment of `index.json`, a slide's clicks each a slide of
+their own, so PowerPoint counts more slides than the deck. Each slide is the
+take full-bleed, its first frame the poster, starting on its own when the
+slide is shown and holding its last frame (the next take begins on it), with
+no media controls in the slide show; nothing on it is editable. The notes
+are the deck's speaker notes as plain text (the last comment ending the
+slide; `**`, `_`, ticks, links and tags dropped, Lithuanian as written); a
+click's slide has a `[click K/N]` line, then the part after Slidev's
+`[click]` markers, or the whole notes again. It needs no `videos.toml`; in a
+talk, `--deck` defaults to its `deck.md`.
+
+The takes are near lossless, so each is re-encoded: `pptx` (default) is
+H.264 High 4:2:0, NVENC VBR at CQ 24 or x264 at CRF 21, under `--cap`
+(6 Mbit/s; the buffer twice it), a key frame a second, faststart, at the
+take's size and rate (`--size` scales); `small` is the plates' 4 Mbit/s
+profile and `copy` keeps the takes as they are. A 25-minute talk comes to
+about 0.6 GB. The takes are silent: a clip slide gets its clip's sound back,
+cut from the source clip where the recorder logged the clip playing
+(`clip.sound` in `index.json`) and laid under the take as AAC, at the web
+tier's level (-16 LUFS, no second loudnorm), at the player's `volume`, none
+for a `muted` clip. The source is looked for in the deck's build (the
+recorder's `deck`), then in each `--clips` dir and `public/videos/` beside
+the deck; a clip found nowhere leaves the slide silent, with a warning.
+**The stage's own sounds — the hum, a `Soundtrack`, the flight — are not in
+the takes and not in the PPTX.**
+
+A segment the recorder skipped (a clip from another origin) stops the build:
+pull the clips (`slidev-videos pull --include-shared`), build local-first and
+record again, or pass `--allow-skips` for a black slide naming the clip.
+`--keep-encodes` keeps `<out>.enc/` (the encodes and posters) and reuses it
+next run. `--autoplay with` starts the video "With Previous" instead of
+PowerPoint's "Automatically" (`after`), should a PowerPoint stop the video on
+the click instead of moving on. Exit 0 with the file written, 1 on a skip or
+an ffmpeg failure, 2 on a usage error (no `index.json`, no python-pptx: the
+`pptx` extra). `--json`: `{slides, segments, bytes, seconds, skipped,
+profile, encoder, cap, sound, warnings, out}`.
 
 ## New course, three steps
 

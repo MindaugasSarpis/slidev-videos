@@ -211,7 +211,7 @@ export function recorderHooks({ hidden = [] } = {}) {
         // arrival (a sheet of dust takes a while), any other once it has data
         const up = !!(v.error || v.networkState === HTMLMediaElement.NETWORK_NO_SOURCE
           || (v.closest('.video-player') ? v.classList.contains('video-ready') : v.readyState >= 2));
-        return { src, sameOrigin, decodable, up, duration: Number.isFinite(v.duration) ? v.duration : null, loop: v.loop, playing: !!(s && s.playing), t: time.get.call(v) };
+        return { src, sameOrigin, decodable, up, duration: Number.isFinite(v.duration) ? v.duration : null, loop: v.loop, playing: !!(s && s.playing), t: time.get.call(v), muted: v.muted, volume: v.volume };
       }) : [];
       return {
         slide: Number((/^#\/(\d+)/.exec(location.hash) || [])[1]) || null,

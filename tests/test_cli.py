@@ -59,7 +59,7 @@ def test_json_on_a_command_without_it_is_a_usage_error(tmp_path, capsys):
     assert e.value.code == 2
     assert json.loads(capsys.readouterr().out) == {
         "ok": False, "exit": 2,
-        "error": "--json is supported by check, preflight, frames, doctor, not encode"}
+        "error": "--json is supported by check, preflight, frames, doctor, pptx, not encode"}
 
 
 def test_a_usage_error_under_json_is_json(capsys):

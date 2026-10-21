@@ -6,7 +6,7 @@ import { readFileSync, mkdtempSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LOOKS, PALETTES, resolveLook, resolvePalette, liftGround, definePalette, paletteVars } from '../stage/palette.js';
-import { parseArgs as recordArgs, main as recordMain, glMode } from '../bin/record.mjs';
+import { parseArgs as recordArgs, main as recordMain, glMode, trackClip, clipEntry } from '../bin/record.mjs';
 import { parseArgs as safeArgs, main as safeMain, judge, RULES } from '../bin/safe.mjs';
 import { detectBase, normaliseBase, parseSlides, checkSlides, parseSize } from '../bin/lib/record-serve.mjs';
 import { findFlashes } from '../bin/lib/record-flash.mjs';
@@ -114,6 +114,45 @@ test('record arguments', () => {
   for (const e of ['auto', 'nvenc', 'x264']) assert.equal(recordArgs(['d', 'o', '--encoder', e]).encoder, e);
   assert.throws(() => recordArgs(['d', 'o', '--fps', '0']));
   assert.throws(() => recordArgs(['d', 'o', '--size', '1920']));
+});
+
+// The takes are silent: the edit list says where in a take a clip played, so
+// whoever cuts the take (slidev-videos pptx) can lay the source clip's sound
+// under it.
+test('a clip\'s sound is logged where it played in the take', () => {
+  const fps = 50;
+  const clip = (t, o = {}) => ({ src: 'http://127.0.0.1:4000/videos/a.mp4', playing: true, t, muted: false, volume: 1, loop: false, ...o });
+  let tr = null;
+  // frames 0-9: the arrival, the clip not yet started (a sheet of dust)
+  for (let i = 0; i < 10; i++) tr = trackClip(tr, i, fps, clip(0, { playing: false }));
+  assert.equal(tr, null);
+  // the player starts it muted and lifts the sound a frame later (as VideoPlayer does)
+  tr = trackClip(tr, 10, fps, clip(0, { muted: true, volume: 0 }));
+  assert.deepEqual(tr, { start: 0.2, t: 0, end: 0.2, muted: true, volume: 0, loop: false });
+  for (let i = 11; i < 60; i++) tr = trackClip(tr, i, fps, clip((i - 10) / fps, { volume: i < 20 ? 0.25 : 0.5 }));
+  // ended: it plays no more, the take holds its last frame
+  for (let i = 60; i < 70; i++) tr = trackClip(tr, i, fps, clip(1, { playing: false }));
+  assert.deepEqual(tr, { start: 0.2, t: 0, end: 1.18, muted: false, volume: 0.5, loop: false });
+  // a slide with no clip, or a frame without one, leaves the track as it was
+  assert.equal(trackClip(null, 0, fps, undefined), null);
+  assert.equal(trackClip(tr, 70, fps, null), tr);
+  // a clip already running when the take begins (a click on a clip slide) or seeked into: t is its own second
+  const late = trackClip(null, 0, 25, clip(12.345678));
+  assert.deepEqual([late.start, late.t], [0, 12.346]);
+  // a muted clip stays muted
+  let m = null;
+  for (let i = 0; i < 5; i++) m = trackClip(m, i, fps, clip(i / fps, { muted: true }));
+  assert.equal(m.muted, true);
+  // the segment's clip entry: src (by its path in the dist), recorded, and the sound
+  const named = (src) => src.replace('http://127.0.0.1:4000/', '');
+  assert.deepEqual(clipEntry(clip(0), tr, named), { src: 'videos/a.mp4', recorded: true, sound: { start: 0.2, t: 0, end: 1.18, muted: false, volume: 0.5, loop: false } });
+  // a clip that never played (a poster only) has no sound entry
+  assert.deepEqual(clipEntry(clip(0), null, named), { src: 'videos/a.mp4', recorded: true, sound: null });
+  assert.equal(clipEntry(null, null, named), null);
+  // the page reports what the track needs of each clip
+  const page = readFileSync(here('../bin/lib/record-page.mjs'), 'utf8');
+  assert.match(page, /muted: v\.muted/);
+  assert.match(page, /volume: v\.volume/);
 });
 
 test('the recorder refuses no WebGL from the environment as well as from --gl', async () => {
