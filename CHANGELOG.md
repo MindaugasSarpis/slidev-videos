@@ -86,9 +86,16 @@ one exception; without a world it differs. Precisely:
   fallback (`context-lost` drops a live context, so the real handler runs);
   `stage-plates=off`, `stage-motion=floor|respect`; the debug panel names a
   forced reason. `slidev-stage-shots --force REASON` photographs the deck
-  that way (refused with `--stills`); the recorder refuses `--force`. Smoke
-  cases 12 (the example under `?stage-force=no-webgl2`: the living still,
-  drawing) and 13 (`reduced-motion&stage-motion=floor`: the world draws).
+  that way (refused with `--stills`); the recorder refuses `--force`. A
+  plate's 404 under a plate or the living still is no failed request to
+  `slidev-stage-shots` (the stage asks for plates it may not have; a clip
+  slide has none); while the world runs it is one, and a missing still is
+  one everywhere. Smoke cases 12 (the example under `?stage-force=no-webgl2`:
+  the living still, drawing; `--force` reports the plates refused and counts
+  the stills alone), 13 (`reduced-motion&stage-motion=floor`: the world
+  draws) and 14 (`context-lost&stage-debug`: the world boots, loses its
+  context past the last restore, the panel names the forced reason and
+  counts the three losses).
 - **The venue zip's double-click launchers** (the CLI): `venue` writes
   `RUN_ME.command` (macOS; executable in the zip whatever the filesystem
   kept of the mode) and `RUN_ME.bat` (Windows; CRLF) beside `RUN_ME.txt`,

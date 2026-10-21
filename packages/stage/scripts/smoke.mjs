@@ -31,14 +31,19 @@
 //      the layer on every report line;
 //  13. under stage-force=reduced-motion the still stands alone; with
 //      stage-motion=floor the world runs at its floor (world-floor) and a
-//      pose change lands.
+//      pose change lands;
+//  14. under stage-force=context-lost&stage-debug the world boots and its
+//      live context is dropped past the last restore: the real handler takes
+//      it down (context-lost on <html>, the living still in, one event whose
+//      detail is the tier) and the panel names the forced reason and counts
+//      the three losses.
 // Every assertion polls for the state it expects, so a slow runner is only slow.
 import { mkdtemp, rm, cp, readdir, utimes, readFile } from 'node:fs/promises'
 import { readFileSync, readdirSync } from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { serve, shoot, parseArgs } from '../bin/shots.mjs'
+import { serve, shoot, parseArgs, failedRequests } from '../bin/shots.mjs'
 import { launch } from '../bin/lib/chromium.mjs'
 
 const DIST = new URL('../example/dist', import.meta.url).pathname
@@ -275,6 +280,7 @@ const forcedState = (pg) => pg.evaluate(() => {
     probeLayer: probe?.layer ?? null, probePlate: probe?.plate ?? null, probeStatic: probe?.static ?? null,
     events: window.__fallbacks,
     search: location.search, hash: location.hash,
+    debug: document.querySelector('pre.stage-debug')?.textContent ?? '',   // ?stage-debug's panel
   }
 })
 const untilForced = async (pg, pred, timeout = 30000) => {
@@ -314,6 +320,21 @@ await p13.evaluate(() => { location.hash = '#/2' })
 f = await untilForced(p13, (s) => s.at === '11.5,-2.6,0', 60000)
 check('a pose change lands on the floored world', f.at === '11.5,-2.6,0' && f.layer === 'world-floor', `at=${f.at} layer=${f.layer}`)
 await p13.close()
+
+// 14. context lost, forced: the world boots and its live context is dropped past the
+// last restore, so the real handler (onContextLost) takes its final branch; with
+// stage-debug the panel names the forced reason and counts the losses
+const p14 = await forcedPage('stage-force=context-lost&stage-debug')
+f = await untilForced(p14, (s) => s.fallback === 'context-lost' && s.layer === 'living' && s.plate === 'none' && /context lost 3×/.test(s.debug), 60000)
+check('?stage-force=context-lost boots the world, loses it for good and falls back: the reason on <html> and the root, the living still in',
+  f.fallback === 'context-lost' && f.rootFallback === 'context-lost' && f.layer === 'living' && f.probeLayer === 'living' && f.plate === 'none' && f.staticBg, JSON.stringify({ ...f, debug: undefined }))
+check('the real handler took it down: one slidev-stage:fallback, its detail the tier, the plate tried first',
+  f.events.length === 1 && f.events[0].reason === 'context-lost' && /^tier \d$/.test(f.events[0].detail) && f.events[0].layer === 'plate', JSON.stringify(f.events))
+const panel = f.debug.split('\n')
+check('the panel says the fallback was forced and counts the three losses',
+  panel.some((l) => /^stage: fallback — context-lost \(tier \d\)$/.test(l)) && panel.some((l) => /^forced: context-lost — \?stage-force/.test(l)) && panel.some((l) => /^context lost 3× · shader errors 0$/.test(l)),
+  panel.filter((l) => /^(stage|forced|context lost)/.test(l)).join(' | ') || '(no panel)')
+await p14.close()
 check('nothing threw on a forced page', forcedErrors.length === 0, forcedErrors.join(' | '))
 
 await browser.close()
@@ -340,12 +361,20 @@ check('shots says the world stood under every frame', recs.every((r) => r.layer 
 console.log(`     shots: ${res.renderer} (${res.backend})`)
 
 // --force: the same deck as a device without WebGL2 would show it; the report
-// says the fallback and what stood in (the example's plate is not there: the
-// living still, and the plate's miss is a failed request, as it should be)
+// says the fallback and what stood in (the example has no plates and no stills:
+// the living still alone). The plates' 404s are in the report and no failure
+// under the living still (the stage asks for plates it may not have); the
+// stills' 404s are failures, and the run exits 3 for those alone
 const forced = await shoot(parseArgs([dist, join(out, 'forced'), '--slides', '2', '--force', 'no-webgl2', '--no-lock']), () => {})
 const frs = forced.records.filter((r) => r.png)
 check('shots --force photographs the fallback and says so on every line', frs.length === 1 && !forced.fatal && frs.every((r) => r.settled && r.fallback === 'no-webgl2' && r.layer === 'living'),
   forced.fatal || JSON.stringify(frs.map((r) => ({ frame: r.frame, settled: r.settled, fallback: r.fallback, layer: r.layer, http: (r.httpErrors || []).map((h) => `${h.status} ${h.url}`) }))))
+const fhttp = frs.flatMap((r) => r.httpErrors || [])
+const fplates = fhttp.filter((h) => h.local && h.status === 404 && /-plate\.mp4$/.test(new URL(h.url).pathname))
+const fstills = fhttp.filter((h) => h.local && /\/stills\/\d+\.jpg$/.test(new URL(h.url).pathname))
+const fcounted = frs.flatMap((r) => failedRequests(r))
+check('shots --force reports the plates refused and counts the stills alone', fplates.length > 0 && fstills.length > 0 && fcounted.length === fstills.length && fcounted.every((h) => fstills.includes(h)) && forced.code === 3,
+  `${fplates.length} plate(s), ${fstills.length} still(s), counted ${fcounted.map((h) => `${h.status} ${h.url}`).join(' | ')}, code ${forced.code}`)
 
 // a rebuild copies public/ and writes _redirects again: new times, the same bytes
 const later = new Date(Date.now() + 60000)
