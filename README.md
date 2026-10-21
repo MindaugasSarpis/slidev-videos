@@ -308,6 +308,8 @@ Manifest (`videos/manifest.toml`) entries:
     trim    = ["0:20", "1:50"]    # optional; remux trims on keyframes
     poster  = "0:24"              # optional; the print poster's moment (default: the first frame 5 % lit)
     notes   = "what it shows"
+    generated = true              # optional; a file the toolkit made with no raw (a stage plate): sync, encode
+                                  # and fetch leave it alone, check accepts it unreferenced, publish/pull/venue/preflight carry it
 
 A web profile is one quality target for both encoders. On NVENC its `-cq`
 is set to match or beat libx264 `-preset slow` at the profile's `-crf` on

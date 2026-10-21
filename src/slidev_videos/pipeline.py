@@ -471,6 +471,11 @@ class VideoEntry:
     # The print poster's moment (seconds or M:SS), where the first lit frame is
     # not the picture: an animation that opens on a speck on black.
     poster: str | None = None
+    # A file the toolkit made, with no raw: the stage's recorded plates
+    # (`talk record --plates` writes the block). sync, encode and fetch leave
+    # it alone, check accepts it unreferenced in the deck; publish, pull,
+    # venue and preflight carry it like any clip.
+    generated: bool = False
 
 
 def _videos_from_data(data: dict) -> list[VideoEntry]:
@@ -487,6 +492,7 @@ def _videos_from_data(data: dict) -> list[VideoEntry]:
             loudnorm=v.get("loudnorm"),
             trim=tuple(v["trim"]) if v.get("trim") else None,
             poster=str(v["poster"]) if v.get("poster") not in (None, "") else None,
+            generated=bool(v.get("generated", False)),
         )
         for v in data.get("videos", [])
     ]
@@ -543,11 +549,22 @@ def human_size(n: int) -> str:
 # fetch — download a video from a URL (yt-dlp) into raw/ + manifest entry
 # ---------------------------------------------------------------------------
 
+def _without_generated(videos: list[VideoEntry], doing: str) -> list[VideoEntry]:
+    """The entries a raw-side step works on: a generated one has no raw, so it is named and left."""
+    for v in videos:
+        if v.generated:
+            print(f"  ~ {v.name}: generated (recorded by the stage), nothing to {doing}")
+    return [v for v in videos if not v.generated]
+
+
 def cmd_fetch(args: argparse.Namespace) -> int:
     if not shutil.which("yt-dlp"):
         print("error: yt-dlp not installed. https://github.com/yt-dlp/yt-dlp", file=sys.stderr)
         return 2
     name = args.name if args.name.endswith(".mp4") else f"{args.name}.mp4"
+    if any(v.name == name and v.generated for v in load_manifest()[1]):
+        print(f"error: {name} is a generated entry (a stage plate): it is recorded, not fetched", file=sys.stderr)
+        return 2
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     raw = RAW_DIR / name
     if raw.exists() and not args.force:
@@ -592,6 +609,7 @@ def _rclone_progress() -> list[str]:
 
 def cmd_sync(args: argparse.Namespace) -> int:
     defaults, videos = load_manifest()
+    videos = [v for v in videos if not v.generated]      # no raw to mirror
     remote = defaults.get("source_remote")
     if not remote:
         print("error: [defaults].source_remote not set in manifest.toml", file=sys.stderr)
@@ -792,6 +810,9 @@ def cmd_encode(args: argparse.Namespace) -> int:
         if not videos:
             print(f"error: no manifest entries match {args.only}", file=sys.stderr)
             return 2
+    videos = _without_generated(videos, "encode")
+    if not videos:
+        return 0
     if not _tools().ffmpeg:
         print("error: ffmpeg not installed. brew install ffmpeg", file=sys.stderr)
         return 2
@@ -1309,6 +1330,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     defaults, videos = load_manifest()
     _, shared_videos = load_shared_manifest()
     manifest_names = {v.name for v in videos}
+    generated = {v.name for v in videos if v.generated}     # no raw ever: recorded by the stage
     shared_names = {v.name for v in shared_videos}
     raw_files = {p.name for p in RAW_DIR.glob("*") if p.is_file() and not p.name.startswith(".")}
     web_files = {p.name for p in WEB_DIR.glob("*") if p.is_file() and not p.name.startswith(".")}
@@ -1341,9 +1363,11 @@ def cmd_check(args: argparse.Namespace) -> int:
             infos.append(
                 f"not local, on release ({human_size(release_sizes[name])}) — videos:pull on demand: {name}"
             )
+        elif name in generated:
+            problem("MISSING LOCAL", name, "  (no local copy, not on the release — pnpm talk record NAME --plates, then videos:publish)")
         else:
             problem("MISSING LOCAL", name, "  (no local copy, not on the release — videos:sync + encode + publish)")
-    for name in sorted((manifest_names - raw_files) & (web_files | hq_files)):
+    for name in sorted((manifest_names - generated - raw_files) & (web_files | hq_files)):
         infos.append(f"raw not synced (encoded copy present): {name}")
 
     # Encoded web copies of talk-owned clips exceeding the size budget.
@@ -1372,9 +1396,9 @@ def cmd_check(args: argparse.Namespace) -> int:
         where = ", ".join(sorted(set(refs[name])))
         problem("UNKNOWN REF", name, f"  (in {where})")
 
-    # Manifest entries referenced nowhere.
+    # Manifest entries referenced nowhere (a generated plate is the stage's, not a slide's).
     for v in videos:
-        if v.name not in refs:
+        if v.name not in refs and not v.generated:
             problem("UNUSED MANIFEST", v.name)
 
     # Informational: deck refs satisfied ONLY by the shared registry
@@ -1411,6 +1435,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     report.update({
         "problems": found,
         "talk_owned": sorted(manifest_names),
+        "generated": sorted(generated),
         "inherited": inherited,
         "also_in_shared": duplicated,
         "referenced": sorted(refs),
@@ -1941,9 +1966,10 @@ def _preflight_one(src: str, key: str | None, cache: dict, measure: bool) -> dic
 
 def cmd_preflight(args: argparse.Namespace) -> int:
     report = _report(args)
-    defaults, _ = load_manifest()
+    defaults, videos = load_manifest()
     shared_defaults, _shared = load_shared_manifest()
-    refs = sorted(_slide_references())
+    # what the deck's players will serve, and the plates the stage plays where WebGL is missing
+    refs = sorted(set(_slide_references()) | {v.name for v in videos if v.generated})
     if getattr(args, "only", None):
         wanted = set(args.only)
         refs = [r for r in refs if r in wanted]
@@ -2907,6 +2933,9 @@ def cmd_encode_hq(args: argparse.Namespace) -> int:
         if not videos:
             print(f"error: no manifest entries match {args.only}", file=sys.stderr)
             return 2
+    videos = _without_generated(videos, "encode")
+    if not videos:
+        return 0
     if not _tools().ffmpeg:
         print("error: ffmpeg not installed. brew install ffmpeg", file=sys.stderr)
         return 2
