@@ -292,6 +292,8 @@ test('palettes and options are held to the engine\'s lists', () => {
   assert.deepEqual(run('  options: { blom: 0.4, reach: 20 }'), ['unknown-option']);
   assert.deepEqual(run('  options:\n    bloom: 0.4\n    nebula: 0'), []);
   assert.deepEqual(run('  pallete: blue'), ['unknown-key']);   // a warning
+  assert.deepEqual(run('  motion: floor\n  plates: videos\n  platesRelease: false'), []);   // the fallback layers' keys are known
+  assert.deepEqual(run('  plates: false\n  platesRelease: o/r@plates-1'), []);
   assert.equal(typo(() => ({ deck: head('  pallete: blue') })).problems.length, 0);
   assert.deepEqual(run('  plugins: [nope]'), ['unknown-plugin']);
 });
@@ -373,10 +375,12 @@ test('the validator\'s key lists are the keys the code reads', async () => {
   // a look's `halo` is the halo layer's (stage.halo) and `max` caps the palette's look: not engine options
   for (const [look, opts] of Object.entries(LOOKS)) for (const k of Object.keys(opts)) if (k !== 'halo' && k !== 'max') assert.ok(OPTION_KEYS.includes(k), `${look}.${k}`);
   const read = new Set();
-  for (const f of ['../components/Stage.vue', '../components/StageHalo.vue', '../components/StageCount.vue', '../global-top.vue', '../global-bottom.vue']) {
+  for (const f of ['../components/Stage.vue', '../components/StageHalo.vue', '../components/StageCount.vue', '../components/StageLiving.vue', '../components/StagePlate.vue', '../global-top.vue', '../global-bottom.vue']) {
     for (const m of readFileSync(here(f), 'utf8').matchAll(/\b(?:CFG|cfg)\.(\w+)/g)) read.add(m[1]);
   }
   assert.deepEqual([...read].filter((k) => !STAGE_KEYS.includes(k)), []);
+  // the fallback layers' keys (stage/fallback.js): read by Stage.vue, so the validator takes them
+  for (const k of ['motion', 'plates', 'platesRelease']) assert.ok(read.has(k) && STAGE_KEYS.includes(k), k);
   const stage = readFileSync(here('../components/Stage.vue'), 'utf8') + readFileSync(here('../stage/space.js'), 'utf8');
   for (const k of SPACE_KEYS) assert.ok(new RegExp(`\\b(sp|p|pose|frontmatterSpace\\.value\\?)\\.${k}\\b`).test(stage), `space.${k} is read`);
 });

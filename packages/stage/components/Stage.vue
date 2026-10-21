@@ -6,9 +6,12 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted, inject } from '
 import { useNav, configs } from '@slidev/client'
 import { createSpace, usePlugin, resolvePalette, resolveLook, liftGround, paletteVars, warmAudio, startHum, stopHum, humProbe, playWhoosh, playRise, stageOut } from '../index.js'
 import StagePanel from './StagePanel.vue'
+import StageLiving from './StageLiving.vue'
+import StagePlate from './StagePlate.vue'
 import { placeGroupsAt } from '../stage/place-groups.js'
 import { probeGL, stageDebugOn, debugLines, deviceInfo, pickTier, MAX_TIER, stageOverrides } from '../stage/diagnose.js'
 import { stillsDir, stillUrl, inPrint } from '../stage/stills.js'
+import { fallbackLayer, platesDir, plateRelease, plateLocalFirst } from '../stage/fallback.js'
 
 // The persistent 3D world under a whole deck. The addon mounts it from its
 // own global-bottom.vue whenever the headmatter has a `stage:` block:
@@ -28,6 +31,9 @@ import { stillsDir, stillUrl, inPrint } from '../stage/stills.js'
 //     auto: true                 # false: the deck mounts <Stage> itself (for the #hud slot)
 //     tier: 2                    # pin the quality tier, 0 (full) … 3 (floor); default: from the device
 //     stills: stills             # per-slide stills under public/ for print and the fallback (stage/stills.js); false: none
+//     plates: videos             # the recorder's NN-plate.mp4 under public/, played where the world cannot run (stage/fallback.js); false: none
+//     platesRelease: o/r@tag     # where the plates are pulled from (a URL, or a GitHub release); default: the videos addon's release
+//     motion: respect            # under prefers-reduced-motion: respect (the still alone) or floor (the world, at its floor)
 //
 // Each slide steers the camera through its frontmatter:
 //
@@ -43,9 +49,13 @@ import { stillsDir, stillUrl, inPrint } from '../stage/stills.js'
 //                                  # group, it is the opposite (stage/place-groups.js)
 //
 // A slide without `space` keeps the previous pose. Without WebGL2 float
-// render targets, or under reduced motion, only the static gradient is drawn.
-// Why it fell back is on the root as data-stage-fallback and in one console
-// line; `?stage-debug` in the address shows it on screen (stage/diagnose.js).
+// render targets, or when the engine fails, the slide's recorded plate plays
+// in the world's place, or its still breathes where there is no plate
+// (stage/fallback.js: the layer is on <html> as data-stage-layer); under
+// reduced motion the still stands alone. Why it fell back is on the root and
+// on <html> as data-stage-fallback, as `slidev-stage:fallback` on window and
+// in one console line; `?stage-debug` in the address shows it on screen
+// (stage/diagnose.js).
 // Printed and exported (`slidev export`, /print, the browser exporter) every
 // slide mounts its own global layers, so a world each would open a WebGL
 // context per page: there, and with `static-ground`, the stage draws no world
@@ -81,6 +91,18 @@ const VOICES = { hum: true, flight: true, clip: true, level: 1, ...(CFG.sound &&
 const withVideos = CFG.videos !== false
 const LAYOUT_DIM = { cover: 0.15, section: 0.15, statement: 0.15, fact: 0.15, quote: 0.15, ...(CFG.layoutDim || {}) }
 const CONTENT_DIM = Number.isFinite(Number(CFG.dim)) ? Number(CFG.dim) : 0.6
+// Where the world cannot run (stage/fallback.js). `stage.motion`: respect (the
+// default: under prefers-reduced-motion the still alone) or floor (the world
+// all the same, at its floor — the engine's floor is T1 of the live fallback
+// plan; until it lands the world runs as it does). `stage.plates`: the folder
+// under public/ the recorder's NN-plate.mp4 are served from (default videos,
+// false: none); `stage.platesRelease`: where they are pulled from, else the
+// videos addon's own release, in the chain the player builds for a clip.
+const MOTION = CFG.motion === 'floor' ? 'floor' : 'respect'
+const PLATES = platesDir(CFG.plates)
+const PLATE_REMOTE = plateRelease(CFG.platesRelease, configs && configs.videos, import.meta.env)
+const PLATE_LOCAL_FIRST = plateLocalFirst(import.meta.env)
+const LAYER_OPTS = { motion: MOTION, plates: PLATES || false }
 
 const root = ref(null)
 const canvas = ref(null)
@@ -110,6 +132,24 @@ const stillSrc = computed(() => stillUrl(STILLS, printing.value ? pageNo.value :
 const stillShown = computed(() => !!stillSrc.value && (printing.value || staticBg.value) && !stillMissing.value.has(stillSrc.value))
 const onStillError = () => { stillMissing.value = new Set(stillMissing.value).add(stillSrc.value) }
 
+// ---- what stands in for the world ---------------------------------------------
+// The layer under the slide: world | world-floor | plate | living | still, on
+// <html> as data-stage-layer for the tools and the tests. The base is the
+// stage's own (what it could do); a slide whose plate no URL answered for
+// (a clip slide has none) drops to the living still.
+const layerBase = ref('world')
+const plateMissing = ref(new Set())
+const plateState = ref('none')          // StagePlate's: loading | playing | paused | held | none
+const layer = computed(() => (layerBase.value === 'plate' && plateMissing.value.has(nav.currentSlideNo.value) ? 'living' : layerBase.value))
+const onPlateExhausted = (no) => { plateMissing.value = new Set(plateMissing.value).add(no) }
+const onPlateState = (s) => { plateState.value = s }
+// a clip covers the slide (slidev-videos:cover): the world rests, and so do the living still and the plate
+const covered = ref(false)
+// the living still carries its own still; the plain one is for print and the still alone
+const livingOn = computed(() => !printing.value && (layerBase.value === 'plate' || layerBase.value === 'living'))
+// … and rests under a plate that is on screen, playing or holding its last frame: nothing of it shows
+const livingRest = computed(() => covered.value || plateState.value === 'playing' || plateState.value === 'held')
+
 // ---- why it runs as it does ---------------------------------------------------
 const debug = typeof location !== 'undefined' && stageDebugOn(location)
 const OVERRIDES = typeof location !== 'undefined' ? stageOverrides(location) : {}   // ?stage-post=off, ?stage-targets=half, ?stage-tier=n
@@ -127,8 +167,16 @@ function fallback(reason, detail = '') {
   staticBg.value = true
   ready.value = false
   assembled(true)
+  // what stands in (never a world layer here: the world did not run)
+  const l = fallbackLayer(reason, LAYER_OPTS)
+  layerBase.value = l.startsWith('world') ? 'still' : l
   if (root.value) root.value.dataset.stageFallback = reason
+  // on <html> for the player (advance-on-end goes on without a world only onto
+  // a loaded plate) and the deck's own components, and as an event for whoever listens
+  const html = document.documentElement
+  html.dataset.stageFallback = reason
   console.warn(`stage: fallback — ${reason}${detail ? ` (${detail})` : ''}`)
+  try { window.dispatchEvent(new CustomEvent('slidev-stage:fallback', { detail: { reason, detail, layer: layerBase.value } })) } catch {}
   renderDebug()
 }
 let fpsAt = 0, fpsFrames = 0, panelFps = null
@@ -162,6 +210,7 @@ const onContextLost = (e) => {
   Object.assign(status, { status: 'restoring', reason: 'context-lost', detail: `rebuilding at tier ${tier + 1}` })
   staticBg.value = true
   ready.value = false
+  layerBase.value = 'still'          // for the moment of the rebuild (not a fallback: the world comes back, or falls back then)
   if (root.value) root.value.dataset.stageFallback = 'context-lost'
   console.warn(`stage: context lost — rebuilding at tier ${tier + 1}`)
   renderDebug()
@@ -180,6 +229,9 @@ async function rebuild() {
   Object.assign(status, { status: 'starting', reason: '', detail: '' })
   staticBg.value = false
   if (root.value) delete root.value.dataset.stageFallback
+  const html = document.documentElement
+  delete html.dataset.stageFallback
+  delete html.dataset.stagePlateNext
   await boot()
   if (space) try { window.dispatchEvent(new CustomEvent('slidev-stage:rebuilt', { detail: { tier } })) } catch {}
 }
@@ -241,10 +293,9 @@ function apply(immediate = false) {
 // not under a playing clip, and never in the presenter window, so an audience
 // window and a presenter window do not hum twice.
 let audioUnlocked = false
-let covered = false
 function updateHum() {
   if (!soundOn.value) return
-  const on = VOICES.hum !== false && audioUnlocked && !!space && !document.hidden && !covered && !nav.isPresenter?.value && frontmatterSpace.value?.hum !== false && (humEverywhere || humAt.has(space.atStation))
+  const on = VOICES.hum !== false && audioUnlocked && !!space && !document.hidden && !covered.value && !nav.isPresenter?.value && frontmatterSpace.value?.hum !== false && (humEverywhere || humAt.has(space.atStation))
   if (on) startHum()
   else stopHum()
   if (root.value) root.value.dataset.hum = on ? 'on' : 'off'
@@ -310,7 +361,10 @@ async function boot() {
   // a print page: no world (one WebGL context per page would run out), its still instead
   if (printing.value) { staticBg.value = true; assembled(true); return }
   glInfo = probeGL(document)
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return fallback('reduced-motion')
+  // reduced motion: the still alone, unless the deck says `motion: floor` — then
+  // the world all the same (world-floor; its floor is T1's: for now it runs as it does)
+  const worldLayer = matchMedia('(prefers-reduced-motion: reduce)').matches ? fallbackLayer('reduced-motion', LAYER_OPTS) : 'world'
+  if (worldLayer !== 'world' && worldLayer !== 'world-floor') return fallback('reduced-motion')
   if (glInfo.reason) return fallback(glInfo.reason, glInfo.gpu)
   if (tier == null && OVERRIDES.tier != null) tier = OVERRIDES.tier
   if (tier == null) tier = Number.isFinite(Number(CFG.tier)) && CFG.tier !== null && CFG.tier !== ''
@@ -358,6 +412,7 @@ async function boot() {
   if (!space) return fallback(failed?.reason || stage, failed?.detail || '')
   canvas.value.addEventListener('webglcontextlost', onContextLost)
   status.status = 'running'
+  layerBase.value = worldLayer
   if (debug) console.info('stage: running —', debugLines({ ...status, gl: glInfo, device: deviceInfo(), events }).slice(1, 3).join(' · '))
   const humList = [].concat(CFG.humAt ?? (space.hero != null ? [space.hero] : [])).map(String)
   humEverywhere = CFG.humAt === true || humList.some((s) => s === 'all' || s === '*')
@@ -380,7 +435,7 @@ function assembled(on) {
 const audible = () => soundOn.value && audioUnlocked && !document.hidden && !nav.isPresenter?.value
 function onFlight(d) {
   if (root.value) root.value.dataset.flights = String(Number(root.value.dataset.flights || 0) + 1)
-  if (!audible() || VOICES.flight === false || covered) return
+  if (!audible() || VOICES.flight === false || covered.value) return
   if (!d || d.distance < 6) return
   playWhoosh(d.seconds, { level: Math.min(1.2, 0.5 + d.distance / 60) })
 }
@@ -399,7 +454,7 @@ const onGesture = () => {
   stageOut(VOICES.level)   // every voice goes out through the stage's level
   updateHum()
 }
-const rest = () => space?.setPaused(document.hidden || covered)
+const rest = () => space?.setPaused(document.hidden || covered.value)
 const onVisibility = () => { rest(); updateHum() }
 
 // slidev-addon-videos announces its transitions on window. A clip arriving
@@ -425,9 +480,9 @@ const onVideoCover = (e) => {
   clearTimeout(coverTimer)
   if (d.covered && d.fit !== 'contain') {
     // after the hand-over: the picture is fully up before the world stops under it
-    coverTimer = setTimeout(() => { covered = true; rest(); updateHum() }, 600)
+    coverTimer = setTimeout(() => { covered.value = true; rest(); updateHum() }, 600)
   } else {
-    covered = false
+    covered.value = false
     rest()
     updateHum()
   }
@@ -439,8 +494,8 @@ let still = false
 // stay as aliases for the probes written against them.
 //
 //   __stage.state()          → { slide, total, clicks, clicksTotal, at, station, atStation, stop,
-//                                flying, arrived, paused, assembled, static, changedAt, elapsed,
-//                                frames, dpr, guard, dust }
+//                                flying, arrived, paused, assembled, static, layer, plate, changedAt,
+//                                elapsed, frames, dpr, guard, dust }
 //   __stage.settle({ min, max }) → Promise<{ settled, engineSec, ms }>: resolves once the camera
 //                                has landed, nothing assembles and `min` engine-seconds have passed
 //                                since the last pose or step change (`max` wall-seconds at most)
@@ -464,6 +519,8 @@ function probeState() {
     paused: !!space?.paused,
     assembled: document.documentElement.dataset.spaceAssembled === '1' && !space?.busy,   // every form done, none still moving
     static: staticBg.value,
+    layer: layer.value,                 // what stands under the slide (stage/fallback.js)
+    plate: plateState.value,            // the plate's state (StagePlate.vue)
     changedAt,
     elapsed: p?.elapsed ?? 0,
     realTime: space?.realTime ?? 0,     // seconds at rate 1 (what settle counts)
@@ -531,6 +588,8 @@ onMounted(() => {
   // a print page (its container, html.print, ?print, or the print route): no world, its still
   printing.value = inPrint(root.value) || printRoute()
   still = props.staticGround || printing.value
+  layerBase.value = still ? 'still' : 'world'
+  watch(layer, (l) => { html.dataset.stageLayer = l }, { immediate: true })
   if (still) { staticBg.value = true; assembled(true); return }
   document.addEventListener('visibilitychange', onVisibility)
   window.addEventListener('keydown', onKey)
@@ -569,12 +628,16 @@ onUnmounted(() => {
     delete html.dataset.stage
     delete html.dataset.stageLook
     delete html.dataset.spaceStop
+    delete html.dataset.stageLayer
   }
   if (window.__stage === stageProbe) delete window.__stage
   stopHum()
   assembled(true)
   delete document.documentElement.dataset.stage
   delete document.documentElement.dataset.spaceStop
+  // the fallback's marks are this stage's alone (StagePlate takes its own with it)
+  delete html.dataset.stageFallback
+  delete html.dataset.stagePlateNext
   space?.dispose()
   space = null
 })
@@ -583,7 +646,10 @@ onUnmounted(() => {
 <template>
   <div ref="root" class="stage" :class="{ 'static-bg': staticBg, ready }" :data-clicks="clicks" :data-clicks-total="clicksTotal">
     <canvas ref="canvas" :key="canvasKey" class="field" aria-hidden="true"></canvas>
-    <img v-if="stillShown" class="still" :src="stillSrc" alt="" aria-hidden="true" decoding="async" @error="onStillError" />
+    <img v-if="stillShown && !livingOn" class="still" :src="stillSrc" alt="" aria-hidden="true" decoding="async" @error="onStillError" />
+    <!-- where the world cannot run: the still breathing, and over it the slide's recorded plate (stage/fallback.js); the scrim and the text over both, as over the world -->
+    <StageLiving v-if="livingOn" :src="stillShown ? stillSrc : ''" :seed="nav.currentSlideNo.value" :covered="livingRest" :motion="MOTION" @error="onStillError" />
+    <StagePlate v-if="!printing && layerBase === 'plate'" :slide="nav.currentSlideNo.value" :total="nav.total.value" :dir="PLATES" :base="base()" :remote="PLATE_REMOTE" :local-first="PLATE_LOCAL_FIRST" :covered="covered" @state="onPlateState" @exhausted="onPlateExhausted" />
     <div class="scrim" aria-hidden="true" :style="{ opacity: dim }"></div>
     <!-- not in print: an SVG noise filter prints as a page-sized raster on every page -->
     <div v-if="!printing" class="grain" aria-hidden="true"></div>

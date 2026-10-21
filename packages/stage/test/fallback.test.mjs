@@ -1,0 +1,232 @@
+// The fallback layers (stage/fallback.js, components/StagePlate.vue, and
+// what Stage.vue wires): where the world cannot run, which of a recorded
+// plate, the living still and the still alone takes its place.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fallbackLayer, plateName, plateUrls, plateRelease, platesDir, plateLocalFirst, LAYERS, PLATE_REASONS } from '../stage/fallback.js';
+import { FALLBACK_REASONS } from '../stage/diagnose.js';
+import { STAGE_KEYS } from '../stage/types.js';
+
+const here = (p) => new URL(p, import.meta.url);
+const read = (p) => readFileSync(here(p), 'utf8');
+
+// ---- which layer ---------------------------------------------------------------------------
+test('every reason, every motion, plates on and off: one layer each', () => {
+  assert.deepEqual(LAYERS, ['world', 'world-floor', 'plate', 'living', 'still']);
+  assert.deepEqual(PLATE_REASONS, ['no-webgl2', 'no-float-target', 'plugin', 'data', 'init', 'context-lost']);
+  assert.deepEqual([...PLATE_REASONS, 'reduced-motion'].sort(), [...FALLBACK_REASONS].sort());   // diagnose.js's list, whole
+  const motions = ['respect', 'floor', undefined, 'bogus'];
+  const on = ['videos', 'plates', undefined], off = [false, '', null];
+  for (const motion of motions) {
+    // reduced motion: the world at its floor when the deck says so (T1 makes the
+    // engine honour it), else the still alone — a plate and a drifting still are motion too
+    for (const plates of [...on, ...off]) {
+      assert.equal(fallbackLayer('reduced-motion', { motion, plates }), motion === 'floor' ? 'world-floor' : 'still', `reduced-motion ${motion} ${plates}`);
+    }
+    for (const reason of PLATE_REASONS) {
+      for (const plates of on) assert.equal(fallbackLayer(reason, { motion, plates }), 'plate', `${reason} ${motion} ${plates}`);
+      for (const plates of off) assert.equal(fallbackLayer(reason, { motion, plates }), 'living', `${reason} ${motion} ${plates}`);
+    }
+    // a reason the table does not know is still a world that cannot run: the plate, else the living still
+    assert.equal(fallbackLayer('shader', { motion, plates: 'videos' }), 'plate');
+    assert.equal(fallbackLayer('shader', { motion, plates: false }), 'living');
+  }
+  // no reason: the world runs
+  for (const none of ['', null, undefined]) assert.equal(fallbackLayer(none, { motion: 'respect', plates: 'videos' }), 'world');
+  // the defaults: motion respect, plates on
+  assert.equal(fallbackLayer('no-webgl2'), 'plate');
+  assert.equal(fallbackLayer('reduced-motion'), 'still');
+  assert.equal(fallbackLayer('no-webgl2', {}), 'plate');
+});
+
+// ---- the plates' names and URLs -----------------------------------------------------------------
+test('a plate is named as the recorder names it, two digits', () => {
+  assert.equal(plateName(3), '03-plate.mp4');
+  assert.equal(plateName(12), '12-plate.mp4');
+  assert.equal(plateName('7'), '07-plate.mp4');
+  assert.equal(plateName(101), '101-plate.mp4');
+  for (const bad of [0, -1, NaN, null, undefined, '']) assert.equal(plateName(bad), '', String(bad));
+});
+
+test('the plates\' folder is read as the stills\' is', () => {
+  assert.equal(platesDir(undefined), 'videos');
+  assert.equal(platesDir(''), 'videos');
+  assert.equal(platesDir('  '), 'videos');
+  assert.equal(platesDir('plates'), 'plates');
+  assert.equal(platesDir('/videos/plates/'), 'videos/plates');
+  for (const off of [false, 'false', null]) assert.equal(platesDir(off), '', String(off));
+});
+
+test('the chain of a plate is the player\'s: local and the release, the deck\'s base first, local first in dev', () => {
+  const base = '/cern_outreach_talks/2026_10_23_Innoday/';
+  const remote = 'https://github.com/MindaugasSarpis/cern_outreach_talks/releases/download/videos-2026-10-00-innoday';
+  const local = `${base}videos/09-plate.mp4`;
+  assert.deepEqual(plateUrls('videos', 9, { base, remote, localFirst: true }), [local, `${remote}/09-plate.mp4`]);
+  assert.deepEqual(plateUrls('videos', 9, { base, remote, localFirst: false }), [`${remote}/09-plate.mp4`, local]);
+  assert.deepEqual(plateUrls('videos', 9, { base, remote }), [`${remote}/09-plate.mp4`, local]);          // a deploy: the release first
+  assert.deepEqual(plateUrls('videos', 9, { base, remote: '', localFirst: false }), [local]);               // no release configured: local only
+  assert.deepEqual(plateUrls('videos', 9, { base }), [local]);
+  // the base and the release with or without their trailing slash, the folder with or without its own
+  assert.deepEqual(plateUrls('videos', 9, { base: base.slice(0, -1), remote: `${remote}/`, localFirst: true }), [local, `${remote}/09-plate.mp4`]);
+  assert.deepEqual(plateUrls('/videos/', 9, { base, localFirst: true }), [local]);
+  assert.deepEqual(plateUrls('videos', 9, {}), ['/videos/09-plate.mp4']);
+  // plates off, or no slide: nothing to try
+  assert.deepEqual(plateUrls('', 9, { base, remote }), []);
+  assert.deepEqual(plateUrls(false, 9, { base, remote }), []);
+  assert.deepEqual(plateUrls('videos', 0, { base, remote }), []);
+  assert.deepEqual(plateUrls('videos', NaN, { base, remote }), []);
+});
+
+test('the release the plates are pulled from: stage.platesRelease, else the videos addon\'s', () => {
+  const videos = { repo: 'MindaugasSarpis/cern_outreach_talks', release: 'videos-2026-10-00-innoday' };
+  const dl = 'https://github.com/MindaugasSarpis/cern_outreach_talks/releases/download/videos-2026-10-00-innoday';
+  assert.equal(plateRelease(undefined, videos, {}), dl);
+  assert.equal(plateRelease('', videos, {}), dl);
+  assert.equal(plateRelease(undefined, { repo: videos.repo }, {}), dl.replace('videos-2026-10-00-innoday', 'videos'));   // the addon's default tag
+  assert.equal(plateRelease(undefined, {}, { VITE_VIDEO_REPO: 'o/r', VITE_VIDEO_RELEASE: 'v1' }), 'https://github.com/o/r/releases/download/v1');
+  assert.equal(plateRelease(undefined, { release: 'v2' }, { VITE_VIDEO_REPO: 'o/r' }), 'https://github.com/o/r/releases/download/v2');   // headmatter beats env
+  assert.equal(plateRelease(undefined, undefined, {}), '');           // no repo anywhere: local only
+  assert.equal(plateRelease(undefined, {}, undefined), '');
+  // the deck's own: a URL, or owner/repo@tag; false turns the remote off
+  assert.equal(plateRelease('https://cdn.example.org/plates/', videos, {}), 'https://cdn.example.org/plates');
+  assert.equal(plateRelease('o/r@plates-1', videos, {}), 'https://github.com/o/r/releases/download/plates-1');
+  assert.equal(plateRelease(false, videos, {}), '');
+  assert.equal(plateRelease('nonsense', videos, {}), '');            // not a URL, not a release: no remote
+});
+
+test('local first in dev, or when the build says so', () => {
+  assert.equal(plateLocalFirst({ DEV: true }), true);
+  assert.equal(plateLocalFirst({ DEV: false, VITE_VIDEOS_LOCAL_FIRST: '1' }), true);
+  assert.equal(plateLocalFirst({ VITE_VIDEOS_LOCAL_FIRST: '0' }), false);
+  assert.equal(plateLocalFirst({}), false);
+  assert.equal(plateLocalFirst(undefined), false);
+});
+
+// ---- the components -------------------------------------------------------------------------
+test('StagePlate plays the slide\'s plate muted, holds its last frame, says on <html> what it has, and keeps a slide each side', () => {
+  const src = read('../components/StagePlate.vue');
+  const propsBlock = /defineProps\(\{([\s\S]*?)\n\}\)/.exec(src)[1];
+  const props = Object.fromEntries([...propsBlock.matchAll(/^\s+(\w+): \{ type: (\w+)(?:, default: ([^}]+?))? \},?$/gm)].map((m) => [m[1], { type: m[2], def: m[3]?.trim() }]));
+  assert.deepEqual(props, {
+    slide: { type: 'Number', def: '1' },
+    total: { type: 'Number', def: '0' },
+    dir: { type: 'String', def: "'videos'" },
+    base: { type: 'String', def: "'/'" },
+    remote: { type: 'String', def: "''" },
+    localFirst: { type: 'Boolean', def: 'false' },
+    covered: { type: 'Boolean', def: 'false' },
+  });
+  assert.match(src, /defineEmits\(\['state', 'exhausted'\]\)/);
+  const tpl = /<template>([\s\S]*?)<\/template>/.exec(src)[1];
+  const videos = [...tpl.matchAll(/<video\b[\s\S]*?<\/video>/g)].map((m) => m[0]);
+  assert.equal(videos.length, 1);                                          // one element per slide of the window, from one tag
+  const video = videos[0];
+  assert.match(video, /\bv-for="no in slots"/);
+  assert.match(video, /:key="no"/);                                        // keyed by the slide: a step keeps the elements it has
+  assert.match(video, /\bmuted\b/);
+  assert.match(video, /\bplaysinline\b/);
+  assert.match(video, /preload="auto"/);
+  assert.doesNotMatch(video, /\bloop\b/);                                 // ended: the last frame holds
+  assert.doesNotMatch(video, /\bposter\b/);                               // the living still under it is the poster, and a held plate before it (continuity)
+  assert.doesNotMatch(video, /\bautoplay\b/);                             // play() is the stage's own call, after the cover and the tab are read
+  assert.doesNotMatch(video, /\bcontrols\b/);
+  assert.match(src, /plateUrls\(/);                                         // the chain, fall-through on error
+  assert.match(src, /@error="/);
+  assert.match(src, /@canplay="/);
+  assert.match(src, /@ended="/);
+  assert.match(src, /dataset\.stagePlate = /);
+  assert.match(src, /dataset\.stagePlateNext = String\(/);
+  assert.match(src, /delete html\.dataset\.stagePlateNext/);
+  assert.match(src, /delete html\.dataset\.stagePlate\b/);
+  assert.match(src, /document\.hidden/);
+  assert.match(src, /props\.covered/);
+  assert.match(src, /visibilitychange/);
+  assert.match(src, /const KEEP_BEHIND = 1\b/);                             // n−1 stays loaded for a back-step
+  assert.match(src, /const PRELOAD_AHEAD = 1\b/);                           // n+1 loads under this slide
+  assert.match(src, /emit\('exhausted'/);
+  assert.match(src, /emit\('state'/);
+  assert.doesNotMatch(src, /\bconfigs\b/);                                  // it reads no headmatter: Stage.vue hands it everything
+  assert.doesNotMatch(src, /#[0-9a-f]{3,8}\b/i);
+  // the states it publishes
+  for (const s of ['loading', 'playing', 'paused', 'held', 'none']) assert.match(src, new RegExp(`'${s}'`), s);
+});
+
+test('Stage.vue wires the layers: the still, the living still, the plate, then the scrim; the reason on <html> and on window', () => {
+  const src = read('../components/Stage.vue');
+  assert.match(src, /import StageLiving from '\.\/StageLiving\.vue'/);
+  assert.match(src, /import StagePlate from '\.\/StagePlate\.vue'/);
+  assert.match(src, /import \{[^}]*\bfallbackLayer\b[^}]*\} from '\.\.\/stage\/fallback\.js'/);
+  // the order in the template: still, living, plate, scrim, grain
+  const tpl = /<template>([\s\S]*?)<\/template>/.exec(src)[1];
+  const at = (re) => { const m = re.exec(tpl); assert.ok(m, String(re)); return m.index; };
+  const still = at(/<img v-if="[^"]*stillShown[^"]*" class="still"/), living = at(/<StageLiving\b/), plate = at(/<StagePlate\b/), scrim = at(/<div class="scrim"/), grain = at(/class="grain"/);
+  assert.ok(still < living && living < plate && plate < scrim && scrim < grain, 'still < living < plate < scrim < grain');
+  // the living still: the slide's still, its number as the seed, rests under a cover, the deck's motion, a missing still reported as the stage's own
+  const livingTag = /<StageLiving\b([^>]*)\/>/.exec(tpl)[1];
+  for (const p of [':src="', ':seed="nav.currentSlideNo.value"', ':covered="', ':motion="MOTION"', '@error="onStillError"']) assert.ok(livingTag.includes(p), p);
+  const plateTag = /<StagePlate\b([^>]*)\/>/.exec(tpl)[1];
+  for (const p of [':slide="nav.currentSlideNo.value"', ':total="', ':dir="PLATES"', ':base="', ':remote="PLATE_REMOTE"', ':local-first="PLATE_LOCAL_FIRST"', ':covered="covered"', '@state="', '@exhausted="']) assert.ok(plateTag.includes(p), p);
+  // the plate stays mounted while the base layer is plate: a slide without one drops to the living still, the loaded neighbours stay
+  assert.match(plateTag, /v-if="[^"]*layerBase === 'plate'/);
+  assert.match(livingTag, /v-if="livingOn"/);
+  assert.match(src, /const livingOn = computed\(\(\) => !printing\.value && \(layerBase\.value === 'plate' \|\| layerBase\.value === 'living'\)\)/);
+  assert.match(tpl, /<img v-if="stillShown && !livingOn" class="still"/);     // the still is drawn once: the living still carries its own
+  // the reason on <html> (T4's player reads it) and on window (the talks' LhcOpening listens), cleared on a rebuild and on unmount
+  assert.match(src, /html\.dataset\.stageFallback = reason/);
+  assert.match(src, /new CustomEvent\('slidev-stage:fallback', \{ detail: \{ reason, detail, layer/);
+  assert.match(src, /dataset\.stageLayer = /);
+  assert.equal((src.match(/delete html\.dataset\.stageFallback/g) || []).length >= 2, true);    // rebuild and unmount
+  assert.equal((src.match(/delete html\.dataset\.stagePlateNext/g) || []).length >= 2, true);
+  assert.equal((src.match(/delete html\.dataset\.stageLayer/g) || []).length >= 1, true);
+  // the new keys, read where the validator can see them
+  for (const k of ['motion', 'plates', 'platesRelease']) assert.match(src, new RegExp(`CFG\\.${k}\\b`), k);
+  assert.match(src, /plateRelease\(CFG\.platesRelease, configs(?:\s*&&\s*configs|\?\.)?\.videos, import\.meta\.env\)/);
+  // reduced motion with motion: floor runs the world (at its floor once T1 lands) rather than stopping it
+  assert.match(src, /world-floor/);
+  // covered became a ref (the living still and the plate take it as a prop)
+  assert.match(src, /const covered = ref\(false\)/);
+  assert.doesNotMatch(src, /let covered\b/);
+});
+
+test('the stage keys the new config reads are the validator\'s', () => {
+  for (const k of ['motion', 'plates', 'platesRelease']) assert.ok(STAGE_KEYS.includes(k), k);
+});
+
+// ---- the SFCs compile -----------------------------------------------------------------------
+// @vue/compiler-sfc is vue's own (a peer of the addon), reachable here only
+// through the workspace's pnpm store; where it is not installed the check is
+// skipped, not failed.
+function compilerSfc() {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 6; i++) {
+    const store = join(dir, 'node_modules', '.pnpm');
+    if (existsSync(store)) {
+      const hit = readdirSync(store).filter((d) => d.startsWith('@vue+compiler-sfc@')).sort().pop();
+      if (hit) {
+        const pkg = join(store, hit, 'node_modules', '@vue', 'compiler-sfc');
+        return createRequire(pathToFileURL(join(pkg, 'package.json')))(pkg);
+      }
+    }
+    dir = dirname(dir);
+  }
+  return null;
+}
+
+test('Stage.vue, StagePlate.vue and StageLiving.vue compile', (t) => {
+  const sfc = compilerSfc();
+  if (!sfc) { t.skip('@vue/compiler-sfc not installed'); return; }
+  for (const f of ['Stage.vue', 'StagePlate.vue', 'StageLiving.vue']) {
+    const { descriptor, errors } = sfc.parse(read(`../components/${f}`), { filename: f });
+    assert.deepEqual(errors, [], f);
+    const id = f.replace(/\W/g, '');
+    const script = sfc.compileScript(descriptor, { id, inlineTemplate: false });
+    assert.ok(script.content.length > 0, f);
+    const tpl = sfc.compileTemplate({ id, filename: f, source: descriptor.template.content, compilerOptions: { bindingMetadata: script.bindings } });
+    assert.deepEqual(tpl.errors, [], f);
+    for (const s of descriptor.styles) assert.deepEqual(sfc.compileStyle({ id, filename: f, source: s.content, scoped: s.scoped }).errors, [], f);
+  }
+});

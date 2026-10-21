@@ -1,6 +1,8 @@
 // Why the stage runs as it does, or why it did not start: for a phone, where
 // there is no console to read. Every fallback sets `data-stage-fallback` on
-// the stage root and logs one `stage: fallback — <reason>` line; with
+// the stage root and on <html> (with data-stage-layer: what stands in for the
+// world, stage/fallback.js), dispatches `slidev-stage:fallback` on window and
+// logs one `stage: fallback — <reason>` line; with
 // `?stage-debug` in the address (before or after the #) a panel on screen
 // shows the same, with the GPU, the render targets and the frame rate.
 //
