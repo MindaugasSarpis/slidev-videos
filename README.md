@@ -64,8 +64,13 @@ fires once, from the audience's slide only: not in the presenter window, the
 overview, the next-slide preview or a print or export, and not under
 `slidev-stage-record`, which moves the deck itself. If the speaker has left
 the slide or taken a click on it since the clip started, the clip's end does
-nothing, and a looping clip never ends. The player also sends a
-`slidev-videos:advance` event (`{ src, from }`) as it goes on.
+nothing, and a looping clip never ends. A navigation key or a press in the
+clip's last half-second is the navigation, and the end does nothing more.
+Without a world (the stage has fallen back: `html[data-stage-fallback]`) the
+end goes on only onto the next slide's loaded plate
+(`html[data-stage-plate-next]`), which begins on this clip's last frame; onto
+a still the speaker goes on by hand. The player also sends a
+`slidev-videos:advance` event (`{ src, from, reason }`) as it goes on.
 
 **Push out of a clip:** `<VideoPlayer src="tunnel.mp4" transition="dust"
 exit="push" exit-at="0.44,0.40" />` leaves by pushing the camera on into that

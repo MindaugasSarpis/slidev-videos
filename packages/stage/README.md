@@ -87,6 +87,9 @@ fade; see the root README's *Place groups*. The engine side is
 | `humAt` | `[hero]` | the stations within reach of which the hum plays; `all` (or `'*'`) hums on every pose, out in the open dust too |
 | `stills` | `stills` | the folder under `public/` holding a still per slide (`01.jpg` …) for print, PDF export and the fallback; `false`: none |
 | `tier` | from the device | the quality tier, 0 (full) … 3 (floor); a phone starts at 2, a lost context steps down one |
+| `motion` | `respect` | under `prefers-reduced-motion`: `respect` shows the still alone; `floor` runs the world all the same, at its floor. A deck a presenter shows from a venue's PC sets `floor`: that machine's accessibility setting is the venue's, not the audience's choice. See [When the world cannot run](#when-the-world-cannot-run) |
+| `plates` | `videos` | the folder under `public/` holding the recorder's `NN-plate.mp4`, played in the world's place where it cannot run; `false`: none, the still breathes instead |
+| `platesRelease` | the videos addon's release | where the plates are pulled from when the deck does not carry them: a URL, or `owner/repo@tag` (a GitHub release); `false`: the deck's own copy only |
 | `videos` | `true` | follow `slidev-addon-videos`: a clip arriving as dust draws the world's dust with it, one leaving shoves it out and leaves its colours in it for a few seconds (`tint: 0.8`, 0 for none), and the renderer rests under a clip that covers the slide |
 | `halo` | `true` | the dust borders; `haloOn: '.card, .halo'` picks what gets one |
 | `dim` | `0.6` | the content-slide scrim; `layoutDim: { cover: 0.15, … }` per layout |
@@ -287,6 +290,9 @@ steps land at once can say `busy: false`.
 | `.stage[data-space-paused]` | `1` while the renderer rests (a clip covers the slide, the tab is hidden) |
 | `.stage[data-flights]`, `[data-assemblies]` | counters, one up per flight and per assembly started |
 | `html[data-space-stop]` | while a stop's record is shown |
+| `html[data-stage-layer]` | what stands under the slide, from the first mount on: `world`, `world-floor`, `plate`, `living` or `still` (see [When the world cannot run](#when-the-world-cannot-run)) |
+| `html[data-stage-fallback]` | why the world does not run (`no-webgl2` …, as on the stage root); absent while it runs |
+| `html[data-stage-plate]`, `[data-stage-plate-next]` | this slide's plate: `loading`, `playing`, `paused`, `held` or `none`; the next slide's number once its plate can play, absent until then |
 
 ## Components
 
@@ -302,7 +308,7 @@ steps land at once can say `busy: false`.
 
     slidev-stage-check [deck-dir] [--plugins hadron] [--types beacon] [--json]
     slidev-stage-shots <dist> <out-dir> [options]   # see Headless review
-    slidev-stage-record <dist> <out-dir> [--fps 50] [--slides 2-5] [--plate] [--hold 8]
+    slidev-stage-record <dist> <out-dir> [--fps 50] [--slides 2-5] [--plate | --plate-only] [--hold 8]
     slidev-stage-safe <dist> [--broadcast] [--json]
 
 `check` validates the space file, the headmatter's `stage:` block and every
@@ -489,6 +495,7 @@ were barely faster than two).
 | `--lock FILE`, `--no-lock` | the shared lock (default `/tmp/slidev-stage-shots.lock`) |
 | `--stills` | the world alone, no slide text, as `<out-dir>/01.jpg` …: the stills print, PDF export and the static fallback show (write them to the deck's `public/stills`); one per slide, no bursts |
 | `--stills-at` | `last` (default): each slide's still at its last click, as the export prints it; `first`: at click 0 |
+| `--force REASON` | the deck under `?stage-force=REASON` (`no-webgl2`, `reduced-motion` …): every slide as a venue without a world would show it; see [When the world cannot run](#when-the-world-cannot-run). Refused with `--stills` (a still is the world) |
 
 A deck built for GitHub Pages (`--base /repo/talk/`) is served under that
 base. `--changed` keeps its hashes in `<out-dir>/.shots-cache.json`: each
@@ -542,6 +549,7 @@ run goes (a crash keeps what was photographed):
 | `shotMs` | finishing, measuring and photographing |
 | `flying`, `assembled`, `dpr`, `dust`, `dustTotal` | the world's state in the picture (`dust`: grains drawn, of `dustTotal`) |
 | `probe` | `stage` (window.__stage), `handles` (an older engine's canvas.__space) or `none` |
+| `fallback`, `layer` | `html[data-stage-fallback]` and `[data-stage-layer]` in the picture: why the world does not run, and what stands in (`world` while it runs) |
 | `overflowPx`, `overflowRightPx` | how far the slide's content runs past its bottom and right edges (negative: inside) |
 | `textBoxes` | `[{ text, x, y, w, h, fontPx, lumMean, lumVar, white }]`: every visible box of text on the slide and in the stop HUD, in screen px; luminance (0–1) of its area in the picture, and the share of clipped white |
 | `wordsOnScreen`, `minFontPx` | |
@@ -559,7 +567,8 @@ per slide instead. A run that fails, or is stopped by a signal, ends with a
 The deck publishes `window.__stage` for tools like this one:
 `state()` (slide, `total`, `clicks`, `clicksTotal`, `at`, `station`,
 `flying`, `assembled`, `changedAt` — the engine time of the last pose or step
-change — `elapsed`, `dpr`, `guard`, `dust`), `settle({ min, max })`,
+change — `elapsed`, `dpr`, `guard`, `dust`, `layer`, `plate` — what stands
+under the slide, and its plate's state), `settle({ min, max })`,
 `holdQuality()`, `fps(seconds)`, and `space` / `probe` / `hum`, the handles
 older probes read as `root.__space`, `canvas.__space` and `root.__hum`. The
 tool falls back to those handles on decks built with an older engine.
@@ -631,7 +640,7 @@ unknown. The stop HUD needs the world and is not measured.
 ### Recording: slidev-stage-record
 
     slidev-stage-record <dist> <out-dir> [--fps 50] [--size 1920x1080] [--slides 2-5]
-                        [--plate] [--hold 8] [--max 40] [--clicks all|none|'{"3":1}']
+                        [--plate | --plate-only] [--hold 8] [--max 40] [--clicks all|none|'{"3":1}']
                         [--base auto] [--seed 1] [--flash]
                         [--gl auto|gpu-nvidia|d3d12|llvmpipe|swiftshader|gl]
                         [--chromium path] [--encoder auto|nvenc|x264]
@@ -655,8 +664,8 @@ from the others by about a level after its first frame).
 | --- | --- |
 | `NN.mp4` | slide NN arriving (1080p50 by default, H.264, BT.709) |
 | `NN-cK.mp4` | the same slide after its K-th click (a stop), for slides with clicks |
-| `NN-plate.mp4` | with `--plate`: the same frames without the slide's text, the halo or the stop HUD, for an editor's own type. The scrim stays, so a plate and its slide cut together |
-| `index.json` | the edit list: each file's length, when it settled, where the camera stood, its frame hashes, the renderer, flash warnings, the clips it shows or could not record (a clip in the dist by its path there), and the clips ended before it arrived |
+| `NN-plate.mp4` | with `--plate`: the same frames without the slide's text, the halo or the stop HUD, for an editor's own type, and for the stage to play under the slide where the world cannot run ([When the world cannot run](#when-the-world-cannot-run)). The scrim stays, so a plate and its slide cut together. `--plate-only` writes the plates alone, half the frames shot. A clip slide has no plate: the clip is the picture itself, and the edit list says so |
+| `index.json` | the edit list: each file's length, when it settled, where the camera stood, its frame hashes, the renderer, flash warnings, the clips it shows or could not record (a clip in the dist by its path there), and the clips ended before it arrived; `hold`, `plateFps` (the plates' rate, the same as `fps`; `null` without plates) and `plateOnly`, for whoever plays the plates |
 
 Build the deck for it as for shots (`--base /`, or let `--base auto` read
 the base), and with `VITE_VIDEOS_LOCAL_FIRST=1` and the clips in
@@ -676,7 +685,8 @@ use as well: the fastest WebGL the machine reaches, tried best first (a
 native NVIDIA driver, WSL's GPU through Mesa's d3d12 driver, Mesa's
 llvmpipe, then SwiftShader), each kept only when the page's renderer string
 says it got there. `--gl` or `$SLIDEV_STAGE_GL` forces one (not the
-launcher's `none`, no WebGL: the recorder films the world), `--chromium` or
+launcher's `none`, no WebGL: the recorder films the world; shots' `--force`
+is refused the same way, there being nothing to record without it), `--chromium` or
 `$SLIDEV_STAGE_CHROMIUM` names a browser to try first, and the launcher's
 header lists the other variables (the Mesa prefix for d3d12, extra browser
 flags and environment). index.json records `renderer` and `backend`; on
@@ -700,7 +710,8 @@ exit, browser start included; CPU of every process of the run):
 
 On llvmpipe a frame of the example deck took 0.13 s under the broadcast
 look and 0.18 s under the default one (SwiftShader: about 0.55 s), and 0.4 s
-with `--plate`, which shoots every frame twice. So a 15-slide deck at
+with `--plate`, which shoots every frame twice (`--plate-only` shoots each
+once, the plate alone). So a 15-slide deck at
 10 s a slide and 50 fps (7,500 frames) takes roughly 15–25 minutes on
 llvmpipe, 30–50 with plates, and about a quarter of an hour on d3d12 with or
 without them, plus a few seconds a slide to start. The recorder takes
@@ -721,38 +732,135 @@ Record with OBS at 1080p50, NVENC at CQP 16, holding each slide about 8 s,
 and cut it per slide afterwards. A take that goes wrong has to be redone;
 the recorder's files do not.
 
-## Develop
+## When the world cannot run
 
-    pnpm install
-    pnpm --filter slidev-addon-stage test            # node --test
-    pnpm --filter slidev-addon-stage build:example
-    pnpm --filter slidev-addon-stage build:broadcast # the example under look: broadcast, in example/dist/broadcast
-    pnpm --filter slidev-addon-stage smoke           # Playwright, headless, on the built example
-    pnpm --filter slidev-addon-stage smoke:dev       # the example under `slidev dev`, and its export
+Without WebGL2 or its float and half-float render targets, when a plugin or
+`space.json` fails to load, when the engine throws, or when the GPU drops
+the context for good (iOS does under memory pressure; the first two losses
+rebuild the world a tier lower), the deck stays readable and, where it can,
+in motion. What stands under the slide's text is read off one table
+(`stage/fallback.js`), from the reason and two `stage:` keys, `motion` and
+`plates`:
 
-Without WebGL2 float or half-float render targets, under
-`prefers-reduced-motion`, or when the GPU drops the WebGL context (iOS does
-under memory pressure), the stage draws its static gradient and the deck stays
-readable. Printed and exported (`slidev export`, `/print`, the browser
-exporter) every page opens no WebGL context; the overview shows the slides
-without the world, and the presenter window draws a world of its own, silent. Why it fell back is on the
-stage root as `data-stage-fallback` (`reduced-motion`, `no-webgl2`,
-`no-float-target`, `plugin`, `data`, `init`, `context-lost`) and in one
-`stage: fallback — …` console line. Add `?stage-debug` to the address (before
-or after the `#`) to see it on screen with the GPU, the render targets, the
-simulation size, the frame rate and any shader errors: the way to find out
-from a phone. Three more switches narrow a fault down on the device itself:
+| reason | layer |
+| --- | --- |
+| none | `world` |
+| `reduced-motion` | `still`; `world-floor` with `motion: floor` |
+| `no-webgl2`, `no-float-target`, `plugin`, `data`, `init`, `context-lost` | `plate`; `living` with `plates: false`, and on a slide no plate answers for |
+
+| layer | what shows |
+| --- | --- |
+| `world` | the live world |
+| `world-floor` | the world all the same, under `prefers-reduced-motion`. Its floor (no sway or streaks, every pose a cut, forms built in one frame) is engine work not in this line: the world runs as it does |
+| `plate` | the slide's recorded plate, `NN-plate.mp4` (the recorder's `--plate-only`): the world arriving from the slide before, then holding; played muted under the text, holding its last frame. The living still under it until its first frame is in |
+| `living` | the slide's still, breathing: a 48 s eased drift (to 1.045 and 1.2 % of the frame off centre, then as slowly back) on a CSS transform, and 600 grains of the palette's dust drawn additive on a 2D canvas at 30 fps. No shape, no colour of its own; paused while hidden or covered |
+| `still` | the still alone: reduced motion, respected (a plate and a drifting still are motion too) |
+
+Print, export, the overview and the presenter's preview are as before: no
+world and no plate, the still under each page; the presenter window draws a
+world of its own, silent.
+
+**On `<html>`, for deck code and the tools.** `data-stage-layer` carries the
+layer from the first mount on (`still` on a print page, and for the moment a
+lost context is rebuilt). A fallback sets `data-stage-fallback` to its reason
+(`reduced-motion`, `no-webgl2`, `no-float-target`, `plugin`, `data`, `init`,
+`context-lost`), on the stage root as before and on `<html>`, logs one
+`stage: fallback — …` line and dispatches `slidev-stage:fallback` on
+`window` with `{ reason, detail, layer }`; a rebuild clears it and dispatches
+`slidev-stage:rebuilt`. The plate publishes `data-stage-plate` (`loading`,
+`playing`, `paused`, `held` or `none`) and `data-stage-plate-next` (the next
+slide's number once its plate can play; absent until then). A component that
+times its own captions to the world shows them at once without one:
+
+    const noWorld = ref(!!document.documentElement.dataset.stageFallback)
+    window.addEventListener('slidev-stage:fallback', () => { noWorld.value = true })
+    window.addEventListener('slidev-stage:rebuilt', () => { noWorld.value = false })
+
+`slidev-addon-videos` reads the same marks: a clip's `advance-on-end` goes on
+without a world only onto the next slide's loaded plate, which begins on the
+clip's last frame (the root README, *Advance on end*).
+
+**`stage.motion`.** The library's default is `respect`: under
+`prefers-reduced-motion` the still alone, as the setting asks. A deck a
+presenter shows from a venue's PC sets `floor`: that machine's accessibility
+setting is the venue's, not the audience's choice, and a deck that stood on
+its stills for it would be the talk without its world. `?stage-motion=floor`
+or `respect` overrides it on one address.
+
+**`stage.plates`, `stage.platesRelease`.** `plates` is the folder under
+`public/` the plates are served from (default `videos`, beside the clips;
+`false` turns the layer off, and the still breathes instead).
+`platesRelease` is where they are pulled from when the deck does not carry
+them: a URL, or `owner/repo@tag` for a GitHub release; by default the videos
+addon's own (`videos.repo` and `videos.release` in the headmatter, else
+`VITE_VIDEO_REPO` and `VITE_VIDEO_RELEASE`, the tag `videos`); `false` keeps
+to the deck's own copy. `?stage-plates=off` turns the layer off on one
+address.
+
+**Where the plates live.** With the clips, never in git: `public/videos/`
+(gitignored; served in dev, carried by a portable build) and on the talk's
+videos release. The stage tries each slide's plate in the chain the player
+builds for a clip — the deck's own copy first in `slidev dev` or with
+`VITE_VIDEOS_LOCAL_FIRST=1`, the release first on a deploy, the deck's own
+only when there is no release — a URL that errors let go for the next, and a
+slide whose chain is exhausted left on its living still for the session.
+Three are loaded at a time: the slide before (a back-step plays at once),
+this one, and the next, loading unseen. A plate has no poster: one with no
+frame yet is transparent, so the plate before it holds the cut until the
+first frame is in, and the recorder began it on exactly that frame. The
+stills stay committed: each slide's picture for print and export, and the
+floor where there is no network, breathing under the plate that never comes.
+
+**The recipe.** The plates alone (half the frames shot), at 25 fps with a
+20 s hold: the sway and the drift go on for 20 s, then the last frame holds,
+and the living still's grains keep a trace of motion under it. The recorder
+encodes as for a broadcast take (x264 CRF 14, or NVENC); the files are what
+they are, a few MB each.
+
+    slidev build deck.md --out /tmp/deck --base /
+    slidev-stage-record /tmp/deck plates --plate-only --fps 25 --hold 20
+    cp plates/*-plate.mp4 public/videos/
+
+Each `NN-plate.mp4` then goes to the release as a clip does: in
+`videos/manifest.toml` it is a `[[videos]]` entry with `generated = true`,
+which `sync`, `encode` and `fetch` leave alone and `publish`, `pull`, `venue`
+and `preflight` carry (the root README, *Manifest*). The talks' CLI does all
+of it: `pnpm talk record NAME --plates` records with those three flags,
+copies the plates into `public/videos/`, writes the manifest block and prints
+the `pnpm videos:publish --only …` line.
+
+**A clip slide has no plate.** The clip is the picture itself, and the
+recorder skips it. That is what keeps the advance one cut: the next slide's
+plate begins on the clip's last frame, where the live world would have been,
+so `advance-on-end` goes straight on to it and the motion carries on. A clip
+after which no plate is loaded stops at its end, and the presenter goes on
+by hand.
+
+**Seeing it before the venue.** `?stage-force=<reason>` in the address
+(before or after the `#`, like every switch here) boots straight into that
+fallback, for any reason of the table; `context-lost` boots the world and
+drops its context, so the real handler takes its final branch. Beside it:
+`stage-plates=off`, `stage-motion=floor|respect`, and the older
+`stage-debug` (a panel with the reason, forced or found, the GPU, the render
+targets, the simulation size, the frame rate and any shader errors: the way
+to find out from a phone, and the first thing to open on a venue's PC),
 `stage-post=off` (the scene straight to the screen, no bloom or finish),
 `stage-targets=half` (half-float simulation targets) and `stage-tier=0..3`.
+Headless, `slidev-stage-shots dist out --force no-webgl2` photographs every
+slide as that venue would show it, `fallback` and `layer` on each report
+line; it is refused with `--stills` (a still is the world). The recorder
+refuses `--force`: there is nothing to record without the world.
 
-**Stills for print, PDF export and the fallback.** Slidev's print route mounts
+**Stills for print, PDF export and the floor.** Slidev's print route mounts
 the stage once per page, so the stage draws no world there (thirty WebGL
 contexts would run out); it shows the slide's still instead, under the slide's
 own text: `public/stills/01.jpg`, `02.jpg`, … (`stage.stills: <folder>` moves
-them, `false` turns them off). The static fallback on screen shows the same
-stills. A still is the slide at its last click, the moment the export prints
+them, `false` turns them off). On screen, where the world cannot run, the
+living still breathes the same picture, and the plate plays over it. A still
+is the slide at its last click, the moment the export prints
 (`--stills-at first` takes click 0 instead): the printed text and the world
-under it agree, and the fallback shows the slide's world complete. Make them from a real render, the world alone without the slide:
+under it agree, and the living still shows the slide's world complete. Make
+them from a real render, the world alone without the slide:
 
     slidev build deck.md --out /tmp/deck --base /
     slidev-stage-shots /tmp/deck public/stills --stills
@@ -765,4 +873,14 @@ from the address).
 The quality tier (0 full … 3 floor) is picked from the device (a phone starts
 at 2) and caps the simulated field, the drawing buffer and the photo places'
 grains and textures; `stage.tier: <n>` pins it. A lost WebGL context rebuilds
-the world one tier lower, at most twice.
+the world one tier lower, at most twice; a loss past that, or one at the
+floor tier, is `context-lost` for good, and the plate takes over.
+
+## Develop
+
+    pnpm install
+    pnpm --filter slidev-addon-stage test            # node --test
+    pnpm --filter slidev-addon-stage build:example
+    pnpm --filter slidev-addon-stage build:broadcast # the example under look: broadcast, in example/dist/broadcast
+    pnpm --filter slidev-addon-stage smoke           # Playwright, headless, on the built example
+    pnpm --filter slidev-addon-stage smoke:dev       # the example under `slidev dev`, and its export

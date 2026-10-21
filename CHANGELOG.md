@@ -4,6 +4,102 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## v0.8.2 — 2026-10-21
+
+slidev-videos 0.8.2 · slidev-addon-stage 0.5.2 · slidev-addon-videos 0.8.2
+
+A patch line from v0.8.1, for the talks pinned there (Innoday on 23 Oct,
+Užsikrauk karjerai on 26 Oct): what a stage deck shows where its world cannot
+run, after a venue PC left Innoday on its stills and let a clip's
+advance-on-end walk the deck on its own. The same change goes to `main` as
+v0.10.0, on top of v0.9.0; this line carries nothing of v0.9.0.
+
+**Every v0.8.1 deck behaves the same under v0.8.2 while its world runs**, with
+one exception; without a world it differs. Precisely:
+- **A clip's `advance-on-end` no longer fires within half a second of a
+  press.** A navigation key or a pointer press in the clip's last instant
+  is the navigation; the end that followed used to move the deck a second
+  time and skip a slide.
+- **Without a world** (no WebGL2, no float targets, a plugin, data or engine
+  failure, a context lost for good) the slide's still breathes instead of
+  standing (the living still, below), and an `advance-on-end` clip stops at
+  its end — the presenter goes on by hand — unless the deck has plates. A
+  deck without plates asks for each slide's once (its own `public/videos/`
+  and its release), is told no, and keeps the living still. Under
+  `prefers-reduced-motion` the still stands alone, as before (`stage.motion`
+  defaults to `respect`).
+- Print, PDF export, the overview and the presenter's preview are untouched.
+- `html[data-stage-layer]` is set on every stage deck now; the other marks
+  only without a world. The `generated` manifest key is optional: a manifest
+  without one reads as before.
+- A deck's own component that times captions to the world (Innoday's
+  `LhcOpening`) can show them at once without one by reading
+  `html[data-stage-fallback]`; that edit is the talks', on their side.
+
+- **Advance-on-end is decided in one place**
+  (`components/video-dust/advance.js`, `shouldAdvance`): the rules in order,
+  disarmed, off, loop, context, print, inactive, under the recorder, the
+  page moved, a click taken, no plate, pressed. Two are new: without a world
+  the clip goes on only onto the next slide's loaded plate
+  (`html[data-stage-plate-next]` = page + 1: it begins on the clip's last
+  frame, so the motion carries on), and a press in the last 500 ms ends the
+  matter. One shot per arming, and the arming also drops when the route
+  moves. `slidev-videos:advance` carries `reason`.
+- **Recorded plates where the world cannot run** (`stage/fallback.js`,
+  `StagePlate.vue`). `slidev-stage-record --plate-only` records each slide's
+  world alone, arriving from the slide before and holding (half the frames
+  of `--plate`; `index.json` gains `plateFps` and `plateOnly` beside `hold`).
+  The stage plays the slide's `NN-plate.mp4` muted under the text, holding
+  its last frame, three slides loaded at a time (the one before, this, the
+  next), from the chain the player uses for a clip: `public/<stage.plates>/`
+  (default `videos`, gitignored) and `stage.platesRelease` (default: the
+  videos addon's release), local first in dev or with
+  `VITE_VIDEOS_LOCAL_FIRST=1`, the release first on a deploy. No poster: the
+  plate before holds the cut until the next's first frame, which the
+  recorder began on exactly that frame. A clip slide has no plate, and the
+  next slide's plate begins on the clip's last frame: that is what keeps the
+  advance one cut.
+- **The living still** (`stage/living.js`, `StageLiving.vue`): the still on a
+  48 s eased drift (to 1.045 and 1.2 % of the frame off centre, then as
+  slowly back) and 600 grains of the palette's dust, additive at 30 fps;
+  under a plate while it loads, alone where there is none. No shape, no
+  colour of its own; paused while hidden or covered; off under reduced
+  motion with `motion: respect`.
+- **The layer on `<html>`:** `data-stage-layer` = `world | world-floor |
+  plate | living | still`, `data-stage-fallback` (the reason, on `<html>` as
+  well as the stage root), `data-stage-plate` = `loading | playing | paused |
+  held | none`, `data-stage-plate-next`; `slidev-stage:fallback` on `window`
+  with `{ reason, detail, layer }`. `__stage.state()` carries `layer` and
+  `plate`; the shots report carries `fallback` and `layer`.
+- **`stage:` keys:** `motion` (`respect`, the default: the still alone under
+  reduced motion; `floor`: the world all the same — a presenter's deck sets
+  it, a venue PC's accessibility setting being the venue's choice, not the
+  audience's), `plates` (the folder, or `false`), `platesRelease`. The
+  engine's floor under `motion: floor` (no sway, no streaks, every pose a
+  cut) is not in this line: the world runs as it does.
+- **`generated = true` on a manifest entry** (the CLI): a file the toolkit
+  made with no raw. `sync`, `encode`, `encode-hq` and `fetch` leave it alone
+  (`fetch` refuses the name), `check` accepts it unreferenced and names the
+  recorder where it is missing, `publish`, `pull`, `venue` and `preflight`
+  carry it, `frames` never cuts one.
+- **Seeing it before the venue:** `?stage-force=<reason>` boots into that
+  fallback (`context-lost` drops a live context, so the real handler runs);
+  `stage-plates=off`, `stage-motion=floor|respect`; the debug panel names a
+  forced reason. `slidev-stage-shots --force REASON` photographs the deck
+  that way (refused with `--stills`); the recorder refuses `--force`. Smoke
+  cases 12 (the example under `?stage-force=no-webgl2`: the living still,
+  drawing) and 13 (`reduced-motion&stage-motion=floor`: the world draws).
+
+**To adopt the plates, a talk** pins v0.8.2 (both addons and the CLI), sets
+`stage.motion: floor` in its headmatter, records `pnpm talk record <t>
+--plates` (`--plate-only --fps 25 --hold 20` into `public/videos/`, the
+manifest block written; about an hour for 30 slides on llvmpipe, in the
+render slot), `pnpm videos:publish --only <the plates>`, `pnpm talk ready`,
+`pnpm talk deploy`; `pnpm venue` after `videos:pull` for the venue zip. Then
+opens the deployed deck under `?stage-force=no-webgl2` once, and
+`?stage-debug` on the venue's PC first. A deck that skips all of it gets the
+living still and a clip that waits for a press.
+
 ## v0.8.1 — 2026-10-11
 
 slidev-videos 0.8.1 · slidev-addon-stage 0.5.1 · slidev-addon-videos 0.8.1
