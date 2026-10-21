@@ -33,4 +33,5 @@ def test_profiles_valid():
 def test_outreach_promotions_present():
     names = {v["name"] for v in _entries()}
     assert PROMOTED_2026_09_08 <= names
-    assert len(names) == 43
+    assert "lis_flag.mp4" in names   # v0.9.0: the light injection system's hand-over clip
+    assert len(names) == 44
