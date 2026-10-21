@@ -17,9 +17,10 @@ v0.10.0, on top of v0.9.0; this line carries nothing of v0.9.0.
 **Every v0.8.1 deck behaves the same under v0.8.2 while its world runs**, with
 one exception; without a world it differs. Precisely:
 - **A clip's `advance-on-end` no longer fires within half a second of a
-  press.** A navigation key or a pointer press in the clip's last instant
-  is the navigation; the end that followed used to move the deck a second
-  time and skip a slide.
+  press.** A navigation key, or any pointer press outside the player (the
+  nav bar, the slide; a press on the player's own controls or its picture is
+  not one), in the clip's last instant is the navigation; the end that
+  followed used to move the deck a second time and skip a slide.
 - **Without a world** (no WebGL2, no float targets, a plugin, data or engine
   failure, a context lost for good) the slide's still breathes instead of
   standing (the living still, below), and an `advance-on-end` clip stops at
@@ -41,24 +42,29 @@ one exception; without a world it differs. Precisely:
   disarmed, off, loop, context, print, inactive, under the recorder, the
   page moved, a click taken, no plate, pressed. Two are new: without a world
   the clip goes on only onto the next slide's loaded plate
-  (`html[data-stage-plate-next]` = page + 1: it begins on the clip's last
-  frame, so the motion carries on), and a press in the last 500 ms ends the
-  matter. One shot per arming, and the arming also drops when the route
+  (`html[data-stage-plate-next]` = page + 1: it begins on the world as it
+  stood under the clip, and the clip's fade lands on it), and a press in the
+  last 500 ms ends the matter. One shot per arming, and the arming also drops when the route
   moves. `slidev-videos:advance` carries `reason`.
 - **Recorded plates where the world cannot run** (`stage/fallback.js`,
   `StagePlate.vue`). `slidev-stage-record --plate-only` records each slide's
-  world alone, arriving from the slide before and holding (half the frames
-  of `--plate`; `index.json` gains `plateFps` and `plateOnly` beside `hold`).
-  The stage plays the slide's `NN-plate.mp4` muted under the text, holding
-  its last frame, three slides loaded at a time (the one before, this, the
-  next), from the chain the player uses for a clip: `public/<stage.plates>/`
+  world alone — no text, halo, HUD, scrim, paper grain or push overlay: the
+  stage draws its scrim and grain over the plate as over the world —
+  arriving from the slide before and holding (half the frames of `--plate`;
+  `index.json` gains `plateFps` and `plateOnly` beside `hold`). The stage
+  plays the slide's `NN-plate.mp4` muted under the text, holding its last
+  frame, three slides loaded at a time (the one before, this, the next);
+  only a forward step from the slide before replays a plate's arrival, a
+  back-step or a jump holds its settled world. The chain is the player's
+  for a clip: `public/<stage.plates>/`
   (default `videos`, gitignored) and `stage.platesRelease` (default: the
   videos addon's release), local first in dev or with
   `VITE_VIDEOS_LOCAL_FIRST=1`, the release first on a deploy. No poster: the
   plate before holds the cut until the next's first frame, which the
-  recorder began on exactly that frame. A clip slide has no plate, and the
-  next slide's plate begins on the clip's last frame: that is what keeps the
-  advance one cut.
+  recorder began on exactly that frame. A clip slide has no plate; the next
+  slide's plate begins on the world as it stood under the clip, where the
+  live world would have been, and the clip's fade (or its push, where the
+  overlay has WebGL2) lands on it.
 - **The living still** (`stage/living.js`, `StageLiving.vue`): the still on a
   48 s eased drift (to 1.045 and 1.2 % of the frame off centre, then as
   slowly back) and 600 grains of the palette's dust, additive at 30 fps;
@@ -83,7 +89,9 @@ one exception; without a world it differs. Precisely:
   recorder where it is missing, `publish`, `pull`, `venue` and `preflight`
   carry it, `frames` never cuts one.
 - **Seeing it before the venue:** `?stage-force=<reason>` boots into that
-  fallback (`context-lost` drops a live context, so the real handler runs);
+  fallback (`context-lost` drops a live context, so the real handler runs;
+  under `no-webgl2` the videos addon's dust and push overlay declines its
+  WebGL2 too, so a clip leaves by its fade onto the plate, as at the venue);
   `stage-plates=off`, `stage-motion=floor|respect`; the debug panel names a
   forced reason. `slidev-stage-shots --force REASON` photographs the deck
   that way (refused with `--stills`); the recorder refuses `--force`. A
