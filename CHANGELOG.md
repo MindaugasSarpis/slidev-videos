@@ -89,6 +89,13 @@ one exception; without a world it differs. Precisely:
   that way (refused with `--stills`); the recorder refuses `--force`. Smoke
   cases 12 (the example under `?stage-force=no-webgl2`: the living still,
   drawing) and 13 (`reduced-motion&stage-motion=floor`: the world draws).
+- **The venue zip's double-click launchers** (the CLI): `venue` writes
+  `RUN_ME.command` (macOS; executable in the zip whatever the filesystem
+  kept of the mode) and `RUN_ME.bat` (Windows; CRLF) beside `RUN_ME.txt`,
+  which names them before the `python3 -m http.server` line. Each serves the
+  unzipped folder on the first free port from 8000, bound to localhost, and
+  opens the deck; without python it says what to install, or to open the
+  talk's live URL instead. No server binary is bundled.
 
 **To adopt the plates, a talk** pins v0.8.2 (both addons and the CLI), sets
 `stage.motion: floor` in its headmatter, records `pnpm talk record <t>
