@@ -2725,6 +2725,65 @@ def _contact_sheet(args: argparse.Namespace, src: str, is_url: bool, out: Path) 
 VENUE_BUILD_ENV = {"VITE_VIDEOS_LOCAL_FIRST": "1"}
 VENUE_BUILD_ENV_TEXT = " ".join(f"{k}={v}" for k, v in VENUE_BUILD_ENV.items())
 
+# Double-click launchers shipped beside RUN_ME.txt. Each serves the unzipped
+# folder on the first free port from 8000 up, bound to localhost, and opens
+# the deck; when python is missing they say what to install or to fall back
+# to the live URL. No server binary is bundled.
+VENUE_RUN_ME_COMMAND = r"""#!/bin/bash
+# Double-click to present offline: serves this folder on this Mac and opens the deck.
+cd "$(dirname "$0")" || exit 1
+
+if ! python3 --version >/dev/null 2>&1; then
+  echo "python3 is not installed yet."
+  echo "macOS asks to install the command-line tools (a dialog may be open now):"
+  echo "click Install, wait for it to finish, then double-click RUN_ME.command again."
+  echo "Or open the talk's live URL in any browser instead (that needs internet)."
+  read -n 1 -s -r -p "Press any key to close this window."
+  exit 1
+fi
+
+port=8000
+while nc -z 127.0.0.1 "$port" >/dev/null 2>&1; do port=$((port + 1)); done
+
+python3 -m http.server "$port" --bind 127.0.0.1 >/dev/null 2>&1 &
+server=$!
+sleep 1
+open "http://127.0.0.1:$port/"
+
+echo "The deck is served at http://127.0.0.1:$port/ - keep this window open while you present."
+read -n 1 -s -r -p "Press any key here to stop the server when you are done."
+kill "$server" 2>/dev/null
+"""
+
+VENUE_RUN_ME_BAT = r"""@echo off
+rem Double-click to present offline: serves this folder on this PC and opens the deck.
+cd /d "%~dp0"
+
+set PY=
+py -3 --version >nul 2>&1 && set "PY=py -3"
+if not defined PY (python --version >nul 2>&1 && set "PY=python")
+if not defined PY (
+  echo Python 3 was not found on this PC.
+  echo Install it from https://www.python.org/downloads/ and tick "Add python.exe to PATH",
+  echo then double-click RUN_ME.bat again.
+  echo Or open the talk's live URL in any browser instead ^(that needs internet^).
+  pause
+  exit /b 1
+)
+
+set PORT=8000
+:nextport
+netstat -an | findstr /c:":%PORT% " >nul && set /a PORT+=1 && goto nextport
+
+start "deck server" /min cmd /k %PY% -m http.server %PORT% --bind 127.0.0.1
+timeout /t 1 /nobreak >nul
+start "" http://127.0.0.1:%PORT%/
+
+echo The deck is served at http://127.0.0.1:%PORT%/
+echo Keep the minimised "deck server" window open while you present; close it when you are done.
+pause
+"""
+
 
 def cmd_venue(args: argparse.Namespace) -> int:
     """Self-contained venue bundle for this deck.
@@ -2767,13 +2826,24 @@ def cmd_venue(args: argparse.Namespace) -> int:
         print("error: dist-portable/ missing after build", file=sys.stderr)
         return 2
     (dist / "RUN_ME.txt").write_text(
-        "Offline venue bundle. Browsers refuse ES-module apps on file://,\n"
-        "so serve it over local HTTP:\n\n"
+        f"Offline venue bundle for {TALK.name}.\n\n"
+        "Double-click the launcher for this machine:\n"
+        "    RUN_ME.command   macOS   (if macOS refuses to open it, right-click it, then Open)\n"
+        "    RUN_ME.bat       Windows\n"
+        "It serves this folder on the machine itself and opens the deck in the browser;\n"
+        "keep its window open while you present. It needs Python 3 and nothing else,\n"
+        "and says what to install if that is missing.\n\n"
+        "By hand, from a terminal in this folder:\n\n"
         "    python3 -m http.server 8000\n"
         "    then open http://localhost:8000\n\n"
+        "Browsers refuse ES-module apps on file://, so the folder has to be served.\n"
+        "No Python at all? Open the talk's live URL in any browser (that needs internet).\n\n"
         f"Built by `slidev-videos venue` for {TALK.name}.\n",
         encoding="utf-8",
     )
+    (dist / "RUN_ME.command").write_text(VENUE_RUN_ME_COMMAND, encoding="utf-8", newline="\n")
+    (dist / "RUN_ME.command").chmod(0o755)
+    (dist / "RUN_ME.bat").write_text(VENUE_RUN_ME_BAT, encoding="utf-8", newline="\r\n")
     bundle = TALK / f"{TALK.name}-venue.zip"
     print(f"\n=== venue: zipping -> {bundle.name} ===")
     # ZIP_STORED: the payload is already-compressed video; deflate would
@@ -2781,7 +2851,12 @@ def cmd_venue(args: argparse.Namespace) -> int:
     with zipfile.ZipFile(bundle, "w", zipfile.ZIP_STORED) as zf:
         for path in sorted(dist.rglob("*")):
             if path.is_file():
-                zf.write(path, Path(f"{TALK.name}-venue") / path.relative_to(dist))
+                arcname = f"{TALK.name}-venue/{path.relative_to(dist).as_posix()}"
+                zf.write(path, arcname)
+                if path.name == "RUN_ME.command":
+                    # Archive Utility takes the mode from the entry, and the mode on
+                    # disk is whatever this filesystem kept of the chmod (NTFS: nothing).
+                    zf.getinfo(arcname).external_attr = 0o100755 << 16
     print(f"Done: {bundle.name} ({human_size(bundle.stat().st_size)})")
     print("Copy to the venue machine (or gdrive as backup), unzip, see RUN_ME.txt.")
     return 0

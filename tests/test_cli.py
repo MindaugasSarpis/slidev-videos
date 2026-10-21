@@ -1,6 +1,7 @@
 """The command line itself: --version, --project/--json anywhere, exit codes."""
 import json
 import types
+import zipfile
 
 import pytest
 
@@ -123,3 +124,44 @@ def test_venue_dry_run_names_the_variable(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(pipeline, "_probe_media", lambda src: None)
     assert pipeline.main(["--project", str(root), "venue", "--skip-pull", "--dry-run"]) == 0
     assert "VITE_VIDEOS_LOCAL_FIRST=1 pnpm build:portable" in capsys.readouterr().out
+
+
+def test_venue_zip_carries_double_click_launchers(tmp_path, monkeypatch):
+    """Beside RUN_ME.txt the bundle ships RUN_ME.command (macOS) and
+    RUN_ME.bat (Windows): a double-click serves the folder on a free port
+    from 8000 up and opens the deck; without python they name the live URL."""
+    root = make_talk(tmp_path)
+
+    def fake_build(cmd, *a, **k):
+        (root / "dist-portable").mkdir(exist_ok=True)
+        (root / "dist-portable" / "index.html").write_text("<html></html>")
+        return 0
+    monkeypatch.setattr(pipeline.subprocess, "call", fake_build)
+    monkeypatch.setattr(pipeline, "_release_assets", lambda *a: (None, None))
+    monkeypatch.setattr(pipeline, "_probe_media", lambda src: None)
+    assert pipeline.main(["--project", str(root), "venue", "--skip-pull"]) == 0
+
+    top = f"{root.name}-venue"
+    with zipfile.ZipFile(root / f"{top}.zip") as zf:
+        assert set(zf.namelist()) == {
+            f"{top}/index.html", f"{top}/RUN_ME.txt", f"{top}/RUN_ME.command", f"{top}/RUN_ME.bat"}
+        # Archive Utility and unzip take the mode from the entry's Unix attributes
+        assert (zf.getinfo(f"{top}/RUN_ME.command").external_attr >> 16) & 0o777 == 0o755
+        command = zf.read(f"{top}/RUN_ME.command").decode("utf-8")
+        bat = zf.read(f"{top}/RUN_ME.bat").decode("utf-8")
+        note = zf.read(f"{top}/RUN_ME.txt").decode("utf-8")
+
+    assert command.startswith("#!/bin/bash\n") and "\r" not in command
+    assert 'cd "$(dirname "$0")"' in command
+    assert "open " in command
+    assert "\r\n" in bat and "\n" not in bat.replace("\r\n", "")   # cmd.exe wants CRLF
+    assert "py -3" in bat and "python" in bat and "pause" in bat
+    for text in (command, bat):
+        assert "8000" in text                       # the first port it tries
+        assert "--bind 127.0.0.1" in text
+        assert "live URL" in text                   # the way out when python is missing
+    # RUN_ME.txt names the launchers first and keeps the manual command
+    manual = note.index("python3 -m http.server")
+    assert note.index("RUN_ME.command") < manual
+    assert note.index("RUN_ME.bat") < manual
+    assert "live URL" in note
