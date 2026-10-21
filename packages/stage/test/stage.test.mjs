@@ -11,7 +11,7 @@ import { resolvePalette, PALETTES, DEFAULT_PALETTE, LOOKS, hexToRgb, rgbTriplet,
 import { checkStage, readStageConfig, deckPoses, deckSlides, deckTypes, deckClocks, deckComponents, readYaml, deckPlaces, deckPlaceList, deckPlaceGroups, deckPages, main as checkMain } from '../bin/check.mjs';
 import { formatCount, countRun, countAt, countSpan, COUNT_DOWN_MS } from '../stage/count.js';
 import { deckHasThree } from '../vite.config.js';
-import { parseSlides, parseArgs, detectBase, clicksFor, frameName, parseProcLocks, problemsOf, cacheable, split, serve, staticKey, clipName, deckUrl } from '../bin/shots.mjs';
+import { parseSlides, parseArgs, detectBase, clicksFor, frameName, parseProcLocks, problemsOf, cacheable, split, serve, staticKey, clipName, deckUrl, forcedSettled, LIVING_FRAMES } from '../bin/shots.mjs';
 import { placesDecl, placeGroupsAt } from '../stage/place-groups.js';
 
 const here = (p) => new URL(p, import.meta.url);
@@ -619,6 +619,37 @@ test('--force rehearses a fallback: the reason goes to the stage in the query, b
   assert.equal(deckUrl('http://localhost:1234/?x=1#/3?clicks=2', { force: 'init' }), 'http://localhost:1234/?x=1&stage-force=init#/3?clicks=2');
   assert.equal(deckUrl('http://localhost:1234/', {}), 'http://localhost:1234/');
   assert.equal(deckUrl('http://localhost:1234/', { force: null }), 'http://localhost:1234/');
+});
+
+test('a forced run photographs the fallback settled: the plate holding its last frame, the living still drawn', () => {
+  const t = (state, want) => assert.equal(forcedSettled(state), want, JSON.stringify(state));
+  // a plate's settled world is its last frame (held); on its way or still arriving, not yet
+  t({ layer: 'plate', plate: 'held' }, true);
+  t({ layer: 'plate', plate: 'held', livingFrames: 0 }, true);
+  t({ layer: 'plate', plate: 'playing', livingFrames: 40 }, false);
+  t({ layer: 'plate', plate: 'loading', livingFrames: 40 }, false);
+  t({ layer: 'plate', plate: 'paused' }, true);   // under a clip's cover, or the tab hidden: nothing of it will move
+  // no plate for this slide (its chain told no, or none asked for): the living still, once it has drawn
+  t({ layer: 'living', plate: 'none', livingFrames: 0 }, false);
+  t({ layer: 'living', plate: 'none', livingFrames: LIVING_FRAMES - 1 }, false);
+  t({ layer: 'living', plate: 'none', livingFrames: LIVING_FRAMES }, true);
+  t({ layer: 'living', plate: 'none', livingFrames: 300 }, true);
+  t({ layer: 'living', plate: null, livingFrames: 3 }, true);
+  t({ layer: 'living', livingFrames: 3 }, true);
+  t({ layer: 'living' }, false);
+  t({ layer: 'living', plate: 'loading', livingFrames: 9 }, false);   // a plate on its way under the still: wait for it
+  t({ layer: 'living', plate: 'held' }, true);
+  t({ layer: 'plate', plate: 'none', livingFrames: 3 }, true);
+  t({ layer: 'plate', plate: 'none', livingFrames: 2 }, false);
+  // the still alone, the world at its floor, the world itself: nothing of the fallback to wait for
+  t({ layer: 'still' }, true);
+  t({ layer: 'still', livingFrames: 0 }, true);
+  t({ layer: 'world-floor' }, true);
+  t({ layer: 'world', plate: 'loading' }, true);
+  t({ layer: null }, true);
+  t({}, true);
+  assert.equal(forcedSettled(), true);
+  assert.equal(LIVING_FRAMES, 3);
 });
 
 test('the base a deck was built for', () => {

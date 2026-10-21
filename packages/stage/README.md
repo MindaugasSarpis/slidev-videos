@@ -495,7 +495,7 @@ were barely faster than two).
 | `--lock FILE`, `--no-lock` | the shared lock (default `/tmp/slidev-stage-shots.lock`) |
 | `--stills` | the world alone, no slide text, as `<out-dir>/01.jpg` …: the stills print, PDF export and the static fallback show (write them to the deck's `public/stills`); one per slide, no bursts |
 | `--stills-at` | `last` (default): each slide's still at its last click, as the export prints it; `first`: at click 0 |
-| `--force REASON` | the deck under `?stage-force=REASON` (`no-webgl2`, `reduced-motion` …): every slide as a venue without a world would show it; see [When the world cannot run](#when-the-world-cannot-run). Refused with `--stills` (a still is the world) |
+| `--force REASON` | the deck under `?stage-force=REASON` (`no-webgl2`, `reduced-motion` …): every slide as a venue without a world would show it, each frame once its plate holds its settled world or the living still has drawn; see [When the world cannot run](#when-the-world-cannot-run). Refused with `--stills` (a still is the world) |
 
 A deck built for GitHub Pages (`--base /repo/talk/`) is served under that
 base. `--changed` keeps its hashes in `<out-dir>/.shots-cache.json`: each
@@ -863,9 +863,14 @@ to find out from a phone, and the first thing to open on a venue's PC),
 `stage-post=off` (the scene straight to the screen, no bloom or finish),
 `stage-targets=half` (half-float simulation targets) and `stage-tier=0..3`.
 Headless, `slidev-stage-shots dist out --force no-webgl2` photographs every
-slide as that venue would show it, `fallback` and `layer` on each report
-line; it is refused with `--stills` (a still is the world). The recorder
-refuses `--force`: there is nothing to record without the world.
+slide as that venue would show it, `fallback`, `layer` and `plate` on each
+report line; it is refused with `--stills` (a still is the world). Each
+frame is shot once what stood in has settled, on the real clock: a plate
+played to its end and holding its settled world (`data-stage-plate` =
+`held`), or the living still drawn (three frames), within `--wait`,
+stretched to the plate's length; a plate not held by then is an unsettled
+frame (exit 3), and the report line carries the wait as `forcedMs`. The
+recorder refuses `--force`: there is nothing to record without the world.
 
 **Stills for print, PDF export and the floor.** Slidev's print route mounts
 the stage once per page, so the stage draws no world there (thirty WebGL

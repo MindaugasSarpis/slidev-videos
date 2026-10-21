@@ -99,7 +99,12 @@ one exception; without a world it differs. Precisely:
   WebGL2 too, so a clip leaves by its fade onto the plate, as at the venue);
   `stage-plates=off`, `stage-motion=floor|respect`; the debug panel names a
   forced reason. `slidev-stage-shots --force REASON` photographs the deck
-  that way (refused with `--stills`); the recorder refuses `--force`. A
+  that way (refused with `--stills`), each frame once what stood in has
+  settled on the real clock — the plate played to its end and holding
+  (`data-stage-plate` = `held`), or the living still drawn — within
+  `--wait` stretched to the plate's length, a plate not held by then being
+  an unsettled frame (`forcedSettled` in `bin/shots.mjs`; the report line
+  carries `plate` and `forcedMs`); the recorder refuses `--force`. A
   plate's 404 under a plate or the living still is no failed request to
   `slidev-stage-shots` (the stage asks for plates it may not have; a clip
   slide has none); while the world runs it is one, and a missing still is

@@ -158,8 +158,10 @@ export const USAGE = `usage: slidev-stage-shots <dist> <out-dir> [options]
                        PDF export and the static fallback show (write them to public/stills)
   --stills-at WHEN     last (default: each slide at its last click, as the export prints it) | first
   --force REASON       rehearse the fallback: the deck under ?stage-force=REASON (${FALLBACK_REASONS.join(', ')}),
-                       photographed as a device with that fault would show it; every line says the
-                       fallback and the layer (plate, living, still, world-floor) that stood in. Not with --stills
+                       photographed as a device with that fault would show it, each frame once what stood in
+                       has settled (a plate played to its end and holding, the living still drawn; within --wait,
+                       stretched to the plate's length); every line says the fallback and the layer (plate,
+                       living, still, world-floor) that stood in. Not with --stills
 
 exit: 0 clean · 3 overflow, page errors, failed requests, failed or unsettled frames · 1 the run failed · 2 bad arguments · 128+n stopped by signal n`;
 
@@ -230,6 +232,24 @@ export function deckUrl(url, { force = null } = {}) {
   const i = u.indexOf('#');
   const head = i < 0 ? u : u.slice(0, i), hash = i < 0 ? '' : u.slice(i);
   return `${head}${head.includes('?') ? '&' : '?'}stage-force=${encodeURIComponent(force)}${hash}`;
+}
+
+// Under --force there is no world to settle, and what stands in for it moves
+// in real time, not on the stepped clock: a frame shot on arrival would show
+// the plate's first frame. The fallback is settled when the plate has played
+// to its end and holds its settled world (data-stage-plate = held; a plate
+// paused under a clip's cover, or the tab hidden, will not move either), or,
+// where this slide has no plate (its chain told no, or none was asked for),
+// when the living still has drawn a few frames (its root's data-frames), so
+// the canvas is not blank; a plate on its way under the still (loading) is
+// waited for. The still alone, the world at its floor and the world itself
+// have nothing of the fallback to wait for: the settle has run.
+export const LIVING_FRAMES = 3;
+export function forcedSettled({ layer = null, plate = null, livingFrames = 0 } = {}) {
+  if (layer !== 'plate' && layer !== 'living') return true;
+  if (plate === 'held' || plate === 'paused') return true;
+  if (plate === 'loading' || plate === 'playing') return false;
+  return livingFrames >= LIVING_FRAMES;
 }
 
 // ---- the shared lock ------------------------------------------------------------------------
@@ -426,6 +446,11 @@ function pageInit(cfg) {
       // why the stage fell back and what stands in for the world (stage/fallback.js, on <html>)
       fallback: document.documentElement.dataset.stageFallback ?? null,
       layer: s.layer ?? document.documentElement.dataset.stageLayer ?? null,
+      // the plate's state (StagePlate.vue), how many frames the living still has drawn (StageLiving.vue),
+      // and the seconds the playing plate has left: what a forced run waits on (forcedSettled)
+      plate: s.plate ?? document.documentElement.dataset.stagePlate ?? null,
+      livingFrames: Number(root?.querySelector('.living')?.dataset.frames || 0),
+      plateLeft: Math.max(0, ...[...(root?.querySelectorAll('.plate video') ?? [])].filter((v) => !v.paused && Number.isFinite(v.duration)).map((v) => v.duration - v.currentTime)),
       probe: st ? 'stage' : p ? 'handles' : 'none',
       ...where(),
     };
@@ -755,6 +780,26 @@ async function capture(deck, file, timeout) {
   }
 }
 
+// Under --force: wait for what stands in for the world to settle (forcedSettled),
+// polling the page on the real clock, within --wait; a plate longer than that
+// stretches the cap to its remaining time, up to fourfold, as the settle
+// stretches for a slow world. → { settled, forcedMs, plate, stretchedMs? }
+async function forcedWait(deck, o) {
+  const t0 = Date.now();
+  let cap = o.wait, stretched = 0;
+  for (;;) {
+    const s = await deck.state();
+    const wall = Date.now() - t0;
+    if (forcedSettled(s)) return { settled: true, forcedMs: wall, plate: s.plate, ...(stretched ? { stretchedMs: stretched } : {}) };
+    if (s.plateLeft > 0) {
+      const need = Math.min(o.wait * 4, Math.round(s.plateLeft * 1000) + 2000);
+      if (need > cap) { cap = need; stretched = cap; }
+    }
+    if (wall >= cap) return { settled: false, forcedMs: wall, plate: s.plate, ...(stretched ? { stretchedMs: stretched } : {}) };
+    await deck.page.waitForTimeout(100);
+  }
+}
+
 async function shootFrame(deck, o, rec, { sec = null } = {}) {
   const { page } = deck;
   const before = await deck.state();
@@ -763,6 +808,8 @@ async function shootFrame(deck, o, rec, { sec = null } = {}) {
   const st = await page.evaluate((a) => window.__shots.settle(a), {
     min: o.settle, since: before.clock ?? before.elapsed, capMs: o.wait, dust: o.dust, frames: 1, sec,
   });
+  // a forced fallback settles on the real clock, after the world's (none, or lost) settle
+  const forced = o.force ? await forcedWait(deck, o) : null;
   const t1 = Date.now();
   await page.evaluate(() => window.__shots.finish());
   await page.evaluate(() => window.__shots.frames(2));
@@ -777,9 +824,10 @@ async function shootFrame(deck, o, rec, { sec = null } = {}) {
   }
   return {
     ...rec, png, station: s.station, at: s.at, atStation: s.atStation, renderer: deck.renderer,
-    settled: st.settled, settleMs: st.settleMs, shotMs: Date.now() - t1, engineSec: st.engineSec, engineTime: +s.elapsed.toFixed(3),
+    settled: st.settled && (forced?.settled ?? true), settleMs: st.settleMs, shotMs: Date.now() - t1, engineSec: st.engineSec, engineTime: +s.elapsed.toFixed(3),
     flying: s.flying, assembled: s.assembled, dpr: s.dpr, dust: s.dust, dustTotal: s.dustTotal, probe: s.probe,
-    fallback: s.fallback, layer: s.layer,
+    fallback: s.fallback, layer: s.layer, plate: s.plate,
+    ...(forced ? { forcedMs: forced.forcedMs, ...(forced.stretchedMs ? { forcedStretchedMs: forced.stretchedMs } : {}) } : {}),
     ...m, ...deck.drain(),
   };
 }
@@ -1082,8 +1130,9 @@ export async function shoot(o, logTo = console.log) {
                 await emit(r);
                 if (key && cacheable(r)) cache[rec.frame] = { key, record: r };
                 const p = problemsOf(r);
-                const stood = r.layer && r.layer !== 'world' ? `  layer=${r.layer}${r.fallback ? ` (${r.fallback})` : ''}` : '';
-                log(`${r.frame}  station=${r.station ?? '-'}${stood}  settle ${(r.settleMs / 1000).toFixed(1)} s (${r.engineSec} engine-s) + ${(r.shotMs / 1000).toFixed(1)} s  overflow=${r.overflowPx ?? '-'}px  words=${r.wordsOnScreen}${p.length ? `  ! ${p.join('; ')}` : ''}`);
+                const stood = r.layer && r.layer !== 'world' ? `  layer=${r.layer}${r.layer === 'plate' && r.plate ? `:${r.plate}` : ''}${r.fallback ? ` (${r.fallback})` : ''}` : '';
+                const waited = r.forcedMs != null ? ` + fallback ${(r.forcedMs / 1000).toFixed(1)} s` : '';
+                log(`${r.frame}  station=${r.station ?? '-'}${stood}  settle ${(r.settleMs / 1000).toFixed(1)} s (${r.engineSec} engine-s)${waited} + ${(r.shotMs / 1000).toFixed(1)} s  overflow=${r.overflowPx ?? '-'}px  words=${r.wordsOnScreen}${p.length ? `  ! ${p.join('; ')}` : ''}`);
               } catch (e) {
                 const r = { ...rec, png: null, renderer, error: String(e.message || e).split('\n')[0].slice(0, 300), ...deck.drain() };
                 await emit(r);
