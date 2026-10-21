@@ -28,7 +28,11 @@
 //   index.json    the edit list: every file, its length, where the camera
 //                 stood, the clips it shows or could not record, flash warnings;
 //                 `hold` and `plateFps` (the plates' rate, the same as fps) for
-//                 whoever plays the plates
+//                 whoever plays the plates. The takes are silent: a clip's
+//                 `sound` says where in the take it played (`start` and `end`,
+//                 the take's seconds; `t`, the clip's own second at `start`;
+//                 `muted`, `volume`, `loop`), for whoever lays the source clip's
+//                 sound back under it (slidev-videos pptx)
 //
 // Each slide arrives from the slide before it, as a presenter's audience sees
 // it: that slide at its last click, settled, and its clips played to their
@@ -144,6 +148,27 @@ function parseClicks(v) {
   return m;
 }
 
+// The clip's sound, for whoever cuts the take (slidev-videos pptx lays the
+// source clip's audio under it): fed every frame with the slide's clip as
+// state() reads it. → null until the clip plays, then { start, t, end, muted,
+// volume, loop }: `start` the take's second of the first frame the clip played
+// on, `t` the clip's own second there (a clip already running when the take
+// began, or seeked into, has t > 0), `end` the take's second of the last frame
+// it played on; `muted` while it never played with its sound, `volume` the
+// loudest it played at (a player ramps its sound in, from 0).
+export function trackClip(track, i, fps, c) {
+  if (!c || !c.playing) return track;
+  const at = +(i / fps).toFixed(3);
+  const volume = c.muted ? 0 : +(c.volume ?? 1).toFixed(3);
+  if (!track) return { start: at, t: +(c.t || 0).toFixed(3), end: at, muted: !(volume > 0), volume, loop: !!c.loop };
+  track.end = at;
+  if (volume > 0) { track.muted = false; track.volume = Math.max(track.volume, volume); }
+  return track;
+}
+
+// The segment's `clip`: by its path in the dist (`named`), and its sound.
+export const clipEntry = (clip, track, named) => (clip ? { src: named(clip.src), recorded: true, sound: track } : null);
+
 const pad = (n) => String(n).padStart(2, '0');
 const snap = (cdp) => cdp.send('Page.captureScreenshot', { format: 'png', optimizeForSpeed: true }).then((r) => Buffer.from(r.data, 'base64'));
 const look = (page, n) => page.evaluate((n) => ({ ...window.__rec.sync(), ...window.__rec.state(n) }), n);
@@ -236,13 +261,13 @@ async function clipsToEnd(page, n, warn) {
 // Frames of the slide on screen until it has settled and held, into one file
 // (and its plate, on the plate encoder; with --plate-only the plate alone).
 // → the segment's entry for the edit list, or a skip.
-async function recordSegment({ page, cdp }, n, k, o, ff, enc, plateEnc) {
+async function recordSegment({ page, cdp }, n, k, o, ff, enc, plateEnc, named) {
   const name = k ? `${pad(n)}-c${k}` : pad(n);
   const file = join(o.out, `${name}.mp4`), plateFile = join(o.out, `${name}-plate.mp4`);
   const step = 1000 / o.fps;
   let pipe = null, platePipe = null, opened = false;
   const hash = createHash('sha1'), plateHash = createHash('sha1');
-  let i = 0, settledAt = -1, holdFrames = Math.round(o.hold * o.fps), capped = false, last = null, clip = null;
+  let i = 0, settledAt = -1, holdFrames = Math.round(o.hold * o.fps), capped = false, last = null, clip = null, sound = null;
   const warnings = [];
   const t0 = Date.now();
   try {
@@ -251,6 +276,7 @@ async function recordSegment({ page, cdp }, n, k, o, ff, enc, plateEnc) {
       const s = await look(page, n);
       last = s;
       clip = s.clips.find((c) => c.src) || clip;
+      sound = trackClip(sound, i, o.fps, s.clips.find((c) => c.src));
       // a clip this browser cannot decode, or one from another origin, cannot be
       // stepped: hand the editor the source instead
       const undecodable = s.clips.find((c) => c.src && !c.decodable);
@@ -305,7 +331,7 @@ async function recordSegment({ page, cdp }, n, k, o, ff, enc, plateEnc) {
     slide: n, clicks: k, file: pipe ? `${name}.mp4` : null, plate: platePipe ? `${name}-plate.mp4` : null,
     frames: i, seconds: +(i / o.fps).toFixed(3), settle: settledAt >= 0 ? +(settledAt / o.fps).toFixed(3) : null, capped,
     at: last?.at ?? null, station: last?.station ?? null,
-    clip: clip ? { src: clip.src, recorded: true } : null,
+    clip: clipEntry(clip, sound, named),
     sha1: pipe ? hash.digest('hex') : null, plateSha1: platePipe ? plateHash.digest('hex') : null,
     secondsPerFrame: +(seconds / i).toFixed(3),
     ...(warnings.length ? { warnings: warnings.slice(0, 10) } : {}),
@@ -376,8 +402,8 @@ export async function record(o, log = console.log) {
             await deck.page.waitForFunction((k) => window.__rec.state(0).clicks >= k, k, { polling: 20, timeout: 10000 }).catch(() => {});
           }
           const t0 = Date.now();
-          const seg = await recordSegment(deck, n, k, o, ff, enc, plateEnc);
-          if (seg.clip) seg.clip.src = named(seg.clip.src);
+          const seg = await recordSegment(deck, n, k, o, ff, enc, plateEnc, named);
+          if (seg.skipped) seg.clip.src = named(seg.clip.src);
           // the arrival begins on the last frame of these
           if (k === 0 && ended.length) seg.from = { slide: from, clipsEnded: ended.map((c) => named(c.src)) };
           if (!seg.skipped) {
