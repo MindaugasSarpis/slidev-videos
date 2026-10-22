@@ -314,13 +314,18 @@ async function recordSegment({ page, cdp }, n, k, o, ff, enc, plateEnc, named) {
       sound = trackClip(sound, i, o.fps, s.clips.find((c) => c.src));
       // --skip-clips: the clip is the slide's picture; named, not filmed (from another origin too)
       if (o.skipClips && !opened && clip && clip.player) {
-        let track = sound, c = clip;
+        let track = sound, c = clip, rested = clip.playing ? null : clip.t;
         for (let j = 1; j <= EMBED_WAIT / 100 && !(track && track.end - track.start >= EMBED_PLAYED); j++) {
           await page.clock.fastForward(100);
           const t = await look(page, n);
           if (t.seeking) await seeked(page);
-          c = t.clips.find((x) => x.src) || c;
-          track = trackClip(track, j, 10, t.clips.find((x) => x.src));
+          const x = t.clips.find((y) => y.src);
+          c = x || c;
+          const was = track;
+          track = trackClip(track, j, 10, x);
+          // the player seeks, then plays: it started where it rested, up to a look before this one saw it
+          if (!was && track && rested != null && rested <= track.t && track.t - rested <= 0.15) track.t = +rested.toFixed(3);
+          if (x && !x.playing) rested = x.t;
         }
         return embedEntry(n, k, { ...c, src: clip.src }, track, named, s);
       }
