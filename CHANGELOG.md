@@ -172,6 +172,16 @@ behaves differently: the recorder gains a flag, `pptx` a kind of segment.
   (Innoday's 8) — is not in the PPTX. A filmed take ended on the clip too,
   so v0.8.3's PPTX did not have them either. A looping clip plays once and
   holds its last frame; a clip with autoplay off starts on its own.
+- **A `cut` clip covers its slide** (`slidev-videos:cover`) once it has
+  loaded, as a `fade` or `dust` one does, and gives it back when the slide
+  is left, its clip fails or the player goes. It never said so (the cut
+  path never reached `enter()`), so slidev-addon-stage drew its world under
+  a cut clip for the clip's whole length (160–430 draws a second, against
+  none under a fade clip) — what made a MacBook Pro M2 struggle on
+  Innoday's last slide. Stepping from one cut clip to the next, the slide
+  stays covered: the cover waits a tick, after the slide left has given the
+  world back. The example deck gains two cut-clip slides (7 and 8), and its
+  smoke checks the cover.
 - With outreach_talks' `talk pptx` (the recorder's `--skip-clips` by default,
   the world at 25 fps), a 31-slide deck with six clip slides comes to an
   estimated half hour (25 world takes at the 0.09 s a frame Innoday's take

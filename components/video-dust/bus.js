@@ -23,6 +23,11 @@ export function announce(type, detail) {
   try { window.dispatchEvent(new CustomEvent(`slidev-videos:${type}`, { detail })); } catch { /* noop */ }
 }
 
+// A `cut` clip covers its slide while the slide is on screen (not the
+// overview's or a print page's copy) and the clip has loaded: shown at once,
+// it has no enter() to say so. `fade` and `dust` say it in enter() and exit().
+export const cutCovers = ({ mode, active, live, status }) => mode === 'cut' && !!active && !!live && status === 'ready';
+
 // ---- public assets ---------------------------------------------------------------
 // A deck writes public files from the root (`/figures/x.jpg`); built under a
 // base (`/<repo>/<talk>/` on GitHub Pages) they live below it. A path that

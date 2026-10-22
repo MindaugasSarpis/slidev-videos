@@ -12,7 +12,10 @@
 //      is held back while its particle sheet assembles, is handed the screen,
 //      fades its sound in, and leaves as particles; a clip that never loads
 //      gives the sheet up and shows the error. Skipped, with a note, when the
-//      clip was not generated (no ffmpeg).
+//      clip was not generated (no ffmpeg);
+//   7. a `cut` clip says it covers its slide (slidev-videos:cover) once it
+//      has loaded, and gives it back when left; stepping between two cut
+//      clips, the slide stays covered (the stage keeps the last word).
 // Media requests are aborted so the missing clips never stall the run.
 // No fixed sleeps: every assertion polls for the state it expects (`until`),
 // so a slow CI runner only makes the run slower, not flaky.
@@ -68,6 +71,11 @@ const isMedia = (r) => r.resourceType() === 'media' || /\.(mp4|webm|mov)(\?|$)/i
 const isRealClip = (r) => [`/videos/${REAL_CLIP}`, `/videos/${DARK_CLIP}`].includes(new URL(r.url()).pathname)
 await page.route('**/*', (route) =>
   isMedia(route.request()) && !isRealClip(route.request()) ? route.abort() : route.continue())
+// every slidev-videos:cover the players announce, in order
+await page.addInitScript(() => {
+  window.__covers = []
+  window.addEventListener('slidev-videos:cover', (e) => window.__covers.push(!!e.detail?.covered))
+})
 
 const state = (n) => page.evaluate((n) => {
   const pg = document.querySelector(`.slidev-page[data-slidev-no="${n}"]`)
@@ -275,6 +283,37 @@ if (HAVE_CLIP) {
   await goto(6)
   d = await untilDust(6, (s) => s.phase === 'shown' && s.paused === false && s.opacity === 1, 20000)
   check('dust: and does so again on a second arrival', d.time >= 8 && d.time < 11, `time=${d.time}`)
+}
+
+// --- a cut clip covers its slide ----------------------------------------------------
+// The stage rests its world on the last word it was given, so the checks read
+// the last cover announced, a moment after the step (both players have spoken).
+const lastCover = async (want, timeout = 10000) => {
+  const deadline = Date.now() + timeout
+  let all = await page.evaluate(() => window.__covers.slice())
+  while (all.at(-1) !== want && Date.now() < deadline) {
+    await page.waitForTimeout(25)
+    all = await page.evaluate(() => window.__covers.slice())
+  }
+  await page.waitForTimeout(300)
+  return page.evaluate(() => window.__covers.slice())
+}
+if (HAVE_CLIP) {
+  await goto(5)
+  let c = await lastCover(false)
+  check('cover: a clip that never loads leaves the slide uncovered', c.at(-1) === false, c.slice(-4).join(','))
+  await goto(7)
+  c = await lastCover(true)
+  check('cut: a cut clip covers its slide once loaded', c.at(-1) === true, c.slice(-4).join(','))
+  await goto(8)
+  c = await lastCover(true)
+  check('cut: stepping on to the next cut clip, the slide stays covered', c.at(-1) === true && c.at(-2) === false, c.slice(-4).join(','))
+  await goto(7)
+  c = await lastCover(true)
+  check('cut: and stepping back', c.at(-1) === true && c.at(-2) === false, c.slice(-4).join(','))
+  await goto(5)
+  c = await lastCover(false)
+  check('cut: leaving it gives the slide back', c.at(-1) === false, c.slice(-4).join(','))
 }
 
 await browser.close()

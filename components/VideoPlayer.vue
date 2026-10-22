@@ -40,7 +40,7 @@ if (typeof window !== 'undefined') {
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useIsSlideActive, useNav, useSlideContext, configs } from '@slidev/client'
-import { getOverlay, announce, warmStrip, stripFrame, liveFrame, fitPicture, meanColor, isLit, firstLitFrame, loadFrameIndex } from './video-dust/bus.js'
+import { getOverlay, announce, cutCovers, warmStrip, stripFrame, liveFrame, fitPicture, meanColor, isLit, firstLitFrame, loadFrameIndex } from './video-dust/bus.js'
 import { advanceGate } from './video-dust/advance.js'
 
 // Config resolution (headmatter beats env beats built-ins):
@@ -578,7 +578,7 @@ onUnmounted(() => {
   cancelRamp()
   settle?.()
   sheet?.cancel()
-  if (phase === 'shown') announce('cover', { covered: false, src: props.src, fit: effFit.value })
+  if (phase === 'shown' || cutCovering.value) announce('cover', { covered: false, src: props.src, fit: effFit.value })
 })
 
 // Only the real slide (and the presenter's main view) gets a <video>. The
@@ -675,6 +675,18 @@ watch(attached, (yes) => {
     nextTick(() => videoRef.value?.load())
   }
 }, { immediate: true })
+
+// A cut clip, shown at once, covers its slide once it has loaded, and gives
+// the slide back when it is left, fails or goes: the stage rests its world
+// under it, as it does under a fade or dust clip (enter(), exit()). The stage
+// keeps the last word, and stepping from one cut clip to the next both
+// watchers run in one flush, in mount order: the cover waits a tick, so the
+// slide left has given the world back first, and is said only if it holds.
+const cutCovering = computed(() => cutCovers({ mode: effTransition.value, active: isActive.value, live: isLive.value, status: status.value }))
+watch(cutCovering, (covered) => {
+  if (!covered) return announce('cover', { covered: false, src: props.src, fit: effFit.value })
+  setTimeout(() => { if (cutCovering.value) announce('cover', { covered: true, src: props.src, fit: effFit.value }) }, 0)
+})
 </script>
 
 <template>
