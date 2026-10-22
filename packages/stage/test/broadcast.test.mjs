@@ -6,7 +6,7 @@ import { readFileSync, mkdtempSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LOOKS, PALETTES, resolveLook, resolvePalette, liftGround, definePalette, paletteVars } from '../stage/palette.js';
-import { parseArgs as recordArgs, main as recordMain, glMode, trackClip, clipEntry } from '../bin/record.mjs';
+import { parseArgs as recordArgs, main as recordMain, glMode, trackClip, clipEntry, embedEntry } from '../bin/record.mjs';
 import { parseArgs as safeArgs, main as safeMain, judge, RULES } from '../bin/safe.mjs';
 import { detectBase, normaliseBase, parseSlides, checkSlides, parseSize } from '../bin/lib/record-serve.mjs';
 import { findFlashes } from '../bin/lib/record-flash.mjs';
@@ -153,6 +153,39 @@ test('a clip\'s sound is logged where it played in the take', () => {
   const page = readFileSync(here('../bin/lib/record-page.mjs'), 'utf8');
   assert.match(page, /muted: v\.muted/);
   assert.match(page, /volume: v\.volume/);
+});
+
+// --skip-clips: a clip slide is not filmed (a 4-minute clip at 50 fps took 53
+// minutes, frame by frame); the edit list names the clip for whoever cuts the
+// takes (slidev-videos pptx embeds the clip file itself), with how it plays.
+test('--skip-clips leaves a clip slide to the clip itself', () => {
+  assert.equal(recordArgs(['d', 'o']).skipClips, false);
+  assert.equal(recordArgs(['d', 'o', '--skip-clips']).skipClips, true);
+  assert.equal(recordArgs(['d', 'o', '--skip-clips', '--plate']).plate, true);
+  const named = (src) => src.replace('http://127.0.0.1:4000/', '');
+  const clip = { src: 'http://127.0.0.1:4000/videos/a.mp4', playing: true, t: 0.4, duration: 148.2, loop: false, muted: false, volume: 0.05 };
+  const track = { start: 0, t: 0, end: 1.4, muted: false, volume: 0.05, loop: false };
+  const s = { at: 'collision', station: '3' };
+  assert.deepEqual(embedEntry(8, 0, clip, track, named, s), {
+    slide: 8, clicks: 0, file: null, plate: null, embed: true,
+    clip: { src: 'videos/a.mp4', recorded: false, embed: true, duration: 148.2, loop: false, muted: false, volume: 0.05 },
+    at: 'collision', station: '3',
+  });
+  // the player's sound as it played (it ramps in from 0); a muted clip stays muted
+  assert.equal(embedEntry(8, 0, clip, { ...track, muted: true, volume: 0 }, named, s).clip.muted, true);
+  // a clip that did not start in the sampled second (autoplay off): as the element stands
+  const still = embedEntry(2, 0, { ...clip, playing: false, muted: true, volume: 1 }, null, named, s).clip;
+  assert.deepEqual([still.muted, still.volume], [true, 0]);
+  assert.equal(embedEntry(2, 0, { ...clip, volume: 0.7 }, null, named, s).clip.volume, 0.7);
+  // a release URL stays a URL (pptx takes the local copy first, then downloads it)
+  assert.equal(embedEntry(2, 0, { ...clip, src: 'https://github.com/o/r/releases/download/t/a.mp4' }, null, named, s).clip.src,
+    'https://github.com/o/r/releases/download/t/a.mp4');
+  // the recorder checks for the stub before the cross-origin and the decoding checks,
+  // and leaves the rest of a clip slide's clicks once its clip is named
+  const rec = readFileSync(here('../bin/record.mjs'), 'utf8');
+  assert.ok(rec.indexOf('o.skipClips') < rec.indexOf('const undecodable'), 'the stub comes first');
+  assert.match(rec, /if \(seg\.embed\) break/);
+  assert.match(rec, /\[--skip-clips\]/);
 });
 
 test('the recorder refuses no WebGL from the environment as well as from --gl', async () => {

@@ -8,7 +8,7 @@
 //
 //   slidev-stage-record <dist> <out-dir> [--fps 50] [--size 1920x1080] [--slides 2-5]
 //                       [--plate | --plate-only] [--hold 8] [--max 40] [--clicks all|none|'{"3":1}']
-//                       [--base auto] [--seed 1] [--flash]
+//                       [--base auto] [--seed 1] [--flash] [--skip-clips]
 //                       [--gl auto|gpu-nvidia|d3d12|llvmpipe|swiftshader|gl]
 //                       [--chromium path] [--encoder auto|nvenc|x264]
 //
@@ -58,6 +58,17 @@
 //             none (no WebGL) is refused here, from $SLIDEV_STAGE_GL as well:
 //             it would record the deck without its world
 //
+//   --skip-clips  a clip slide is not filmed: its segment names the clip
+//             (`embed`, no file) with how it plays (`duration`, `loop`, `muted`,
+//             `volume`, sampled over its first second and a half), for whoever
+//             cuts the takes to use the clip file itself (slidev-videos pptx);
+//             the rest of its clicks go with it. Frame by frame through the
+//             browser, a 4-minute clip at 50 fps took 53 minutes. The next
+//             slide still arrives over the clip's last frame (its take begins
+//             on this slide with the clip run to its end), from another origin
+//             too. What the slide shows over or after its clip (a ClipEnd line,
+//             an exit push, an AfterFlight) is in neither
+//
 // A clip slide is recorded when the clip is served from the deck itself
 // (build with VITE_VIDEOS_LOCAL_FIRST=1 and the clips in public/videos/): the
 // clip is set to its time on the fake clock each frame. A clip from elsewhere
@@ -84,7 +95,7 @@ import { resolveFfmpeg, pickEncoder, plateEncoder, encoder, decodeSmall } from '
 import { seedRandom, recorderHooks, PLATE_HIDDEN } from './lib/record-page.mjs';
 import { findFlashes } from './lib/record-flash.mjs';
 
-const USAGE = "usage: slidev-stage-record <dist> <out-dir> [--fps 50] [--size 1920x1080] [--slides 2-5] [--plate | --plate-only] [--hold 8] [--max 40] [--clicks all|none|'{\"3\":1}'] [--base auto] [--seed 1] [--flash] [--gl auto|gpu-nvidia|d3d12|llvmpipe|swiftshader|gl] [--chromium path] [--encoder auto|nvenc|x264]";
+const USAGE = "usage: slidev-stage-record <dist> <out-dir> [--fps 50] [--size 1920x1080] [--slides 2-5] [--plate | --plate-only] [--hold 8] [--max 40] [--clicks all|none|'{\"3\":1}'] [--base auto] [--seed 1] [--flash] [--skip-clips] [--gl auto|gpu-nvidia|d3d12|llvmpipe|swiftshader|gl] [--chromium path] [--encoder auto|nvenc|x264]";
 const GL = MODES.filter((m) => m !== 'none');
 const PREROLL_STEP = 83;     // ms: the engine's own frame-time clamp (12 fps), so the world gets there in the fewest frames
 const NOISE = /Wake Lock/;   // page errors that say nothing about the deck
@@ -92,7 +103,7 @@ const NOISE = /Wake Lock/;   // page errors that say nothing about the deck
 // A malformed or unknown option throws (a usage error, exit 2): a typo would
 // otherwise record something other than what was asked.
 export function parseArgs(argv) {
-  const o = { dist: null, out: null, fps: 50, size: [1920, 1080], slides: null, plate: false, plateOnly: false, hold: 8, max: 40, clicks: 'all', base: 'auto', seed: 1, flash: false, gl: 'auto', chromium: '', encoder: 'auto' };
+  const o = { dist: null, out: null, fps: 50, size: [1920, 1080], slides: null, plate: false, plateOnly: false, skipClips: false, hold: 8, max: 40, clicks: 'all', base: 'auto', seed: 1, flash: false, gl: 'auto', chromium: '', encoder: 'auto' };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -109,6 +120,7 @@ export function parseArgs(argv) {
     else if (a === '--base') o.base = value();
     else if (a === '--seed') o.seed = Number(value());
     else if (a === '--flash') o.flash = true;
+    else if (a === '--skip-clips') o.skipClips = true;
     else if (a === '--gl') o.gl = oneOf(...GL);
     else if (a === '--chromium') o.chromium = value();
     else if (a === '--encoder') o.encoder = oneOf('auto', 'nvenc', 'x264');
@@ -168,6 +180,22 @@ export function trackClip(track, i, fps, c) {
 
 // The segment's `clip`: by its path in the dist (`named`), and its sound.
 export const clipEntry = (clip, track, named) => (clip ? { src: named(clip.src), recorded: true, sound: track } : null);
+
+// --skip-clips: the segment of a clip slide that was not filmed, naming its
+// clip and how it plays: the sound as the player played it over the sampled
+// second (`track`, trackClip's), else as the element stands (a clip that did
+// not start: autoplay off).
+export function embedEntry(n, k, clip, track, named, s) {
+  const muted = track ? !!track.muted : !!clip.muted || !(clip.volume > 0);
+  const volume = muted ? 0 : track ? track.volume : +(clip.volume ?? 1).toFixed(3);
+  return {
+    slide: n, clicks: k, file: null, plate: null, embed: true,
+    clip: { src: named(clip.src), recorded: false, embed: true, duration: clip.duration ?? null, loop: !!clip.loop, muted, volume },
+    at: s?.at ?? null, station: s?.station ?? null,
+  };
+}
+
+const EMBED_SAMPLE = 15;     // looks, 100 ms apart: the player lifts a clip's sound in over 600 ms
 
 const pad = (n) => String(n).padStart(2, '0');
 const snap = (cdp) => cdp.send('Page.captureScreenshot', { format: 'png', optimizeForSpeed: true }).then((r) => Buffer.from(r.data, 'base64'));
@@ -277,6 +305,18 @@ async function recordSegment({ page, cdp }, n, k, o, ff, enc, plateEnc, named) {
       last = s;
       clip = s.clips.find((c) => c.src) || clip;
       sound = trackClip(sound, i, o.fps, s.clips.find((c) => c.src));
+      // --skip-clips: the clip is the slide's picture; named, not filmed (from another origin too)
+      if (o.skipClips && !opened && clip) {
+        let track = sound, c = clip;
+        for (let j = 1; j <= EMBED_SAMPLE; j++) {
+          await page.clock.fastForward(100);
+          const t = await look(page, n);
+          if (t.seeking) await seeked(page);
+          c = t.clips.find((x) => x.src) || c;
+          track = trackClip(track, j, 10, t.clips.find((x) => x.src));
+        }
+        return embedEntry(n, k, { ...c, src: clip.src }, track, named, s);
+      }
       // a clip this browser cannot decode, or one from another origin, cannot be
       // stepped: hand the editor the source instead
       const undecodable = s.clips.find((c) => c.src && !c.decodable);
@@ -406,17 +446,20 @@ export async function record(o, log = console.log) {
           if (seg.skipped) seg.clip.src = named(seg.clip.src);
           // the arrival begins on the last frame of these
           if (k === 0 && ended.length) seg.from = { slide: from, clipsEnded: ended.map((c) => named(c.src)) };
-          if (!seg.skipped) {
+          if (seg.embed) log(`${pad(n)}${k ? `-c${k}` : ''}  the clip, not filmed (--skip-clips): ${seg.clip.src}, ${seg.clip.duration?.toFixed?.(2) ?? '?'} s${seg.clip.muted ? ', muted' : `, volume ${seg.clip.volume}`}`);
+          else if (!seg.skipped) {
             if (o.flash) {
               const small = await decodeSmall(ff, join(o.out, seg.file || seg.plate));
               const { transitions, warnings } = findFlashes(small, { w: 48, h: 27, fps: o.fps });
               seg.flash = { transitions: transitions.length, warnings };
             }
-            frames += seg.frames; wall += (Date.now() - t0) / 1000;
+            frames += seg.frames ?? 0; wall += (Date.now() - t0) / 1000;
             log(`${seg.file || seg.plate}  ${seg.frames} frames  ${seg.seconds} s  settled at ${seg.settle ?? '-'} s${seg.capped ? ' (capped by --max)' : ''}  ${seg.secondsPerFrame} s/frame${seg.flash?.warnings.length ? `  FLASH: ${seg.flash.warnings.map((w) => `${w.flashes}/s at ${w.t} s`).join(', ')}` : ''}${seg.warnings ? `\n  ${seg.warnings.join('\n  ')}` : ''}`);
           } else log(`${pad(n)}${k ? `-c${k}` : ''}  skipped: ${seg.note} (${seg.clip.src})`);
           report.segments.push(seg);
           await save();
+          // the clip covers the slide's clicks too
+          if (seg.embed) break;
         }
       } finally {
         await deck.context.close();
@@ -428,7 +471,8 @@ export async function record(o, log = console.log) {
   }
   // where each file falls in a straight cut of them all, in order
   let at = 0;
-  for (const s of report.segments) if (!s.skipped) { s.start = +at.toFixed(3); at += s.seconds; }
+  for (const s of report.segments) if (!s.skipped && s.file) { s.start = +at.toFixed(3); at += s.seconds; }
+  report.skipClips = o.skipClips;
   report.secondsPerFrame = frames ? +(wall / frames).toFixed(3) : null;
   report.errors = [...new Set(errors)].slice(0, 20);
   report.missing = [...new Set(misses)].slice(0, 20);
@@ -445,8 +489,9 @@ export async function main(argv = process.argv.slice(2)) {
   try { r = await record(o); } catch (e) { console.error(e.message || e); return 1; }
   if (r.errors.length) console.log(`\npage errors:\n  ${r.errors.join('\n  ')}`);
   if (r.missing.length) console.log(`\nnot in the dist: ${r.missing.join(', ')}`);
-  const done = r.segments.filter((s) => !s.skipped);
-  console.log(`\n${done.length} file(s), ${r.segments.length - done.length} skipped, ${r.secondsPerFrame ?? '-'} s a frame on ${r.backend}, in ${o.out} (index.json)`);
+  const done = r.segments.filter((s) => !s.skipped && s.file);
+  const named = r.segments.filter((s) => s.embed).length;
+  console.log(`\n${done.length} file(s), ${r.segments.filter((s) => s.skipped).length} skipped,${named ? ` ${named} clip slide(s) left to the clip,` : ''} ${r.secondsPerFrame ?? '-'} s a frame on ${r.backend}, in ${o.out} (index.json)`);
   if (r.warning) console.error(r.warning);
   // nothing recorded and nothing to cut in: none of the slides asked for is in the deck
   if (!r.segments.length) { console.error('no slide recorded: the deck has none of --slides'); return 1; }
