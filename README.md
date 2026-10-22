@@ -434,6 +434,27 @@ the deck; a clip found nowhere leaves the slide silent, with a warning.
 **The stage's own sounds — the hum, a `Soundtrack`, the flight — are not in
 the takes and not in the PPTX.**
 
+**A clip slide left to its clip.** A recorder run with `--skip-clips` does
+not film a clip slide (frame by frame through the browser, a 4-minute clip
+at 50 fps took 53 minutes); its segment names the clip (`embed`), and `pptx`
+puts the clip file itself on that slide, the slide as long as the clip. The
+file is looked for as a clip's sound is (the build, `--clips`, `public/videos/`
+beside the deck; `slidev-videos pull --include-shared` first), else
+downloaded from its URL (the talk's release). It goes in as it is where
+PowerPoint plays it so (H.264 4:2:0, 16:9, within `--cap`, the `--size`
+asked for; AAC kept), else it is encoded on the profile, cover-cropped to
+16:9 as the player fills the frame; cut where the player started it (a
+dust sheet seeks past a black opening), which also makes an encode; its
+sound at the player's `volume`, none when `muted` (a clip the recorder did
+not hear play, autoplay off, goes by its `<VideoPlayer>` tag in the deck:
+`muted`, `:volume`, else `videos.volume`); all the slide's notes, its
+clicks' parts too. A looping clip plays once and holds its last frame.
+What the slide shows over or after its clip — a `ClipEnd`
+line, an `exit="push"`, `AfterFlight` stats — is not in it (a filmed take
+ends on the clip too). `--json` lists them under `embedded` (`slide`, `clip`,
+`from` local or url, `video` and `audio` copy or encode, `sound_from`
+recorder or deck, `seconds`, `why`).
+
 A segment the recorder skipped (a clip from another origin) stops the build:
 pull the clips (`slidev-videos pull --include-shared`), build local-first and
 record again, or pass `--allow-skips` for a black slide naming the clip.
@@ -443,7 +464,7 @@ PowerPoint's "Automatically" (`after`), should a PowerPoint stop the video on
 the click instead of moving on. Exit 0 with the file written, 1 on a skip or
 an ffmpeg failure, 2 on a usage error (no `index.json`, no python-pptx: the
 `pptx` extra). `--json`: `{slides, segments, bytes, seconds, skipped,
-profile, encoder, cap, sound, warnings, out}`.
+profile, encoder, cap, sound, embedded, warnings, out}`.
 
 ## New course, three steps
 

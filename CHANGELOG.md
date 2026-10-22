@@ -8,9 +8,9 @@ on its own). A deck pins both addons and the CLI to the same tag.
 
 slidev-videos 0.10.0 · slidev-addon-stage 0.7.0 · slidev-addon-videos 0.10.0
 
-v0.8.2 (the live fallback) and v0.8.3 (the PPTX) on top of v0.9.0: both
-lines merged as they are, their entries below. The tag waits on v0.8.3's
-PowerPoint check, as v0.8.3's does.
+v0.8.2 (the live fallback), v0.8.3 (the PPTX) and v0.8.4 (a clip slide is
+its clip in the PPTX) on top of v0.9.0: the v0.8.x line merged as it is, its
+entries below. The tag waits on the owner's word.
 
 **A v0.9.0 deck behaves as under v0.9.0 while its world runs**, with v0.8.2's
 one exception (no `advance-on-end` within half a second of a press); without
@@ -35,9 +35,10 @@ a world it behaves as v0.8.2 says, and a v0.8.2 deck as under v0.8.2.
   fallback. The plate's text-free pass hides `.slidev-layout`, so a hand-over
   slide's plate holds its grains and not its still or word. `deck.py` reads
   the lhcb example deck as Slidev numbers it.
-- **Tests:** stage 145 → 148 (v0.8.3's plateStep for the back-step; the hand-over's rule over every layer and
-  plate state, the component's wiring; it joins the compile check); Python
-  183 → 184, and `test_shared_registry` counts the 44 clips v0.9.0's
+- **Tests:** stage 145 → 149 (v0.8.3's plateStep for the back-step, v0.8.4's
+  `--skip-clips`; the hand-over's rule over every layer and plate state, the
+  component's wiring; it joins the compile check); Python 183 → 192 (v0.8.4's
+  embedded clips), and `test_shared_registry` counts the 44 clips v0.9.0's
   `lis_flag.mp4` made (main had failed on 43 since v0.9.0); root 11.
 
 ## v0.9.0 — 2026-10-20
@@ -137,7 +138,46 @@ others after their dates.
 `funnel.js`, `takeover.js` (beyond its sampling), `view.js`, `strands.js`,
 `plots.js`, and `components/lhc-opening`. These follow after 26 Oct.
 
-## v0.8.3 — unreleased
+## v0.8.4 — unreleased
+
+slidev-videos 0.8.4 · slidev-addon-stage 0.5.4 · slidev-addon-videos 0.8.4
+
+**A clip slide is the clip itself in the PPTX**, on the v0.8.x line (the
+talks pinned there); the same change goes to `main` with v0.10.0. No deck
+behaves differently: the recorder gains a flag, `pptx` a kind of segment.
+
+- **`slidev-stage-record --skip-clips`**: a clip slide is not filmed. Frame
+  by frame through the browser, Innoday's 4-minute opener took 53 minutes
+  at 50 fps. A clip slide is a `VideoPlayer`'s (a bare `<video>` beside text
+  is still filmed). Its segment has no file and names the clip (`embed:
+  true`; `src`, `duration`, `loop`, and `muted`, `volume` and `start` as the
+  player played it over its first 0.7 s, sampled for up to 6 s, past a dust
+  sheet's 1.9 s and the 600 ms sound ramp; `null` sound when it did not
+  play there, autoplay off), and the rest of that slide's clicks go with
+  it. The next slide still arrives over the clip's last frame (its
+  take opens on this slide with the clip run to its end), from another
+  origin too; a cross-origin clip slide is named the same way, not skipped.
+- **`slidev-videos pptx` embeds the clip file** for such a segment: from the
+  build, `--clips` or `public/videos/`, else downloaded from its URL (the
+  release). As it is where PowerPoint plays it so (H.264 4:2:0, 16:9, within
+  `--cap`, AAC), else encoded on the profile and cover-cropped to 16:9 as the
+  player fills the frame; cut where the player started it (past a black
+  opening); the sound at the player's `volume`, none when `muted`, by the
+  deck's `<VideoPlayer>` tag when the recorder did not hear it; the slide
+  as long as the clip, with all its notes. A download is kept with
+  `--keep-encodes` and not fetched again. `--json` lists them under
+  `embedded`.
+- **Known limit:** what a clip slide shows over or after its clip — a
+  `ClipEnd` line (Innoday's 27), an `exit="push"` and `AfterFlight` stats
+  (Innoday's 8) — is not in the PPTX. A filmed take ended on the clip too,
+  so v0.8.3's PPTX did not have them either. A looping clip plays once and
+  holds its last frame; a clip with autoplay off starts on its own.
+- With outreach_talks' `talk pptx` (the recorder's `--skip-clips` by default,
+  the world at 25 fps), a 31-slide deck with six clip slides comes to an
+  estimated half hour (25 world takes at the 0.09 s a frame Innoday's take
+  measured on d3d12), where its slide 2 alone took 53 minutes.
+
+## v0.8.3 — 2026-10-22
 
 slidev-videos 0.8.3 · slidev-addon-stage 0.5.3 · slidev-addon-videos 0.8.3
 

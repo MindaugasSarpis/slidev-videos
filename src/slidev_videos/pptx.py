@@ -23,6 +23,15 @@ the clip in the deck's build (or `--clips`, or `public/videos/` beside the
 deck) at the web tier's level (-16 LUFS), AAC, no loudnorm. The world's own
 sounds (the hum, a Soundtrack) are not in the takes, and not in the PPTX.
 
+A clip slide the recorder left to its clip (`slidev-stage-record
+--skip-clips`: an `embed` segment, no take) gets the clip file itself, from
+the deck's build or `public/videos/` (or `--clips`), else downloaded from its
+URL (the release): as it is where PowerPoint plays it so (H.264, 4:2:0, 16:9,
+within the cap, AAC), else encoded on the profile (cover-cropped to 16:9, as
+the player fills the frame); its sound as the player played it (`volume`,
+`muted`), the slide as long as the clip. A clip slide's ClipEnd line, exit push
+or AfterFlight is not in it (nor in a filmed take, which ends on the clip).
+
 A segment the recorder skipped (a clip from another origin, or one the
 browser could not decode) stops the build, unless --allow-skips: then a black
 slide names the clip. Exit 0 on a file written, 1 on a skip or an ffmpeg
@@ -78,6 +87,170 @@ def _double(rate: str) -> str:
     if not m:
         raise ValueError(f"--cap wants a rate such as 6M or 4500k (got {rate})")
     return f"{_num(float(m.group(1)) * 2)}{m.group(2)}"
+
+
+def cap_bps(rate: str) -> int:
+    """A rate such as 6M or 4500k in bits a second."""
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)([kKmM]?)", rate)
+    if not m:
+        raise ValueError(f"--cap wants a rate such as 6M or 4500k (got {rate})")
+    return round(float(m.group(1)) * {"": 1, "k": 1e3, "m": 1e6}[m.group(2).lower()])
+
+
+def clip_plan(info: dict, *, profile: str, cap: str | None, size: tuple[int, int] | None,
+              muted: bool, volume: float, start: float = 0) -> dict:
+    """How an embedded clip goes into the PPTX, each stream: `copy` where
+    PowerPoint plays it as it is (H.264 4:2:0, 16:9, within the cap, the size
+    asked for; any clip under --profile copy), else `encode`; the sound `none`
+    (muted, silent, or no sound), `volume` (the player's quieter level),
+    `copy` (AAC) or `encode`. `why` names what made the video an encode. A
+    clip the player started past its opening (`start`: a dust sheet seeks to
+    the first lit frame) is cut there, so encoded."""
+    why = []
+    if start and start > 0.05:
+        why.append(f"starts at {_num(start)} s, where the player starts it")
+    if PROFILES[profile] is not None:
+        w, h, br = info.get("width"), info.get("height"), info.get("bit_rate")
+        if info.get("vcodec") != "h264":
+            why.append(f"{info.get('vcodec')}, not H.264")
+        if info.get("pix_fmt") not in ("yuv420p", "yuvj420p"):
+            why.append(f"{info.get('pix_fmt')}, not 4:2:0")
+        if br and cap and br > cap_bps(cap):
+            why.append(f"{br / 1e6:.1f} Mbit/s, over the cap {cap}")
+        if w and h and abs(w / h - 16 / 9) > 0.01:
+            why.append(f"{w}x{h}, not 16:9")
+        if size and (w, h) != tuple(size):
+            why.append(f"{w}x{h}, not {size[0]}x{size[1]}")
+    if muted or not (volume or 0) > 0 or not info.get("acodec"):
+        audio = "none"
+    elif volume < 1:
+        audio = "volume"
+    else:
+        audio = "copy" if info.get("acodec") == "aac" else "encode"
+    return {"video": "encode" if why else "copy", "audio": audio, "why": why}
+
+
+def _cover(info: dict, size: tuple[int, int] | None) -> tuple[int, int] | None:
+    """The frame an encoded clip is cover-cropped to: --size, else 16:9 at the
+    clip's width when it is not 16:9; None to keep it."""
+    if size:
+        return size
+    w, h = info.get("width"), info.get("height")
+    if w and h and abs(w / h - 16 / 9) > 0.01:
+        w += w % 2           # 4:2:0 wants even sides
+        return w, round(w * 9 / 16 / 2) * 2
+    return None
+
+
+def embed_args(ffmpeg: str, clip: Path, out: Path, plan: dict, *, codec: str, profile: str, info: dict,
+               cap: str | None = None, size: tuple[int, int] | None = None, volume: float = 1,
+               start: float = 0) -> list[str]:
+    """The ffmpeg command line that puts a clip slide's clip into the PPTX (clip_plan's plan),
+    from `start` on (the player's first frame); the video stream never an attached cover picture."""
+    args = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y"]
+    if start and start > 0.05:
+        args += ["-ss", _num(start)]
+    args += ["-i", str(clip), "-map", "0:V:0"]
+    prof = PROFILES[profile]
+    if plan["video"] == "copy" or prof is None:
+        args += ["-c:v", "copy"]
+    else:
+        rate = cap or prof["cap"]
+        args += ["-c:v", codec, *prof[codec], "-maxrate", rate, "-bufsize", _double(rate),
+                 "-profile:v", "high", "-pix_fmt", "yuv420p", "-g", str(round(info.get("fps") or 25))]
+        target = _cover(info, size)
+        if target:
+            tw, th = target
+            args += ["-vf", f"scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th}"]
+    if plan["audio"] == "none":
+        args += ["-an"]
+    elif plan["audio"] == "copy":
+        args += ["-map", "0:a:0", "-c:a", "copy"]
+    else:
+        args += ["-map", "0:a:0", *(["-af", f"volume={_num(volume)}"] if plan["audio"] == "volume" else []),
+                 "-c:a", "aac", "-b:a", "192k"]
+    return args + ["-movflags", "+faststart", str(out)]
+
+
+def probe_clip(ffprobe: str, f: Path) -> dict:
+    """What clip_plan reads of a clip: its video codec, pixel format, size, rate
+    (the video stream's, else the file's), sound codec, length, frame rate."""
+    r = subprocess.run([ffprobe, "-v", "error", "-show_entries",
+                        "stream=codec_type,codec_name,pix_fmt,width,height,bit_rate,avg_frame_rate:"
+                        "stream_disposition=attached_pic:format=duration,bit_rate",
+                        "-of", "json", str(f)], capture_output=True, text=True)
+    try:
+        data = json.loads(r.stdout or "{}")
+    except ValueError:
+        data = {}
+    streams = data.get("streams") or []
+    v = next((x for x in streams if x.get("codec_type") == "video"
+              and not (x.get("disposition") or {}).get("attached_pic")), {})
+    a = next((x for x in streams if x.get("codec_type") == "audio"), {})
+    fmt = data.get("format") or {}
+
+    def num(x):
+        try:
+            return float(x)
+        except (TypeError, ValueError):
+            return None
+    n, _, d = str(v.get("avg_frame_rate") or "").partition("/")
+    fps = num(n) / num(d) if num(n) and num(d) else None
+    br = num(v.get("bit_rate")) or num(fmt.get("bit_rate"))
+    return {"vcodec": v.get("codec_name"), "pix_fmt": v.get("pix_fmt"), "width": v.get("width"), "height": v.get("height"),
+            "bit_rate": round(br) if br else None, "acodec": a.get("codec_name"), "duration": num(fmt.get("duration")), "fps": fps}
+
+
+def fetch_clip(url: str, into: Path) -> tuple[Path | None, str | None]:
+    """A clip not on disk, downloaded from its URL (the talk's release) into `into`, by a hash of
+    the URL (two clips of one name from two releases stay apart), and kept there: a download
+    already made is not fetched again → (the file, None) or (None, why)."""
+    import hashlib
+    import urllib.request
+    into.mkdir(parents=True, exist_ok=True)
+    name = Path(url.split("?")[0].split("#")[0]).name or "clip.mp4"
+    out = into / f"{hashlib.sha1(url.encode()).hexdigest()[:10]}-{name}"
+    if out.is_file():
+        return out, None
+    part = out.with_name(out.name + ".part")
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "slidev-videos"})
+        with urllib.request.urlopen(req, timeout=60) as r, open(part, "wb") as f:
+            shutil.copyfileobj(r, f, 1 << 20)
+    except Exception as e:  # noqa: BLE001 — any failure is the same: no clip
+        part.unlink(missing_ok=True)
+        return None, str(e)
+    os.replace(part, out)
+    return out, None
+
+
+_PLAYER = re.compile(r"<VideoPlayer\b([^>]*?)/?>", re.S)
+
+
+def deck_sound(content: str, headmatter: str = "") -> tuple[bool, float]:
+    """(muted, volume) as the deck's own <VideoPlayer> tag on a slide says it plays: `muted`,
+    `:volume` / `volume`, else the headmatter's `videos.volume`, else 1. For a clip the recorder
+    did not hear (autoplay off: the player holds every clip muted until it plays)."""
+    m = _PLAYER.search(content or "")
+    attrs = m.group(1) if m else ""
+    if re.search(r"(?<![:\w-])muted(?![\w-])(?!\s*=\s*[\"']false)", attrs) or re.search(r":muted\s*=\s*[\"']true", attrs):
+        return True, 0
+    v = re.search(r"(?<![\w-]):?volume\s*=\s*[\"']\s*([\d.]+)\s*[\"']", attrs)
+    if v is None:
+        block = re.search(r"^videos:\s*\n((?:[ \t]+.*\n?)*)", headmatter or "", re.M)
+        v = re.search(r"^[ \t]+volume:\s*([\d.]+)", block.group(1), re.M) if block else None
+    try:
+        return False, float(v.group(1)) if v else 1.0
+    except ValueError:
+        return False, 1.0
+
+
+def embed_notes(notes: dict[int, str], slide: int) -> str:
+    """An embedded clip slide's notes: all of them, its clicks' parts too (the clip covers its clicks)."""
+    raw = notes.get(slide, "")
+    if _deck._CLICK.search(raw):
+        return "\n\n".join(t for t in _deck.split_clicks(raw).values() if t)
+    return _deck.notes_text(raw)
 
 
 def audible(sound: dict | None) -> bool:
@@ -309,6 +482,9 @@ def cmd_pptx(args: argparse.Namespace) -> int:
         print(f"error: no deck {deck_path}", file=sys.stderr)
         return 2
     notes = _deck.notes_by_slide(deck_path) if deck_path else {}
+    parsed = _deck.parse(deck_path) if deck_path else []
+    head = parsed[0].frontmatter if parsed else ""
+    slides = {x.number: (x.content, head) for x in parsed if x.number is not None}
     if not deck_path:
         print("  ! no deck (--deck): the slides go without notes", file=sys.stderr)
     clicks = {}
@@ -327,16 +503,25 @@ def cmd_pptx(args: argparse.Namespace) -> int:
     if deck_path:
         dirs.append(deck_path.parent / "public" / "videos")
     cap = None if PROFILES[args.profile] is None else (args.cap or PROFILES[args.profile]["cap"])
-    report.update(encoder=codec, cap=cap, sound=[], warnings=[])
+    report.update(encoder=codec, cap=cap, sound=[], embedded=[], warnings=[])
     enc_dir = out.parent / (out.stem + ".enc")
     enc_dir.mkdir(parents=True, exist_ok=True)
 
     built = []           # (segment, encoded mp4, poster) or (segment, None, None) for a skip
+    loud = set()         # the files that carry sound (the player's level in the slide show)
     print(f"{len(segs)} segment(s) from {rec} -> {out}  ({args.profile}, {codec}{f', cap {cap}' if cap else ''})")
     for s in segs:
         if s.get("skipped"):
             built.append((s, None, None))
             print(f"  {_label(s)}: skipped, a black slide naming {(s.get('clip') or {}).get('src')}")
+            continue
+        if s.get("embed"):
+            got = _embed(s, args, ffmpeg, ffprobe, codec, cap, size, dist, dirs, enc_dir, report, slides)
+            if got is None:
+                return 1
+            built.append(got)
+            if got[0]["audio"]:
+                loud.add(got[0]["file"])
             continue
         take = rec / s["file"]
         if not take.is_file():
@@ -356,6 +541,7 @@ def cmd_pptx(args: argparse.Namespace) -> int:
                 clip, say = None, f"silent ({Path(src).name} has no sound)"
             else:
                 say = f"with {Path(src).name}'s sound from {sound['start']:.2f} s"
+                loud.add(s["file"])
                 report["sound"].append({"file": s["file"], "clip": src, "start": sound["start"]})
         enc = enc_dir / s["file"]
         poster = enc.with_suffix(".jpg")
@@ -387,12 +573,13 @@ def cmd_pptx(args: argparse.Namespace) -> int:
             pic = slide.shapes.add_movie(str(enc), 0, 0, W, H, poster_frame_image=str(poster), mime_type="video/mp4")
             sld = slide._element
             old = sld.find(qn("p:timing"))
-            vol = 100000 if any(x["file"] == s["file"] for x in report["sound"]) else 80000
+            vol = 100000 if s["file"] in loud else 80000
             new = parse_xml(autoplay_timing(pic.shape_id, round(s["seconds"] * 1000), args.autoplay, vol))
             old.addprevious(new)
             sld.remove(old)
         k = s.get("clicks") or 0
-        text = _deck.notes_for(notes, s["slide"], k, clicks.get(s["slide"], 0))
+        text = (embed_notes(notes, s["slide"]) if s.get("embed")
+                else _deck.notes_for(notes, s["slide"], k, clicks.get(s["slide"], 0)))
         if text:
             slide.notes_slide.notes_text_frame.text = _XML_BAD.sub("", text)
     _hide_media_controls(prs)
@@ -406,6 +593,68 @@ def cmd_pptx(args: argparse.Namespace) -> int:
     print(f"{out}: {len(built)} slide(s), {seconds} s of video, {pipeline.human_size(out.stat().st_size)}"
           f"{f', {len(skipped)} skipped' if skipped else ''}; open it in PowerPoint and check the first slide plays on its own")
     return 0
+
+
+def _embed(s: dict, args, ffmpeg: str, ffprobe: str, codec: str, cap: str | None, size, dist: Path | None,
+           dirs: list[Path], enc_dir: Path, report: dict, slides: dict | None = None) -> tuple[dict, Path, Path] | None:
+    """A clip slide left to its clip: the clip found (or downloaded), put in as
+    it is or encoded (clip_plan), its poster → (the segment as built, the mp4,
+    the poster), or None on a failure (said)."""
+    c = s.get("clip") or {}
+    src = c.get("src") or ""
+    name = f"{s['slide']:02d}" + (f"-c{s['clicks']}" if s.get("clicks") else "") + ".mp4"
+    clip, origin, why = find_clip(src, dist, dirs), "local", None
+    if clip is None and re.match(r"https?://", src):
+        clip, why = fetch_clip(src, enc_dir / "clips")
+        origin = "url"
+    if clip is None:
+        print(f"error: {_label(s)}: the clip {src} is not in the build nor in {', '.join(map(str, dirs)) or '--clips'}"
+              f"{f', and its URL failed ({why})' if why else ''}; pull the clips (slidev-videos pull --include-shared)",
+              file=sys.stderr)
+        return None
+    info = probe_clip(ffprobe, clip)
+    if not info.get("duration") or not info.get("vcodec"):
+        print(f"error: {_label(s)}: ffprobe reads no video in {clip}", file=sys.stderr)
+        return None
+    if c.get("muted") is None:          # not heard in the recorder's sample: the deck's tag says
+        content, head = (slides or {}).get(s["slide"], ("", ""))
+        muted, volume = deck_sound(content, head)
+        heard = "deck"
+    else:
+        muted = bool(c.get("muted"))
+        volume = c.get("volume") if isinstance(c.get("volume"), (int, float)) else 1
+        heard = "recorder"
+    start = c.get("start") if isinstance(c.get("start"), (int, float)) else 0
+    plan = clip_plan(info, profile=args.profile, cap=cap, size=size, muted=muted, volume=volume, start=start)
+    enc = enc_dir / name
+    poster = enc.with_suffix(".jpg")
+    argv = embed_args(ffmpeg, clip, enc, plan, codec=codec, profile=args.profile, info=info, cap=cap, size=size,
+                      volume=volume, start=start)
+    sig = json.dumps([argv, clip.stat().st_mtime_ns, clip.stat().st_size])
+    stamp = enc.with_suffix(".args")
+    say = ""
+    if not (enc.is_file() and poster.is_file() and stamp.is_file() and stamp.read_text() == sig):
+        err = _run(argv) or _run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", str(enc),
+                                  "-frames:v", "1", "-q:v", "3", str(poster)])
+        if err:
+            print(f"error: ffmpeg on {clip.name}: {err}", file=sys.stderr)
+            return None
+        stamp.write_text(sig)
+    else:
+        say = ", encoded before"
+    seconds = round(probe_clip(ffprobe, enc).get("duration") or info["duration"], 3)
+    done = {**s, "file": name, "seconds": seconds, "audio": plan["audio"] != "none"}
+    report["embedded"].append({"slide": s["slide"], "clicks": s.get("clicks") or 0, "clip": src, "from": origin,
+                               "video": plan["video"], "audio": plan["audio"], "sound_from": heard, "seconds": seconds,
+                               **({"why": plan["why"]} if plan["why"] else {})})
+    print(f"  {name:<12} {_label(s)}  {seconds} s  {pipeline_size(enc)}  the clip {Path(src).name} ({origin}): "
+          f"video {plan['video']}{' (' + '; '.join(plan['why']) + ')' if plan['why'] else ''}, sound {plan['audio']}{say}")
+    return done, enc, poster
+
+
+def pipeline_size(f: Path) -> str:
+    from . import pipeline
+    return pipeline.human_size(f.stat().st_size)
 
 
 def add_parser(sub, parents=()) -> None:
