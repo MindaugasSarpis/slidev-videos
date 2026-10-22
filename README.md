@@ -253,7 +253,9 @@ Other addons can follow along on `window`: `slidev-videos:transition`
 `{ phase: 'enter' | 'leave', mode, src, duration, color }` and
 `slidev-videos:cover` `{ covered, src, fit }`. `color` is the mean colour of
 the frame a leaving `dust` clip broke up from (`[r, g, b]`, weighted toward
-its lit and coloured parts); the stage tints its dust with it.
+its lit and coloured parts); the stage tints its dust with it. A clip
+covers its slide (`covered: true`) once it is shown and loaded, whatever its
+`transition`, and gives it back when the slide is left.
 
 **Overview, previews and print.** In Slidev's overview grid (`o`), the
 presenter's next-slide preview, print and PDF export the player renders the

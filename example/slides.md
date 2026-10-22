@@ -67,3 +67,21 @@ hideInToc: true
 
 <!-- five seconds of black, then picture: its sheet is made of the first lit
      frame (the tile at 8 s) and the clip plays from there -->
+
+---
+hideInToc: true
+---
+
+<VideoPlayer src="clip_dust.webm" />
+
+<!-- a cut clip (the default transition): it covers its slide once loaded, so
+     slidev-addon-stage rests its world under it, as under a fade or dust clip -->
+
+---
+hideInToc: true
+---
+
+<VideoPlayer src="clip_dust.webm" />
+
+<!-- and a cut clip right after it: stepping between the two, the slide stays
+     covered -->
