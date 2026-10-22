@@ -13,7 +13,7 @@ quarks, clusters, particle names — is a plugin.
 
 ## Install
 
-    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.8.2&path:/packages/stage"
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.8.3&path:/packages/stage"
 
 ## Use
 

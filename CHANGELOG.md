@@ -4,7 +4,7 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
-## v0.8.3 — unreleased
+## v0.8.3 — 2026-10-22
 
 slidev-videos 0.8.3 · slidev-addon-stage 0.5.3 · slidev-addon-videos 0.8.3
 
