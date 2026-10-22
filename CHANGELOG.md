@@ -9,8 +9,8 @@ on its own). A deck pins both addons and the CLI to the same tag.
 slidev-videos 0.10.0 · slidev-addon-stage 0.7.0 · slidev-addon-videos 0.10.0
 
 v0.8.2 (the live fallback), v0.8.3 (the PPTX) and v0.8.4 (a clip slide is
-its clip in the PPTX) on top of v0.9.0: the v0.8.x line merged as it is, its
-entries below. The tag waits on the owner's word.
+its clip in the PPTX; a `cut` clip rests the world under it) on top of
+v0.9.0: the v0.8.x line merged as it is, its entries below. The tag waits on the owner's word.
 
 **A v0.9.0 deck behaves as under v0.9.0 while its world runs**, with v0.8.2's
 one exception (no `advance-on-end` within half a second of a press); without
