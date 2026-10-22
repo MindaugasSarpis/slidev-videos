@@ -191,6 +191,10 @@ test('--skip-clips leaves a clip slide to the clip itself', () => {
   assert.match(rec, /o\.skipClips && !opened && clip && clip\.player/);
   assert.match(rec, /const EMBED_WAIT = 6000/);
   assert.match(rec, /const EMBED_PLAYED = 0\.7/);
+  // the clip's start is where it rested just before it played (the player seeks, then plays;
+  // the first look that sees it playing is up to 100 ms on: example clip_dark read 8.1, not 8.0)
+  assert.match(rec, /if \(x && !x\.playing\) rested = x\.t/);
+  assert.match(rec, /track\.t - rested <= 0\.15/);
   assert.match(rec, /if \(seg\.embed\) break/);
   assert.match(rec, /\[--skip-clips\]/);
   // a plate-only segment keeps its place in the cut (its file is the plate)
