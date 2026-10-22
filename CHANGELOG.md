@@ -14,23 +14,30 @@ behaves differently: the recorder gains a flag, `pptx` a kind of segment.
 
 - **`slidev-stage-record --skip-clips`**: a clip slide is not filmed. Frame
   by frame through the browser, Innoday's 4-minute opener took 53 minutes
-  at 50 fps. Its segment has no file and names the clip (`embed: true`;
-  `src`, `duration`, `loop`, and `muted` and `volume` as the player played
-  it over its first second and a half), and the rest of that slide's clicks
-  go with it. The next slide still arrives over the clip's last frame (its
+  at 50 fps. A clip slide is a `VideoPlayer`'s (a bare `<video>` beside text
+  is still filmed). Its segment has no file and names the clip (`embed:
+  true`; `src`, `duration`, `loop`, and `muted`, `volume` and `start` as the
+  player played it over its first 0.7 s, sampled for up to 6 s, past a dust
+  sheet's 1.9 s and the 600 ms sound ramp; `null` sound when it did not
+  play there, autoplay off), and the rest of that slide's clicks go with
+  it. The next slide still arrives over the clip's last frame (its
   take opens on this slide with the clip run to its end), from another
   origin too; a cross-origin clip slide is named the same way, not skipped.
 - **`slidev-videos pptx` embeds the clip file** for such a segment: from the
   build, `--clips` or `public/videos/`, else downloaded from its URL (the
   release). As it is where PowerPoint plays it so (H.264 4:2:0, 16:9, within
   `--cap`, AAC), else encoded on the profile and cover-cropped to 16:9 as the
-  player fills the frame; the sound at the player's `volume`, none when
-  `muted`; the slide as long as the clip. `--json` lists them under
+  player fills the frame; cut where the player started it (past a black
+  opening); the sound at the player's `volume`, none when `muted`, by the
+  deck's `<VideoPlayer>` tag when the recorder did not hear it; the slide
+  as long as the clip, with all its notes. A download is kept with
+  `--keep-encodes` and not fetched again. `--json` lists them under
   `embedded`.
 - **Known limit:** what a clip slide shows over or after its clip — a
   `ClipEnd` line (Innoday's 27), an `exit="push"` and `AfterFlight` stats
   (Innoday's 8) — is not in the PPTX. A filmed take ended on the clip too,
-  so v0.8.3's PPTX did not have them either.
+  so v0.8.3's PPTX did not have them either. A looping clip plays once and
+  holds its last frame; a clip with autoplay off starts on its own.
 - With outreach_talks' `talk pptx` (the recorder's `--skip-clips` by default,
   the world at 25 fps), a 31-slide deck with six clip slides comes to an
   estimated half hour (25 world takes at the 0.09 s a frame Innoday's take

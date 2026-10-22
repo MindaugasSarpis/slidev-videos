@@ -667,10 +667,13 @@ from the others by about a level after its first frame).
 | `NN-plate.mp4` | with `--plate`: the same frames as the world alone — without the slide's text, the halo, the stop HUD, the scrim, the paper grain or the videos addon's push overlay — for an editor's own type, and for the stage to play under the slide where the world cannot run ([When the world cannot run](#when-the-world-cannot-run)): it draws its scrim and grain over the plate as over the world, so neither is in the plate. `--plate-only` writes the plates alone, half the frames shot. A clip slide has no plate: the clip is the picture itself, and the edit list says so |
 | `index.json` | the edit list: each file's length, when it settled, where the camera stood, its frame hashes, the renderer, flash warnings, the clips it shows or could not record (a clip in the dist by its path there), and the clips ended before it arrived; `hold`, `plateFps` (the plates' rate, the same as `fps`; `null` without plates) and `plateOnly`, for whoever plays the plates. The takes are silent: a clip's `sound` says where it played in the take (`start` and `end` in the take's seconds, `t` the clip's own second at `start`, `muted`, the loudest `volume`, `loop`; `null` when it never played), for laying the source clip's sound back under it |
 
-`--skip-clips` does not film a clip slide: its segment in the edit list has
-no file and names the clip (`embed: true`; the clip's `src`, `duration`,
-`loop`, and `muted` and `volume` as the player played it over its first
-second and a half), and the rest of that slide's clicks go with it. For a
+`--skip-clips` does not film a clip slide (a `VideoPlayer`'s; a bare
+`<video>` beside text is filmed): its segment in the edit list has no file
+and names the clip (`embed: true`; the clip's `src`, `duration`, `loop`, and
+`muted`, `volume` and `start`, the clip's own second where the player started
+it, as it played over its first 0.7 s, sampled for up to 6 s past a dust
+sheet; `null` sound when it did not play there, autoplay off), and the rest
+of that slide's clicks go with it. For a
 PPTX, where the clip's own file is the picture: frame by frame, a 4-minute
 clip took 53 minutes at 50 fps. The next slide still arrives over the clip's
 last frame, its take opening on this slide with the clip run to its end,

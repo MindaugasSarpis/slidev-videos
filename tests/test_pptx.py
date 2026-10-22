@@ -119,12 +119,32 @@ def test_a_clip_powerpoint_plays_as_it_is_goes_in_as_it_is():
     assert plan({"bit_rate": None})["video"] == "copy"
     assert plan({"vcodec": "vp9", "bit_rate": 20_000_000}, profile="copy")["video"] == "copy"
     assert P.cap_bps("6M") == 6_000_000 and P.cap_bps("4500k") == 4_500_000
+    # the player started it past a black opening (a dust sheet's first lit frame): cut there, so encoded
+    assert plan(start=5.04)["video"] == "encode" and "5.04" in " ".join(plan(start=5.04)["why"])
+    assert plan(start=0.02)["video"] == "copy"
+
+
+def test_a_clip_that_never_played_in_the_sample_takes_its_sound_from_the_deck():
+    head = "theme: x\nvideos:\n  repo: o/r\n  volume: 0.8\n  transition: dust\n"
+    assert P.deck_sound('<VideoPlayer src="a.mp4" muted :controls="false" />', head) == (True, 0)
+    assert P.deck_sound('<VideoPlayer src="a.mp4" :volume="0.05" />', head) == (False, 0.05)
+    assert P.deck_sound('<VideoPlayer\n  src="a.mp4"\n  volume="0.3" />', "") == (False, 0.3)
+    assert P.deck_sound('<VideoPlayer src="a.mp4" />', head) == (False, 0.8)       # videos.volume
+    assert P.deck_sound('<VideoPlayer src="a.mp4" :muted="false" />', "") == (False, 1)
+    assert P.deck_sound("# no player", "") == (False, 1)
+
+
+def test_an_embedded_slide_carries_all_its_notes():
+    notes = {3: "Pradžia.\n[click] Antra dalis.\n[click] Trečia."}
+    assert P.embed_notes(notes, 3) == "Pradžia.\n\nAntra dalis.\n\nTrečia."
+    assert P.embed_notes({3: "Tik **tai**."}, 3) == "Tik tai."
+    assert P.embed_notes({}, 3) == ""
 
 
 def test_the_clip_command_copies_or_encodes_each_stream():
     cp = " ".join(P.embed_args("ffmpeg", Path("c.mp4"), Path("e.mp4"), {"video": "copy", "audio": "copy"},
                                codec="libx264", profile="pptx", info=CLIP))
-    assert "-i c.mp4" in cp and "-map 0:v:0 -c:v copy" in cp and "-map 0:a:0 -c:a copy" in cp
+    assert "-i c.mp4" in cp and "-map 0:V:0 -c:v copy" in cp and "-map 0:a:0 -c:a copy" in cp and "-ss" not in cp
     assert "-movflags +faststart" in cp and "-an" not in cp and "-vf" not in cp
     q = " ".join(P.embed_args("ffmpeg", Path("c.mp4"), Path("e.mp4"), {"video": "copy", "audio": "volume"},
                               codec="libx264", profile="pptx", info=CLIP, volume=0.05))
@@ -137,6 +157,14 @@ def test_the_clip_command_copies_or_encodes_each_stream():
     assert "-c:v libx264 -preset medium -crf 21" in e and "-maxrate 6M -bufsize 12M" in e and "-g 30" in e
     assert "scale=1440:810:force_original_aspect_ratio=increase,crop=1440:810" in e
     assert "-c:a aac" in e
+    # an odd width keeps 4:2:0 encodable
+    o = " ".join(P.embed_args("ffmpeg", Path("c.mp4"), Path("e.mp4"), {"video": "encode", "audio": "none"},
+                              codec="libx264", profile="pptx", info={**CLIP, "width": 641, "height": 480}))
+    assert "crop=642:362" in o
+    # cut where the player started it, both streams; the video stream never a cover picture
+    t = P.embed_args("ffmpeg", Path("c.mp4"), Path("e.mp4"), {"video": "encode", "audio": "copy"},
+                     codec="libx264", profile="pptx", info=CLIP, start=5.04)
+    assert t[t.index("-i") - 2:t.index("-i")] == ["-ss", "5.04"] and "0:V:0" in t
     s = " ".join(P.embed_args("ffmpeg", Path("c.mp4"), Path("e.mp4"), {"video": "encode", "audio": "none"},
                               codec="libx264", profile="pptx", info=CLIP, size=(1280, 720)))
     assert "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720" in s
@@ -166,6 +194,15 @@ Kalbėtojui. **Laba diena**, čia — pradžia.
 
 <!--
 Klipas su garsu: ąčęėįšųūž.
+-->
+
+---
+
+<VideoPlayer src="clip.mp4" muted />
+
+<!--
+Tylus klipas.
+[click] Po klipo.
 -->
 """
 
@@ -316,6 +353,22 @@ def test_a_clip_slide_left_to_the_clip_embeds_the_clip_itself(tmp_path, capsys):
 
 
 @needs_ffmpeg
+def test_a_clip_the_recorder_did_not_hear_goes_by_the_deck(tmp_path, capsys):
+    from slidev_videos import pipeline
+    rec, deck = _recording(tmp_path, embed={"muted": None, "volume": None, "start": 0.5})
+    out = tmp_path / "talk.pptx"
+    rc = pipeline.main(["pptx", str(rec), "--deck", str(deck), "--out", str(out), "--encoder", "x264", "--json"])
+    report = json.loads(capsys.readouterr().out)
+    assert rc == 0, report
+    em = report["embedded"][0]
+    assert (em["video"], em["audio"], em["sound_from"]) == ("encode", "none", "deck")     # the deck's tag says muted
+    assert 1.4 < em["seconds"] < 1.7                                                     # cut at 0.5 s
+    z = zipfile.ZipFile(out)
+    notes = z.read(_slide_media(z, 4)[1]).decode()
+    assert "Tylus klipas." in notes and "Po klipo." in notes and "[click]" not in notes
+
+
+@needs_ffmpeg
 def test_a_muted_or_odd_shaped_clip(tmp_path, capsys):
     from slidev_videos import pipeline
     rec, deck = _recording(tmp_path, embed={"muted": True, "volume": 0})
@@ -351,6 +404,15 @@ def test_a_clip_not_on_disk_comes_from_its_url_or_stops_the_build(tmp_path, caps
         assert rc == 0, report
         assert report["embedded"][0]["clip"] == url and report["embedded"][0]["from"] == "url"
         assert 0.9 < report["embedded"][0]["seconds"] < 1.2
+        # kept with the encodes, the download is not fetched again: a second run needs no server
+        assert pipeline.main(["pptx", str(rec), "--deck", str(deck), "--out", str(out), "--encoder", "x264",
+                              "--keep-encodes"]) == 0
+        capsys.readouterr()
+        srv.shutdown()
+        srv.server_close()
+        assert pipeline.main(["pptx", str(rec), "--deck", str(deck), "--out", str(out), "--encoder", "x264",
+                              "--keep-encodes"]) == 0
+        assert "encoded before" in capsys.readouterr().out
         (tmp_path / "b").mkdir()
         rec2, _ = _recording(tmp_path / "b", embed={"src": url.replace("remote", "gone")})
         assert pipeline.main(["pptx", str(rec2), "--deck", str(deck), "--out", str(tmp_path / "b.pptx"), "--encoder", "x264"]) == 1

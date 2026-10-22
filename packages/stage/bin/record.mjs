@@ -58,9 +58,11 @@
 //             none (no WebGL) is refused here, from $SLIDEV_STAGE_GL as well:
 //             it would record the deck without its world
 //
-//   --skip-clips  a clip slide is not filmed: its segment names the clip
-//             (`embed`, no file) with how it plays (`duration`, `loop`, `muted`,
-//             `volume`, sampled over its first second and a half), for whoever
+//   --skip-clips  a clip slide (a VideoPlayer's) is not filmed: its segment
+//             names the clip (`embed`, no file) with how it plays (`duration`,
+//             `loop`, and `muted`, `volume` and `start` as the player played it
+//             over its first 0.7 s, within 6 s of the slide; null when it did
+//             not play there: autoplay off), for whoever
 //             cuts the takes to use the clip file itself (slidev-videos pptx);
 //             the rest of its clicks go with it. Frame by frame through the
 //             browser, a 4-minute clip at 50 fps took 53 minutes. The next
@@ -182,20 +184,25 @@ export function trackClip(track, i, fps, c) {
 export const clipEntry = (clip, track, named) => (clip ? { src: named(clip.src), recorded: true, sound: track } : null);
 
 // --skip-clips: the segment of a clip slide that was not filmed, naming its
-// clip and how it plays: the sound as the player played it over the sampled
-// second (`track`, trackClip's), else as the element stands (a clip that did
-// not start: autoplay off).
+// clip and how it plays, from the sampled window (`track`, trackClip's): the
+// sound as the player played it, and `start`, the clip's own second where the
+// player started it (a dust sheet seeks past a black opening). A clip that
+// did not play in the window (autoplay off) leaves its sound unknown (null):
+// the player holds every clip muted until it plays.
 export function embedEntry(n, k, clip, track, named, s) {
-  const muted = track ? !!track.muted : !!clip.muted || !(clip.volume > 0);
-  const volume = muted ? 0 : track ? track.volume : +(clip.volume ?? 1).toFixed(3);
+  const muted = track ? !!track.muted : null;
+  const volume = track ? (muted ? 0 : track.volume) : null;
   return {
     slide: n, clicks: k, file: null, plate: null, embed: true,
-    clip: { src: named(clip.src), recorded: false, embed: true, duration: clip.duration ?? null, loop: !!clip.loop, muted, volume },
+    clip: { src: named(clip.src), recorded: false, embed: true, duration: clip.duration ?? null, loop: !!clip.loop, muted, volume, start: track ? track.t : 0 },
     at: s?.at ?? null, station: s?.station ?? null,
   };
 }
 
-const EMBED_SAMPLE = 15;     // looks, 100 ms apart: the player lifts a clip's sound in over 600 ms
+// The sample of an embedded clip, 100 ms a look: until it has played past the
+// player's sound ramp (600 ms, after a dust sheet's 1.9 s), 6 s at most
+const EMBED_WAIT = 6000;
+const EMBED_PLAYED = 0.7;
 
 const pad = (n) => String(n).padStart(2, '0');
 const snap = (cdp) => cdp.send('Page.captureScreenshot', { format: 'png', optimizeForSpeed: true }).then((r) => Buffer.from(r.data, 'base64'));
@@ -306,9 +313,9 @@ async function recordSegment({ page, cdp }, n, k, o, ff, enc, plateEnc, named) {
       clip = s.clips.find((c) => c.src) || clip;
       sound = trackClip(sound, i, o.fps, s.clips.find((c) => c.src));
       // --skip-clips: the clip is the slide's picture; named, not filmed (from another origin too)
-      if (o.skipClips && !opened && clip) {
+      if (o.skipClips && !opened && clip && clip.player) {
         let track = sound, c = clip;
-        for (let j = 1; j <= EMBED_SAMPLE; j++) {
+        for (let j = 1; j <= EMBED_WAIT / 100 && !(track && track.end - track.start >= EMBED_PLAYED); j++) {
           await page.clock.fastForward(100);
           const t = await look(page, n);
           if (t.seeking) await seeked(page);
@@ -471,7 +478,7 @@ export async function record(o, log = console.log) {
   }
   // where each file falls in a straight cut of them all, in order
   let at = 0;
-  for (const s of report.segments) if (!s.skipped && s.file) { s.start = +at.toFixed(3); at += s.seconds; }
+  for (const s of report.segments) if (!s.skipped && (s.file || s.plate)) { s.start = +at.toFixed(3); at += s.seconds; }
   report.skipClips = o.skipClips;
   report.secondsPerFrame = frames ? +(wall / frames).toFixed(3) : null;
   report.errors = [...new Set(errors)].slice(0, 20);
@@ -489,7 +496,7 @@ export async function main(argv = process.argv.slice(2)) {
   try { r = await record(o); } catch (e) { console.error(e.message || e); return 1; }
   if (r.errors.length) console.log(`\npage errors:\n  ${r.errors.join('\n  ')}`);
   if (r.missing.length) console.log(`\nnot in the dist: ${r.missing.join(', ')}`);
-  const done = r.segments.filter((s) => !s.skipped && s.file);
+  const done = r.segments.filter((s) => !s.skipped && (s.file || s.plate));
   const named = r.segments.filter((s) => s.embed).length;
   console.log(`\n${done.length} file(s), ${r.segments.filter((s) => s.skipped).length} skipped,${named ? ` ${named} clip slide(s) left to the clip,` : ''} ${r.secondsPerFrame ?? '-'} s a frame on ${r.backend}, in ${o.out} (index.json)`);
   if (r.warning) console.error(r.warning);
