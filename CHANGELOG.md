@@ -4,6 +4,38 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## v0.8.4 — unreleased
+
+slidev-videos 0.8.4 · slidev-addon-stage 0.5.4 · slidev-addon-videos 0.8.4
+
+**A clip slide is the clip itself in the PPTX**, on the v0.8.x line (the
+talks pinned there); the same change goes to `main` with v0.10.0. No deck
+behaves differently: the recorder gains a flag, `pptx` a kind of segment.
+
+- **`slidev-stage-record --skip-clips`**: a clip slide is not filmed. Frame
+  by frame through the browser, Innoday's 4-minute opener took 53 minutes
+  at 50 fps. Its segment has no file and names the clip (`embed: true`;
+  `src`, `duration`, `loop`, and `muted` and `volume` as the player played
+  it over its first second and a half), and the rest of that slide's clicks
+  go with it. The next slide still arrives over the clip's last frame (its
+  take opens on this slide with the clip run to its end), from another
+  origin too; a cross-origin clip slide is named the same way, not skipped.
+- **`slidev-videos pptx` embeds the clip file** for such a segment: from the
+  build, `--clips` or `public/videos/`, else downloaded from its URL (the
+  release). As it is where PowerPoint plays it so (H.264 4:2:0, 16:9, within
+  `--cap`, AAC), else encoded on the profile and cover-cropped to 16:9 as the
+  player fills the frame; the sound at the player's `volume`, none when
+  `muted`; the slide as long as the clip. `--json` lists them under
+  `embedded`.
+- **Known limit:** what a clip slide shows over or after its clip — a
+  `ClipEnd` line (Innoday's 27), an `exit="push"` and `AfterFlight` stats
+  (Innoday's 8) — is not in the PPTX. A filmed take ended on the clip too,
+  so v0.8.3's PPTX did not have them either.
+- With outreach_talks' `talk pptx` (the recorder's `--skip-clips` by default,
+  the world at 25 fps), a 31-slide deck with six clip slides comes to an
+  estimated half hour (25 world takes at the 0.09 s a frame Innoday's take
+  measured on d3d12), where its slide 2 alone took 53 minutes.
+
 ## v0.8.3 — 2026-10-22
 
 slidev-videos 0.8.3 · slidev-addon-stage 0.5.3 · slidev-addon-videos 0.8.3

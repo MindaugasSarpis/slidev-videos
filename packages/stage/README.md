@@ -13,7 +13,7 @@ quarks, clusters, particle names — is a plugin.
 
 ## Install
 
-    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.8.3&path:/packages/stage"
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.8.4&path:/packages/stage"
 
 ## Use
 
@@ -641,7 +641,7 @@ unknown. The stop HUD needs the world and is not measured.
 
     slidev-stage-record <dist> <out-dir> [--fps 50] [--size 1920x1080] [--slides 2-5]
                         [--plate | --plate-only] [--hold 8] [--max 40] [--clicks all|none|'{"3":1}']
-                        [--base auto] [--seed 1] [--flash]
+                        [--base auto] [--seed 1] [--flash] [--skip-clips]
                         [--gl auto|gpu-nvidia|d3d12|llvmpipe|swiftshader|gl]
                         [--chromium path] [--encoder auto|nvenc|x264]
 
@@ -666,6 +666,17 @@ from the others by about a level after its first frame).
 | `NN-cK.mp4` | the same slide after its K-th click (a stop), for slides with clicks |
 | `NN-plate.mp4` | with `--plate`: the same frames as the world alone — without the slide's text, the halo, the stop HUD, the scrim, the paper grain or the videos addon's push overlay — for an editor's own type, and for the stage to play under the slide where the world cannot run ([When the world cannot run](#when-the-world-cannot-run)): it draws its scrim and grain over the plate as over the world, so neither is in the plate. `--plate-only` writes the plates alone, half the frames shot. A clip slide has no plate: the clip is the picture itself, and the edit list says so |
 | `index.json` | the edit list: each file's length, when it settled, where the camera stood, its frame hashes, the renderer, flash warnings, the clips it shows or could not record (a clip in the dist by its path there), and the clips ended before it arrived; `hold`, `plateFps` (the plates' rate, the same as `fps`; `null` without plates) and `plateOnly`, for whoever plays the plates. The takes are silent: a clip's `sound` says where it played in the take (`start` and `end` in the take's seconds, `t` the clip's own second at `start`, `muted`, the loudest `volume`, `loop`; `null` when it never played), for laying the source clip's sound back under it |
+
+`--skip-clips` does not film a clip slide: its segment in the edit list has
+no file and names the clip (`embed: true`; the clip's `src`, `duration`,
+`loop`, and `muted` and `volume` as the player played it over its first
+second and a half), and the rest of that slide's clicks go with it. For a
+PPTX, where the clip's own file is the picture: frame by frame, a 4-minute
+clip took 53 minutes at 50 fps. The next slide still arrives over the clip's
+last frame, its take opening on this slide with the clip run to its end,
+from another origin too. What the slide shows over or after its clip (a
+`ClipEnd` line, an `exit="push"`, `AfterFlight` stats) is in neither the
+stub nor a filmed take, which ends on the clip.
 
 `slidev-videos pptx <out-dir> --deck deck.md` turns the takes into a
 PowerPoint file, one autoplaying video a slide with the clips' sound and the
