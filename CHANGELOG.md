@@ -182,6 +182,13 @@ behaves differently: the recorder gains a flag, `pptx` a kind of segment.
   stays covered: the cover waits a tick, after the slide left has given the
   world back. The example deck gains two cut-clip slides (7 and 8), and its
   smoke checks the cover.
+- **Stage smoke case 15 records what it checks.** Its observer was set on
+  `<html>` before the page had one, threw, and logged nothing, so its
+  back-step checks held on any build; it now watches the document, and an
+  empty log fails. Run red/green on 23 Oct, v0.8.2 (c456add) holds the
+  back-step headless too, on synthetic and on recorded plates: the race
+  Innoday met needs a slower seek than a local server gives. The
+  regression test for v0.8.3's fix is `plateStep`'s unit test.
 - With outreach_talks' `talk pptx` (the recorder's `--skip-clips` by default,
   the world at 25 fps), a 31-slide deck with six clip slides comes to an
   estimated half hour (25 world takes at the 0.09 s a frame Innoday's take
