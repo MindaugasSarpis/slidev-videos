@@ -117,8 +117,8 @@ def fake_venue_build(root, builds=None, sidecar=True):
 def test_venue_builds_local_first_for_file_urls(tmp_path, monkeypatch, capsys):
     """The bundle opens by double-clicking index.html: the build inlines the
     code and carries public/ in a sidecar (VIDEOS_VENUE_FILE, slidev-addon-videos'
-    venue plugin), on the hash router (a path router finds no slide in a
-    file:// path), and tries its own clips before GitHub."""
+    venue plugin) and tries its own clips before GitHub. No --router-mode: the
+    talks' Slidev (52.14) has no such flag; the deck says it (see below)."""
     root = make_talk(tmp_path)
     builds = []
     monkeypatch.setattr(pipeline.subprocess, "call", fake_venue_build(root, builds))
@@ -126,7 +126,7 @@ def test_venue_builds_local_first_for_file_urls(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(pipeline, "_probe_media", lambda src: None)
     assert pipeline.main(["--project", str(root), "venue", "--skip-pull"]) == 0
     (cmd, env), = builds
-    assert cmd == ["pnpm", "build:portable", "--router-mode", "hash"]
+    assert cmd == ["pnpm", "build:portable"]
     assert env["VITE_VIDEOS_LOCAL_FIRST"] == "1"
     assert env["VIDEOS_VENUE_FILE"] == "1"
     assert "PATH" in env                      # the rest of the environment is kept
@@ -138,7 +138,25 @@ def test_venue_dry_run_names_the_variables(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(pipeline, "_release_assets", lambda *a: (None, None))
     monkeypatch.setattr(pipeline, "_probe_media", lambda src: None)
     assert pipeline.main(["--project", str(root), "venue", "--skip-pull", "--dry-run"]) == 0
-    assert "VITE_VIDEOS_LOCAL_FIRST=1 VIDEOS_VENUE_FILE=1 pnpm build:portable --router-mode hash" in capsys.readouterr().out
+    assert "VITE_VIDEOS_LOCAL_FIRST=1 VIDEOS_VENUE_FILE=1 pnpm build:portable," in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("head, warned", [
+    ("", True),                                             # Slidev's default: the path router
+    ("---\nrouterMode: history\n---\n", True),
+    ("---\ntheme: x\nrouterMode: hash\n---\n", False),
+    ("---\nrouterMode: 'hash'   # GitHub Pages\n---\n", False),
+])
+def test_venue_warns_unless_the_deck_routes_by_hash(tmp_path, monkeypatch, capsys, head, warned):
+    """From file:// a path router finds no slide in the file's path: the deck
+    has to say `routerMode: hash` (every talk does)."""
+    root = make_talk(tmp_path, deck=head + '<VideoPlayer src="a.mp4" />\n')
+    monkeypatch.setattr(pipeline.subprocess, "call", fake_venue_build(root))
+    monkeypatch.setattr(pipeline, "_release_assets", lambda *a: (None, None))
+    monkeypatch.setattr(pipeline, "_probe_media", lambda src: None)
+    assert pipeline.main(["--project", str(root), "venue", "--skip-pull"]) == 0
+    out = capsys.readouterr().out
+    assert ("routerMode: hash" in out and "WARNING" in out) is warned, out
 
 
 def venue_zip(tmp_path, monkeypatch, sidecar=True):
