@@ -13,7 +13,7 @@
     "make:clip": "node scripts/make-example-clip.mjs",
     "build:example": "slidev build example/slides.md --out dist --base /",
     "smoke": "node scripts/smoke-example.mjs",
-    "build:example:file": "VIDEOS_VENUE_FILE=1 slidev build example/slides.md --out dist-file --base ./ --router-mode hash",
+    "build:example:file": "VIDEOS_VENUE_FILE=1 slidev build example/slides.md --out dist-file --base ./",
     "smoke:file": "node scripts/smoke-file.mjs",
     "stage:test": "pnpm --filter slidev-addon-stage test",
     "stage:build": "pnpm --filter slidev-addon-stage build:example",

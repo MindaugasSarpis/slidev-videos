@@ -152,10 +152,10 @@ downloaded from the web, with nothing installed. Audience machines said
 "python not installed" (Windows) and refused `RUN_ME.command` (macOS
 Gatekeeper; Sequoia has no right-click Open).
 
-- **`slidev-videos venue`** builds with `VIDEOS_VENUE_FILE=1` and
-  `--router-mode hash`. slidev-addon-videos' new `vite.config.js` then turns
-  on its venue plugin (`venue/file.js`): the code inlined into `index.html`,
-  in one chunk; `public/` (but the clips) in `venue-assets.js`, a classic
+- **`slidev-videos venue`** builds with `VIDEOS_VENUE_FILE=1`.
+  slidev-addon-videos' new `vite.config.js` then turns on its venue plugin
+  (`venue/file.js`): the code inlined into `index.html`, in one chunk (under
+  Rollup, Vite 7, the talks' Slidev 52.14, and under Rolldown, Vite 8); `public/` (but the clips) in `venue-assets.js`, a classic
   script beside it; and a shim that, on `file://` only, hands those files to
   `fetch()`, `<img>.src` and `<audio>` (and `new Audio`) as blobs. From
   `file://` Chromium refuses `fetch()`, and a sibling image, video or audio
@@ -177,10 +177,12 @@ Gatekeeper; Sequoia has no right-click Open).
   stays, and `RUN_ME.txt` gives the two ways past Gatekeeper (Open Anyway,
   `xattr -dr com.apple.quarantine`). Both are backups now.
 - A talk pinned to an older slidev-addon-videos builds no sidecar: `venue`
-  warns, and `RUN_ME.txt` points at the launchers.
-- Tests: root 13 → 22 (the plugin, the HTML rewrite, the shim); a file://
+  warns, and `RUN_ME.txt` points at the launchers. A deck whose headmatter
+  does not say `routerMode: hash` (a path router finds no slide in a
+  `file://` path; every talk says it) gets a warning too.
+- Tests: root 13 → 23 (the plugin under both bundlers, the HTML rewrite, the shim); a file://
   smoke (`pnpm build:example:file && pnpm smoke:file`: from `file://`, alone,
-  served); Python 191 → 194, with `serve.ps1` run under Windows PowerShell
+  served); Python 191 → 198 (the bundle, the launchers, the router check), with `serve.ps1` run under Windows PowerShell
   where WSL reaches it.
 
 Not tested here: Safari and Firefox, and a double-click on the `.bat`

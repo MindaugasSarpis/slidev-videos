@@ -159,11 +159,23 @@ test('the venue plugin: one file, relative paths, no code splitting', () => {
   assert.equal(cfg.build.cssCodeSplit, false);
   assert.equal(cfg.build.modulePreload, false);
   assert.equal(cfg.build.assetsInlineLimit('x.woff2', Buffer.alloc(1)), true);   // fonts and imported images go inline
-  // Slidev splits vendor chunks (manualChunks); rolldown refuses that with one file
-  const resolved = { root: '/deck', build: { outDir: 'dist-portable', rollupOptions: { output: { manualChunks: () => 'x' } } } };
-  p.configResolved(resolved);
-  assert.equal(resolved.build.rollupOptions.output.manualChunks, undefined);
-  assert.equal(resolved.build.rollupOptions.output.codeSplitting, false);
+});
+
+test('one chunk under Rollup (Vite 7, the talks\' Slidev 52.14) and under Rolldown (Vite 8)', () => {
+  // Slidev splits vendor chunks (manualChunks); one chunk wants none, and each
+  // bundler names "no splitting" its own way
+  const rollup = { root: '/deck', build: { outDir: 'dist-portable', rollupOptions: { output: { manualChunks: () => 'x' } } } };
+  venueFile().configResolved(rollup);
+  assert.equal(rollup.build.rollupOptions.output.manualChunks, undefined);
+  assert.equal(rollup.build.rollupOptions.output.inlineDynamicImports, true);
+  assert.equal('codeSplitting' in rollup.build.rollupOptions.output, false);   // Rollup does not know it
+  const opts = { output: { manualChunks: () => 'x' } };
+  const rolldown = { root: '/deck', build: { outDir: 'dist-portable', rollupOptions: opts, rolldownOptions: opts } };
+  venueFile().configResolved(rolldown);
+  assert.equal(rolldown.build.rolldownOptions.output.manualChunks, undefined);
+  assert.equal(rolldown.build.rolldownOptions.output.codeSplitting, false);
+  // with manualChunks gone Rolldown takes inlineDynamicImports too, but warns it away
+  assert.equal('inlineDynamicImports' in rolldown.build.rolldownOptions.output, false);
 });
 
 test('the addon turns the plugin on only for a venue build', () => {

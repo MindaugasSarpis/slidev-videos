@@ -2724,10 +2724,10 @@ def _contact_sheet(args: argparse.Namespace, src: str, is_url: bool, out: Path) 
 
 # VIDEOS_VENUE_FILE: slidev-addon-videos' venue plugin (venue/file.js, from
 # 0.8.5) makes index.html open from file://: the code inlined, public/ (but
-# the clips) in venue-assets.js beside it. The hash router, since a path
-# router finds no slide in a file:// path.
+# the clips) in venue-assets.js beside it. The deck has to route by hash: a
+# path router finds no slide in a file:// path (the talks' Slidev 52.14 has no
+# --router-mode, so the headmatter says it; every talk does).
 VENUE_BUILD_ENV = {"VITE_VIDEOS_LOCAL_FIRST": "1", "VIDEOS_VENUE_FILE": "1"}
-VENUE_BUILD_ARGS = ["--router-mode", "hash"]
 VENUE_BUILD_ENV_TEXT = " ".join(f"{k}={v}" for k, v in VENUE_BUILD_ENV.items())
 VENUE_SIDECAR = "venue-assets.js"
 
@@ -2875,6 +2875,23 @@ try {
 """
 
 
+def _routes_by_hash(talk: Path) -> bool:
+    """Whether the deck build:portable builds says `routerMode: hash` in its headmatter."""
+    entry = "deck.md"
+    try:
+        script = json.loads((talk / "package.json").read_text(encoding="utf-8"))["scripts"]["build:portable"]
+        m = re.search(r"slidev build\s+(\S+\.md)", script)
+        entry = m.group(1) if m else entry
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    try:
+        text = (talk / entry).read_text(encoding="utf-8")
+    except OSError:
+        return False
+    head = re.match(r"---\r?\n(.*?)\r?\n---", text, re.S)
+    return bool(head and re.search(r"^routerMode:\s*['\"]?hash\b", head.group(1), re.M))
+
+
 def venue_run_me(name: str, opens: bool = True) -> str:
     """RUN_ME.txt: index.html first, the launchers as backups. `opens` is False
     for a build without the venue plugin, whose index.html shows nothing from
@@ -2934,12 +2951,15 @@ def cmd_venue(args: argparse.Namespace) -> int:
         print("WARNING: preflight flagged clips above. Bundle continues — fix or accept consciously.")
 
     if args.dry_run:
-        print(f"\n(dry run) would run: {VENUE_BUILD_ENV_TEXT} pnpm build:portable {' '.join(VENUE_BUILD_ARGS)}, then zip dist-portable/ "
+        print(f"\n(dry run) would run: {VENUE_BUILD_ENV_TEXT} pnpm build:portable, then zip dist-portable/ "
               f"-> {TALK.name}-venue.zip")
         return 0
 
-    print(f"\n=== venue: {VENUE_BUILD_ENV_TEXT} pnpm build:portable {' '.join(VENUE_BUILD_ARGS)} ===")
-    rc = subprocess.call(["pnpm", "build:portable", *VENUE_BUILD_ARGS], cwd=TALK, env={**os.environ, **VENUE_BUILD_ENV})
+    if not _routes_by_hash(TALK):
+        print("WARNING: the deck's headmatter does not say `routerMode: hash`: from the folder (file://) "
+              "index.html would find no slide. Add it, or present with RUN_ME.bat / RUN_ME.command.")
+    print(f"\n=== venue: {VENUE_BUILD_ENV_TEXT} pnpm build:portable ===")
+    rc = subprocess.call(["pnpm", "build:portable"], cwd=TALK, env={**os.environ, **VENUE_BUILD_ENV})
     if rc != 0:
         return rc
 

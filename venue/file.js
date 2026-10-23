@@ -156,10 +156,18 @@ export function venueFile() {
     }),
     configResolved(c) {
       outDir = resolve(c.root, c.build.outDir);
-      // Slidev splits vendor chunks (manualChunks); one file wants none
-      const ro = c.build.rollupOptions || (c.build.rollupOptions = {});
+      // Slidev splits vendor chunks (manualChunks); one chunk wants none. Rolldown
+      // (Vite 8) says so with codeSplitting, Rollup (Vite 7: the talks' Slidev
+      // 52.14) with inlineDynamicImports
+      const rolldown = 'rolldownOptions' in c.build;
+      const key = rolldown ? 'rolldownOptions' : 'rollupOptions';
+      const ro = c.build[key] || (c.build[key] = {});
       const outs = [].concat(ro.output || (ro.output = {}));
-      for (const o of outs) { delete o.manualChunks; delete o.advancedChunks; o.codeSplitting = false; }
+      for (const o of outs) {
+        delete o.manualChunks; delete o.advancedChunks;
+        if (rolldown) o.codeSplitting = false;
+        else o.inlineDynamicImports = true;
+      }
     },
     generateBundle(_, bundle) {
       for (const file of Object.values(bundle)) {

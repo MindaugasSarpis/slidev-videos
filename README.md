@@ -194,10 +194,10 @@ local-first too; `slidev-videos venue` always builds with it. Each
 **The venue bundle** (`slidev-videos venue`) opens by double-clicking its
 `index.html`, on a stock Windows or Mac, downloaded and unzipped, with
 nothing installed and no launcher for SmartScreen or Gatekeeper to refuse.
-The build (`VIDEOS_VENUE_FILE=1`, this addon's `vite.config.js`, on the hash
-router) inlines the code into `index.html` and carries `public/` (but the
-clips) in `venue-assets.js`, a classic script beside it: from `file://` a
-browser fetches nothing and taints the canvas, WebGL and Web Audio with any
+The build (`VIDEOS_VENUE_FILE=1`, this addon's `vite.config.js`; the deck
+says `routerMode: hash`) inlines the code into `index.html` and carries
+`public/` (but the clips) in `venue-assets.js`, a classic script beside it:
+from `file://` a browser fetches nothing and taints the canvas, WebGL and Web Audio with any
 sibling file, so a small shim hands those files to `fetch()`, `<img>` and
 `<audio>` as blobs. Clips stay files and play as they are. Opened from
 inside the zip, the page says to extract it first. `RUN_ME.bat` (Windows
