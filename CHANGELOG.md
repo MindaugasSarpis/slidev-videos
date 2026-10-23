@@ -42,7 +42,7 @@ a world it behaves as v0.8.2 says, and a v0.8.2 deck as under v0.8.2.
   component's wiring, the cap's rule; it joins the compile check); Python
   183 → 192 (v0.8.4's embedded clips), and `test_shared_registry` counts the
   44 clips v0.9.0's `lis_flag.mp4` made (main had failed on 43 since
-  v0.9.0), 192 → 195 (v0.8.5's venue bundle and `serve.ps1`); root 11 → 22
+  v0.9.0), 192 → 199 (v0.8.5's venue bundle, `serve.ps1`, the router check); root 11 → 24
   (v0.8.4's cut-clip cover, v0.8.5's venue plugin and shim), and v0.8.5's
   file:// smoke. example-lhcb's hand-over rehearsal passes from `file://` as
   served.
