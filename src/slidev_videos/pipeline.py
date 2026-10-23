@@ -2722,13 +2722,20 @@ def _contact_sheet(args: argparse.Namespace, src: str, is_url: bool, out: Path) 
 # venue — one-command offline bundle: pull → preflight → build → zip
 # ---------------------------------------------------------------------------
 
-VENUE_BUILD_ENV = {"VITE_VIDEOS_LOCAL_FIRST": "1"}
+# VIDEOS_VENUE_FILE: slidev-addon-videos' venue plugin (venue/file.js, from
+# 0.8.5) makes index.html open from file://: the code inlined, public/ (but
+# the clips) in venue-assets.js beside it. The hash router, since a path
+# router finds no slide in a file:// path.
+VENUE_BUILD_ENV = {"VITE_VIDEOS_LOCAL_FIRST": "1", "VIDEOS_VENUE_FILE": "1"}
+VENUE_BUILD_ARGS = ["--router-mode", "hash"]
 VENUE_BUILD_ENV_TEXT = " ".join(f"{k}={v}" for k, v in VENUE_BUILD_ENV.items())
+VENUE_SIDECAR = "venue-assets.js"
 
-# Double-click launchers shipped beside RUN_ME.txt. Each serves the unzipped
-# folder on the first free port from 8000 up, bound to localhost, and opens
-# the deck; when python is missing they say what to install or to fall back
-# to the live URL. No server binary is bundled.
+# The way in is a double-click on index.html. Beside it, two backups that
+# serve the unzipped folder on the first free port from 8000 up, on the
+# loopback, and open the deck: RUN_ME.command (macOS, python3; Gatekeeper
+# refuses it as downloaded until it is let through) and RUN_ME.bat (Windows,
+# serve.ps1 under Windows PowerShell 5.1: no Python, no admin).
 VENUE_RUN_ME_COMMAND = r"""#!/bin/bash
 # Double-click to present offline: serves this folder on this Mac and opens the deck.
 cd "$(dirname "$0")" || exit 1
@@ -2756,33 +2763,148 @@ kill "$server" 2>/dev/null
 """
 
 VENUE_RUN_ME_BAT = r"""@echo off
-rem Double-click to present offline: serves this folder on this PC and opens the deck.
-cd /d "%~dp0"
-
-set PY=
-py -3 --version >nul 2>&1 && set "PY=py -3"
-if not defined PY (python --version >nul 2>&1 && set "PY=python")
-if not defined PY (
-  echo Python 3 was not found on this PC.
-  echo Install it from https://www.python.org/downloads/ and tick "Add python.exe to PATH",
-  echo then double-click RUN_ME.bat again.
-  echo Or open the talk's live URL in any browser instead ^(that needs internet^).
+rem A backup to double-clicking index.html: serves this folder on this PC and opens
+rem the deck, with Windows PowerShell (no Python, no admin). A .ps1 from a downloaded
+rem zip carries the Mark of the Web, so it runs with -ExecutionPolicy Bypass.
+if not exist "%~dp0index.html" goto inzip
+if not exist "%~dp0serve.ps1" goto inzip
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0serve.ps1"
+if errorlevel 1 (
+  echo.
+  echo The server did not start on this PC. Double-click index.html instead.
   pause
-  exit /b 1
 )
+exit /b
 
-set PORT=8000
-:nextport
-netstat -an | findstr /c:":%PORT% " >nul && set /a PORT+=1 && goto nextport
-
-start "deck server" /min cmd /k %PY% -m http.server %PORT% --bind 127.0.0.1
-timeout /t 1 /nobreak >nul
-start "" http://127.0.0.1:%PORT%/
-
-echo The deck is served at http://127.0.0.1:%PORT%/
-echo Keep the minimised "deck server" window open while you present; close it when you are done.
+:inzip
+echo This was opened from inside the zip, so the deck is not beside it.
+echo Close this window, right-click the zip, choose Extract All,
+echo then double-click index.html in the extracted folder.
 pause
+exit /b 1
 """
+
+# Windows PowerShell 5.1 and .NET only. A plain socket on the loopback: no URL
+# reservation (HttpListener's admin question) and no firewall prompt. One
+# runspace per connection, so a clip the browser reads slowly holds up nothing.
+VENUE_SERVE_PS1 = r"""# Serves this folder on http://127.0.0.1:<port>/ and opens the deck (RUN_ME.bat runs it).
+param([int]$Port = 8000, [switch]$NoBrowser)
+$ErrorActionPreference = 'Stop'
+$root = [IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\') + '\'
+
+$listener = $null
+for ($p = $Port; $p -lt $Port + 100; $p++) {
+  try { $l = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $p); $l.Start(); $listener = $l; break } catch { }
+}
+if (-not $listener) { Write-Host "No free port from $Port up. Double-click index.html instead."; Read-Host 'Press Enter to close'; exit 1 }
+$url = "http://127.0.0.1:$p/"
+
+$handler = {
+  param($client, $root)
+  $types = @{ '.html'='text/html; charset=utf-8'; '.js'='text/javascript; charset=utf-8'; '.mjs'='text/javascript; charset=utf-8';
+    '.css'='text/css; charset=utf-8'; '.json'='application/json'; '.txt'='text/plain; charset=utf-8'; '.svg'='image/svg+xml';
+    '.png'='image/png'; '.jpg'='image/jpeg'; '.jpeg'='image/jpeg'; '.gif'='image/gif'; '.webp'='image/webp'; '.avif'='image/avif'; '.ico'='image/x-icon';
+    '.mp4'='video/mp4'; '.m4v'='video/mp4'; '.webm'='video/webm'; '.mov'='video/quicktime'; '.mp3'='audio/mpeg'; '.m4a'='audio/mp4'; '.ogg'='audio/ogg'; '.wav'='audio/wav';
+    '.woff'='font/woff'; '.woff2'='font/woff2'; '.ttf'='font/ttf'; '.otf'='font/otf'; '.wasm'='application/wasm'; '.glb'='model/gltf-binary';
+    '.bin'='application/octet-stream'; '.vtt'='text/vtt'; '.pdf'='application/pdf' }
+  try {
+    $client.NoDelay = $true
+    $net = $client.GetStream()
+    $reader = [IO.StreamReader]::new($net, [Text.Encoding]::ASCII, $false, 8192, $true)
+    $line = $reader.ReadLine()
+    if (-not $line) { return }
+    $method, $target = $line.Split(' ')[0..1]
+    $range = $null
+    while (($h = $reader.ReadLine())) { if ($h -match '^Range:\s*bytes=(\d*)-(\d*)\s*$') { $range = $Matches } }
+    $send = {
+      param($status, $headers, $body)
+      $text = "HTTP/1.1 $status`r`n" + (($headers.GetEnumerator() | ForEach-Object { "$($_.Key): $($_.Value)" }) -join "`r`n") + "`r`nConnection: close`r`n`r`n"
+      $b = [Text.Encoding]::ASCII.GetBytes($text); $net.Write($b, 0, $b.Length)
+      if ($body) { $net.Write($body, 0, $body.Length) }
+    }
+    $path = [Uri]::UnescapeDataString(($target -split '[?#]')[0]).TrimStart('/')
+    if ($path -eq '' -or $path.EndsWith('/')) { $path += 'index.html' }
+    $file = [IO.Path]::GetFullPath([IO.Path]::Combine($root, $path.Replace('/', '\')))
+    if (-not $file.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -or -not [IO.File]::Exists($file)) {
+      & $send '404 Not Found' @{ 'Content-Type' = 'text/plain'; 'Content-Length' = 9 } ([Text.Encoding]::ASCII.GetBytes('not found'))
+      return
+    }
+    $type = $types[[IO.Path]::GetExtension($file).ToLowerInvariant()]; if (-not $type) { $type = 'application/octet-stream' }
+    $fs = [IO.File]::Open($file, 'Open', 'Read', 'ReadWrite')
+    try {
+      $size = $fs.Length; $start = 0; $end = $size - 1; $status = '200 OK'
+      $headers = [ordered]@{ 'Content-Type' = $type; 'Accept-Ranges' = 'bytes'; 'Cache-Control' = 'no-cache' }
+      if ($range) {
+        if ($range[1] -ne '') { $start = [int64]$range[1]; if ($range[2] -ne '') { $end = [Math]::Min([int64]$range[2], $size - 1) } }
+        elseif ($range[2] -ne '') { $start = [Math]::Max(0, $size - [int64]$range[2]) }
+        if ($start -ge $size -or $start -gt $end) {
+          & $send '416 Range Not Satisfiable' @{ 'Content-Range' = "bytes */$size"; 'Content-Length' = 0 } $null
+          return
+        }
+        $status = '206 Partial Content'; $headers['Content-Range'] = "bytes $start-$end/$size"
+      }
+      $headers['Content-Length'] = $end - $start + 1
+      & $send $status $headers $null
+      if ($method -eq 'HEAD') { return }
+      $fs.Position = $start
+      $buf = New-Object byte[] 262144
+      $left = $end - $start + 1
+      while ($left -gt 0) {
+        $n = $fs.Read($buf, 0, [int][Math]::Min($buf.Length, $left))
+        if ($n -le 0) { break }
+        $net.Write($buf, 0, $n); $left -= $n
+      }
+    } finally { $fs.Dispose() }
+  } catch { } finally { $client.Close() }
+}
+
+$pool = [RunspaceFactory]::CreateRunspacePool(1, 32); $pool.Open()
+$jobs = [Collections.ArrayList]::new()
+Write-Host "The deck is served at $url"
+Write-Host 'Keep this window open while you present; close it when you are done.'
+if (-not $NoBrowser) { Start-Process $url }
+try {
+  while ($true) {
+    $client = $listener.AcceptTcpClient()
+    $ps = [PowerShell]::Create(); $ps.RunspacePool = $pool
+    [void]$ps.AddScript($handler).AddArgument($client).AddArgument($root)
+    [void]$jobs.Add(@{ ps = $ps; h = $ps.BeginInvoke() })
+    foreach ($j in @($jobs)) { if ($j.h.IsCompleted) { $j.ps.EndInvoke($j.h); $j.ps.Dispose(); $jobs.Remove($j) } }
+  }
+} finally { $listener.Stop(); $pool.Close() }
+"""
+
+
+def venue_run_me(name: str, opens: bool = True) -> str:
+    """RUN_ME.txt: index.html first, the launchers as backups. `opens` is False
+    for a build without the venue plugin, whose index.html shows nothing from
+    the folder: then the launchers are the way in."""
+    unzip = ("Unzip it first (Windows: right-click the zip, Extract All; Mac: double-click\n"
+             "the zip). Opened from inside the zip, the clips are not beside the deck.\n\n")
+    launchers = (
+        "    RUN_ME.bat      Windows: serves this folder on this PC with Windows PowerShell\n"
+        "                    (no Python, no admin) and opens the deck. Windows may ask once\n"
+        "                    whether to run it: Run (or More info, then Run anyway).\n"
+        "                    Keep its window open while you present.\n"
+        "    RUN_ME.command  macOS: serves it with python3 (macOS offers to install it).\n"
+        "                    macOS refuses it as downloaded: try it once, then System\n"
+        "                    Settings > Privacy & Security > Open Anyway; or in Terminal\n"
+        "                        xattr -dr com.apple.quarantine <this folder>\n"
+        "                    then double-click it again.\n\n")
+    way_out = "Nothing works? Open the talk's live URL in any browser (that needs internet).\n\n"
+    built = f"Built by `slidev-videos venue` for {name}.\n"
+    if not opens:
+        return (f"Offline venue bundle for {name}.\n\n" + unzip
+                + "This build's index.html does not open from the folder (its slidev-addon-videos\n"
+                  "predates 0.8.5). Double-click the launcher for this machine:\n\n"
+                + launchers + way_out + built)
+    return (f"Offline venue bundle for {name}.\n\n"
+            "To present: double-click index.html. It opens in the browser straight from this\n"
+            "folder, on Windows and macOS alike: nothing to install, no internet needed.\n"
+            "The presenter view: press the presenter button in the bottom bar.\n\n"
+            + unzip
+            + "Backups, if a browser will not show the deck from the folder:\n\n"
+            + launchers + way_out + built)
 
 
 def cmd_venue(args: argparse.Namespace) -> int:
@@ -2812,12 +2934,12 @@ def cmd_venue(args: argparse.Namespace) -> int:
         print("WARNING: preflight flagged clips above. Bundle continues — fix or accept consciously.")
 
     if args.dry_run:
-        print(f"\n(dry run) would run: {VENUE_BUILD_ENV_TEXT} pnpm build:portable, then zip dist-portable/ "
+        print(f"\n(dry run) would run: {VENUE_BUILD_ENV_TEXT} pnpm build:portable {' '.join(VENUE_BUILD_ARGS)}, then zip dist-portable/ "
               f"-> {TALK.name}-venue.zip")
         return 0
 
-    print(f"\n=== venue: {VENUE_BUILD_ENV_TEXT} pnpm build:portable ===")
-    rc = subprocess.call(["pnpm", "build:portable"], cwd=TALK, env={**os.environ, **VENUE_BUILD_ENV})
+    print(f"\n=== venue: {VENUE_BUILD_ENV_TEXT} pnpm build:portable {' '.join(VENUE_BUILD_ARGS)} ===")
+    rc = subprocess.call(["pnpm", "build:portable", *VENUE_BUILD_ARGS], cwd=TALK, env={**os.environ, **VENUE_BUILD_ENV})
     if rc != 0:
         return rc
 
@@ -2825,25 +2947,16 @@ def cmd_venue(args: argparse.Namespace) -> int:
     if not dist.is_dir():
         print("error: dist-portable/ missing after build", file=sys.stderr)
         return 2
-    (dist / "RUN_ME.txt").write_text(
-        f"Offline venue bundle for {TALK.name}.\n\n"
-        "Double-click the launcher for this machine:\n"
-        "    RUN_ME.command   macOS   (if macOS refuses to open it, right-click it, then Open)\n"
-        "    RUN_ME.bat       Windows\n"
-        "It serves this folder on the machine itself and opens the deck in the browser;\n"
-        "keep its window open while you present. It needs Python 3 and nothing else,\n"
-        "and says what to install if that is missing.\n\n"
-        "By hand, from a terminal in this folder:\n\n"
-        "    python3 -m http.server 8000\n"
-        "    then open http://localhost:8000\n\n"
-        "Browsers refuse ES-module apps on file://, so the folder has to be served.\n"
-        "No Python at all? Open the talk's live URL in any browser (that needs internet).\n\n"
-        f"Built by `slidev-videos venue` for {TALK.name}.\n",
-        encoding="utf-8",
-    )
+    opens = (dist / VENUE_SIDECAR).is_file()
+    if not opens:
+        print("WARNING: no venue-assets.js in the build: the talk's slidev-addon-videos predates 0.8.5, so its "
+              "index.html does not open from the folder. Bundle continues; RUN_ME.txt points at the launchers. "
+              "Pin the talk to v0.8.5 or later for a bundle that opens with a double-click.")
+    (dist / "RUN_ME.txt").write_text(venue_run_me(TALK.name, opens), encoding="utf-8")
     (dist / "RUN_ME.command").write_text(VENUE_RUN_ME_COMMAND, encoding="utf-8", newline="\n")
     (dist / "RUN_ME.command").chmod(0o755)
     (dist / "RUN_ME.bat").write_text(VENUE_RUN_ME_BAT, encoding="utf-8", newline="\r\n")
+    (dist / "serve.ps1").write_text(VENUE_SERVE_PS1, encoding="utf-8", newline="\r\n")
     bundle = TALK / f"{TALK.name}-venue.zip"
     print(f"\n=== venue: zipping -> {bundle.name} ===")
     # ZIP_STORED: the payload is already-compressed video; deflate would

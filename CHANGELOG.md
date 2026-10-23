@@ -4,6 +4,49 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## v0.8.5 — unreleased
+
+slidev-videos 0.8.5 · slidev-addon-stage 0.5.4 · slidev-addon-videos 0.8.5
+
+**A venue zip opens by double-clicking `index.html`**, on any Windows or Mac,
+downloaded from the web, with nothing installed. Audience machines said
+"python not installed" (Windows) and refused `RUN_ME.command` (macOS
+Gatekeeper; Sequoia has no right-click Open).
+
+- **`slidev-videos venue`** builds with `VIDEOS_VENUE_FILE=1` and
+  `--router-mode hash`. slidev-addon-videos' new `vite.config.js` then turns
+  on its venue plugin (`venue/file.js`): the code inlined into `index.html`,
+  in one chunk; `public/` (but the clips) in `venue-assets.js`, a classic
+  script beside it; and a shim that, on `file://` only, hands those files to
+  `fetch()`, `<img>.src` and `<audio>` (and `new Audio`) as blobs. From
+  `file://` Chromium refuses `fetch()`, and a sibling image, video or audio
+  file taints the canvas and WebGL and gives Web Audio silence (Innoday's
+  soundtrack runs through it); a blob the page made does neither. Clips stay
+  files: a `<video>` plays them from `file://`, and the player reads them as
+  it reads a release clip (the dust from the frame strips). The stage
+  example and v0.10.0's example-lhcb run from `file://` as served, its
+  hand-over rehearsal included; the presenter window drives the audience
+  window. Innoday would carry ~36 MB in the sidecar (~48 MB as base64,
+  loaded in ~0.35 s).
+- **Opened from inside the zip** (Windows' Explorer extracts `index.html`
+  alone to a temporary folder), the page says to extract it first.
+- **`RUN_ME.bat` serves with Windows PowerShell, not Python**: `serve.ps1`,
+  a socket on the loopback (no URL reservation, no admin), one runspace per
+  connection, byte ranges for the clips, nothing outside the folder. It runs
+  with `-ExecutionPolicy Bypass`: a `.ps1` from a downloaded zip carries the
+  Mark of the Web, and RemoteSigned refuses it unsigned. `RUN_ME.command`
+  stays, and `RUN_ME.txt` gives the two ways past Gatekeeper (Open Anyway,
+  `xattr -dr com.apple.quarantine`). Both are backups now.
+- A talk pinned to an older slidev-addon-videos builds no sidecar: `venue`
+  warns, and `RUN_ME.txt` points at the launchers.
+- Tests: root 13 → 22 (the plugin, the HTML rewrite, the shim); a file://
+  smoke (`pnpm build:example:file && pnpm smoke:file`: from `file://`, alone,
+  served); Python 191 → 194, with `serve.ps1` run under Windows PowerShell
+  where WSL reaches it.
+
+Not tested here: Safari and Firefox, and a double-click on the `.bat`
+(SmartScreen may ask once).
+
 ## v0.8.4 — unreleased
 
 slidev-videos 0.8.4 · slidev-addon-stage 0.5.4 · slidev-addon-videos 0.8.4
