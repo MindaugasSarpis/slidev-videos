@@ -129,3 +129,10 @@ export function handOverWithout(layer, plate, { played = false } = {}) {
   if (plate === 'held') return { still: 'gone', word: true };
   return { still: 'fade', word: false };
 }
+
+// The hand-over's 8 s cap (LOADING_CAP) is for a plate that never loads: it shows
+// the word unless the plate is playing, whose word comes with its end (held). A
+// plate that stalls past it, or never played, gets the word by it.
+export function capShowsWord(plate, played = false) {
+  return !(played && plate === 'playing');
+}

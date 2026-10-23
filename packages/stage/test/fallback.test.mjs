@@ -7,7 +7,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { fallbackLayer, plateName, plateUrls, plateRelease, platesDir, plateLocalFirst, plateEntry, plateStep, handOverWithout, LAYERS, PLATE_REASONS } from '../stage/fallback.js';
+import { fallbackLayer, plateName, plateUrls, plateRelease, platesDir, plateLocalFirst, plateEntry, plateStep, handOverWithout, capShowsWord, LAYERS, PLATE_REASONS } from '../stage/fallback.js';
 import { STAGE_OVER_WORLD, PLATE_HIDDEN, recorderHooks } from '../bin/lib/record-page.mjs';
 import { FALLBACK_REASONS } from '../stage/diagnose.js';
 import { STAGE_KEYS } from '../stage/types.js';
@@ -190,6 +190,18 @@ test('the hand-over without a world: the still stays unless a plate plays under 
   assert.deepEqual(handOverWithout('plate', 'none', { played: true }), { still: 'stay', word: true });
 });
 
+// The 8 s cap is for a plate that never loads (a hanging URL). A plate that plays is
+// the arrival the recorder filmed, and its word comes with its end (held): the cap
+// showed it at 8 s on example-lhcb's slide 5, a 17 s plate still playing. A plate
+// that stalls past the cap, or never played, gets the word by it as before.
+test('the 8 s cap shows the word unless the plate is playing', () => {
+  assert.equal(capShowsWord('playing', true), false);
+  for (const plate of ['loading', 'paused', 'none', 'held', undefined]) {
+    assert.equal(capShowsWord(plate, true), true, `played/${plate}`);
+    assert.equal(capShowsWord(plate, false), true, `not played/${plate}`);
+  }
+});
+
 test('StageDepthGrains reads the layer and the plate off <html> where the world cannot run, and follows them', () => {
   const src = read('../components/StageDepthGrains.vue');
   assert.match(src, /import \{[^}]*\bhandOverWithout\b[^}]*\} from '\.\.\/stage\/fallback\.js'/);
@@ -208,6 +220,8 @@ test('StageDepthGrains reads the layer and the plate off <html> where the world 
   assert.match(src, /handOverWithout\(html\.dataset\.stageLayer, html\.dataset\.stagePlate, \{ played \}\)/);
   // a plate that never loads: the word by v0.9.0's 8 s all the same, not wordBy's 34
   assert.match(src, /later\(LOADING_CAP, /);
+  // … and waits while the plate plays, looking again until it is not
+  assert.match(src, /const cap = \(\) => \{\n\s+if \(id !== run\) return\n\s+if \(!capShowsWord\(html\.dataset\.stagePlate, played\)\) return later\(500, cap\)\n\s+word\.value = true\n\s+\}\n\s+later\(LOADING_CAP, cap\)/);
   assert.match(src, /const LOADING_CAP = 8000\b/);
   // a fallback after the hand-over began (a context lost for good, a rebuild that fails): followed at once
   assert.match(src, /addEventListener\('slidev-stage:fallback', onFallback\)/);

@@ -5,7 +5,7 @@ import { Vector3 } from 'three'
 import { sampleFrame, placeInDepth, loadDepth, makeDepthGrains, scaleLaw, poseCamera } from '../stage/depth-grains.js'
 import { setSteps } from '../stage/steps.js'
 import { whenGateOpen } from '../stage/gate.js'
-import { handOverWithout } from '../stage/fallback.js'
+import { handOverWithout, capShowsWord } from '../stage/fallback.js'
 
 // <StageDepthGrains src="figures/lis_last.jpg" depth="figures/lis_last.depth.png"
 //   camera="data/lis.json" :anchor="[x, y, z]" :cues="[…]"><h1>Ačiū</h1></StageDepthGrains>
@@ -145,7 +145,8 @@ function grains(s, got) {
 // plate as Stage.vue and StagePlate.vue mark them on <html> (loading → playing → held,
 // or the plate given up for the living still), until the slide is left
 // A plate that never loads (a hanging URL) shows the word by LOADING_CAP, as v0.9.0
-// did after waiting for a world, not at wordBy.
+// did after waiting for a world, not at wordBy; a plate playing then is the arrival
+// the recorder filmed, and its word waits for its end (capShowsWord).
 const LOADING_CAP = 8000
 function without(id) {
   const html = document.documentElement
@@ -159,7 +160,12 @@ function without(id) {
     else if (h.still === 'stay') { still.value = true; fading.value = false; clearTimeout(holdTimer); holdTimer = 0; played = false }
     else if (!holdTimer && !fading.value) { holdTimer = setTimeout(() => { if (id === run) fading.value = true }, props.hold); timers.push(holdTimer) }
   }
-  later(LOADING_CAP, () => { if (id === run) word.value = true })
+  const cap = () => {
+    if (id !== run) return
+    if (!capShowsWord(html.dataset.stagePlate, played)) return later(500, cap)
+    word.value = true
+  }
+  later(LOADING_CAP, cap)
   marks = new MutationObserver(follow)
   marks.observe(html, { attributes: true, attributeFilter: ['data-stage-layer', 'data-stage-plate'] })
   // a task on: at slide enter <html> may still carry the slide before's plate (`held`

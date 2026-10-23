@@ -24,7 +24,9 @@ a world it behaves as v0.8.2 says, and a v0.8.2 deck as under v0.8.2.
   the still covers it while the plate has no frame, fades after `hold` as
   live while it plays, and is gone with the word shown once the plate holds
   the settled world. A stall after the plate has played keeps the fade
-  going; a plate that never loads shows the word by 8 s; a fallback during
+  going; a plate that never loads shows the word by 8 s, and one still
+  playing then keeps it for its end (`capShowsWord`: the example-lhcb
+  rehearsal saw the word at 8 s over slide 5's 17 s plate); a fallback during
   the hand-over is followed at once. Over the living still and the still
   alone it stays and the word shows at once, as before; it no longer waits
   8 s for a world that has fallen back. Without a world the word comes with
@@ -35,11 +37,12 @@ a world it behaves as v0.8.2 says, and a v0.8.2 deck as under v0.8.2.
   fallback. The plate's text-free pass hides `.slidev-layout`, so a hand-over
   slide's plate holds its grains and not its still or word. `deck.py` reads
   the lhcb example deck as Slidev numbers it.
-- **Tests:** stage 145 → 149 (v0.8.3's plateStep for the back-step, v0.8.4's
+- **Tests:** stage 145 → 150 (v0.8.3's plateStep for the back-step, v0.8.4's
   `--skip-clips`; the hand-over's rule over every layer and plate state, the
-  component's wiring; it joins the compile check); Python 183 → 192 (v0.8.4's
-  embedded clips), and `test_shared_registry` counts the 44 clips v0.9.0's
-  `lis_flag.mp4` made (main had failed on 43 since v0.9.0); root 11.
+  component's wiring, the cap's rule; it joins the compile check); Python
+  183 → 192 (v0.8.4's embedded clips), and `test_shared_registry` counts the
+  44 clips v0.9.0's `lis_flag.mp4` made (main had failed on 43 since
+  v0.9.0); root 11 → 13 (v0.8.4's cut-clip cover).
 
 ## v0.9.0 — 2026-10-20
 
