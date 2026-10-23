@@ -353,10 +353,14 @@ check('synthetic plates made (ffmpeg with libvpx-vp9)', made.every((c) => c === 
 const { server: plateServer, port: platePort } = await serve(plated)
 const p15 = await browser.newPage({ viewport: { width: 1280, height: 720 } })
 p15.on('pageerror', (e) => { if (!/Wake Lock/i.test(e.message)) forcedErrors.push(`plates: ${e.message.slice(0, 200)}`) })
+// an init script runs before <html> exists: watch the document (there from the
+// start) and its subtree, keeping <html>'s changes; observing documentElement threw,
+// and the log stayed empty, so "never playing" held on any build
 await p15.addInitScript(() => {
   window.__plateLog = []
-  new MutationObserver(() => window.__plateLog.push({ hash: location.hash, v: document.documentElement.dataset.stagePlate ?? null }))
-    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-stage-plate'] })
+  new MutationObserver((rs) => {
+    for (const r of rs) if (r.target === document.documentElement) window.__plateLog.push({ hash: location.hash, v: document.documentElement.dataset.stagePlate ?? null })
+  }).observe(document, { attributes: true, subtree: true, attributeFilter: ['data-stage-plate'] })
 })
 await p15.goto(`http://localhost:${platePort}/?stage-force=no-webgl2#/1`, { waitUntil: 'load' })
 await p15.waitForSelector('.slidev-layout', { timeout: 60000 })
@@ -384,7 +388,7 @@ await go(2)
 const backA = await untilPlate(['held'], 8000)
 await p15.waitForTimeout(500)
 let seen = await valuesFrom(mark)
-check('a back-step 3→2 after 2\'s plate ended holds: held, never playing', ended2 === 'held' && backA === 'held' && !seen.includes('playing') && (await plateNow()) === 'held', `${ended2} → ${seen.join(' ')}`)
+check('a back-step 3→2 after 2\'s plate ended holds: held, never playing', ended2 === 'held' && backA === 'held' && seen.length > 0 && !seen.includes('playing') && (await plateNow()) === 'held', `${ended2} → ${seen.join(' ')}`)
 // (b) back-step after leaving 2 mid-way (the Innoday case: the plate not at its end)
 await go(1)
 await untilPlate(['held', 'playing', 'loading'])
@@ -398,7 +402,7 @@ await go(2)
 const backB = await untilPlate(['held'], 8000)
 await p15.waitForTimeout(500)
 seen = await valuesFrom(mark)
-check('a back-step 3→2 after leaving 2 mid-way holds: held, never playing', backB === 'held' && !seen.includes('playing') && (await plateNow()) === 'held', seen.join(' '))
+check('a back-step 3→2 after leaving 2 mid-way holds: held, never playing', backB === 'held' && seen.length > 0 && !seen.includes('playing') && (await plateNow()) === 'held', seen.join(' '))
 await p15.close()
 plateServer.close()
 await rm(plated, { recursive: true, force: true })
