@@ -191,6 +191,19 @@ local-first too; `slidev-videos venue` always builds with it. Each
 `<source>` failure advances the chain; when it is exhausted the slide shows
 `Video not available: <src>`.
 
+**The venue bundle** (`slidev-videos venue`) opens by double-clicking its
+`index.html`, on a stock Windows or Mac, downloaded and unzipped, with
+nothing installed and no launcher for SmartScreen or Gatekeeper to refuse.
+The build (`VIDEOS_VENUE_FILE=1`, this addon's `vite.config.js`, on the hash
+router) inlines the code into `index.html` and carries `public/` (but the
+clips) in `venue-assets.js`, a classic script beside it: from `file://` a
+browser fetches nothing and taints the canvas, WebGL and Web Audio with any
+sibling file, so a small shim hands those files to `fetch()`, `<img>` and
+`<audio>` as blobs. Clips stay files and play as they are. Opened from
+inside the zip, the page says to extract it first. `RUN_ME.bat` (Windows
+PowerShell, no Python, no admin) and `RUN_ME.command` (python3) serve the
+folder instead, as backups.
+
 **Playback** is slide-driven: rewind + play on activation (muted first, then
 unmuted unless `muted`), pause + rewind on deactivation. A `<source>` is only
 attached inside a sliding window — the live slide, the three ahead (preloaded
@@ -234,7 +247,7 @@ frames`** writes a small strip of frames per clip into
 `public/video-frames/` (one 320 px tile every 4 s, at most 64, about
 150–350 KB a clip) for the deck to commit. Arriving uses the first tile,
 leaving the tile at the moment the presenter moved on. Where the clip is
-same-origin (dev mode, venue and portable builds) the frame on screen is read
+same-origin (dev mode, a served portable build) the frame on screen is read
 directly instead. No strip, no overlay, no WebGL2 (or the stage's word that
 there is none, `html[data-stage-fallback="no-webgl2"]`, found or forced with
 `?stage-force=no-webgl2` to rehearse such a venue) or

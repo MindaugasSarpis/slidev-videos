@@ -4,6 +4,7 @@ videos/hq/
 public/videos/
 public/videos-hq
 dist/
+dist-file/
 node_modules/
 __pycache__/
 *.egg-info/
