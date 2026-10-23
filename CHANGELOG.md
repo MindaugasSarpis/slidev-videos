@@ -180,7 +180,7 @@ Gatekeeper; Sequoia has no right-click Open).
   warns, and `RUN_ME.txt` points at the launchers. A deck whose headmatter
   does not say `routerMode: hash` (a path router finds no slide in a
   `file://` path; every talk says it) gets a warning too.
-- Tests: root 13 → 23 (the plugin under both bundlers, the HTML rewrite, the shim); a file://
+- Tests: root 13 → 24 (the plugin under both bundlers, the sidecar written after the bundle, the HTML rewrite, the shim); a file://
   smoke (`pnpm build:example:file && pnpm smoke:file`: from `file://`, alone,
   served); Python 191 → 198 (the bundle, the launchers, the router check), with `serve.ps1` run under Windows PowerShell
   where WSL reaches it.

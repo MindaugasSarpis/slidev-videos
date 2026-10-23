@@ -177,19 +177,22 @@ export function venueFile() {
         for (const f of used) delete bundle[f];
       }
     },
-    closeBundle() {
-      if (!outDir) return;
+    // after the write (Vite has copied public/ by then); not closeBundle, which
+    // Rollup also calls on a failed build, where it would hide the error
+    writeBundle(opts) {
+      const dir = opts?.dir || outDir;
+      if (!dir) return;
       const entries = {};
       let raw = 0;
-      for (const p of walk(outDir)) {
-        const rel = relative(outDir, p).split('\\').join('/');
+      for (const p of walk(dir)) {
+        const rel = relative(dir, p).split('\\').join('/');
         const type = carriedType(rel);
         if (!type) continue;
         const b = readFileSync(p);
         raw += b.length;
         entries[rel] = [type, b];
       }
-      writeFileSync(join(outDir, SIDECAR), sidecarSource(entries));
+      writeFileSync(join(dir, SIDECAR), sidecarSource(entries));
       console.log(`venue: index.html opens from file://; ${Object.keys(entries).length} public files (${(raw / 1e6).toFixed(1)} MB) ride in ${SIDECAR}`);
     },
   };
