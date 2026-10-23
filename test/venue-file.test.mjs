@@ -7,7 +7,9 @@
 // as blobs the page made itself.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { inlineHtml, carriedType, venueShim, sidecarSource, venueFile, SIDECAR } from '../venue/file.js';
 
 const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
@@ -176,6 +178,22 @@ test('one chunk under Rollup (Vite 7, the talks\' Slidev 52.14) and under Rolldo
   assert.equal(rolldown.build.rolldownOptions.output.codeSplitting, false);
   // with manualChunks gone Rolldown takes inlineDynamicImports too, but warns it away
   assert.equal('inlineDynamicImports' in rolldown.build.rolldownOptions.output, false);
+});
+
+test('the sidecar is written once the bundle is (writeBundle): Rollup closes a failed build too, and a close hook would hide its error', () => {
+  const p = venueFile();
+  assert.equal(p.closeBundle, undefined);
+  const dir = mkdtempSync(join(tmpdir(), 'venue-out-'));
+  try {
+    mkdirSync(join(dir, 'data')); mkdirSync(join(dir, 'videos'));
+    writeFileSync(join(dir, 'index.html'), '<html></html>');
+    writeFileSync(join(dir, 'data', 'space.json'), '{"a":1}');
+    writeFileSync(join(dir, 'videos', 'a.mp4'), 'clip');
+    p.writeBundle({ dir });
+    const w = {};
+    new Function('window', readFileSync(join(dir, SIDECAR), 'utf8'))(w);
+    assert.deepEqual(Object.keys(w.__venueAssets), ['data/space.json']);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('the addon turns the plugin on only for a venue build', () => {
