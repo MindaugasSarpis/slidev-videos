@@ -13,7 +13,7 @@ quarks, clusters, particle names — is a plugin.
 
 ## Install
 
-    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.10.0&path:/packages/stage"
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.11.0&path:/packages/stage"
 
 ## Use
 
@@ -53,6 +53,9 @@ Then each slide steers the camera from its frontmatter:
 | `path` | a timed camera move: `[[0, { at, dist, yaw, pitch }], [2.4, { … }], …]`, seconds on the camera clock from the slide's opening, through every key on a smooth curve, holding at the last. Before a first key later than 0 the camera flies there from where it was. With `path`, `at` and the rest are the last key's |
 | `ambient` | how much of the ambient world shows, 0–1, eased like `rate` (a number or keyframes): the ground and its glows, the nebula, the dust field and the halo together. 0 is black, for a deck's own forms alone; a slide without one eases back to 1. By hand: `space.setAmbient(0, { over })` |
 | `hum` | `false`: no hum on this slide |
+| `steady` | `true`: no grain twinkles on this slide, eased in over 0.6 s (every grain material shares one twinkle uniform; see *Steps*). By hand: `space.setSteady(true, { over })` |
+| `clock` | `music`: the world keeps the playing `<StageSoundtrack>`'s pace instead of the wall's, so a long frame cannot leave it behind the music (its step is the music's, up to half a second a frame). By hand: `space.setClockSource(() => seconds \| null)` |
+| `recorded` | the slide is its recording over a running world: `plate` (its `NN-plate.mp4`, from its top; the world rests under it), `clip` (its own clip is the picture), or `{ kind, music, at }`: the video also keeps the time of the playing track whose path holds `music`, its 0 s at the track's `at` s (±10 %, set where it belongs when a second off). A slide whose plate does not answer, or with `plates: false`, runs live; the recorder films it live. See [When the world cannot run](#when-the-world-cannot-run) |
 
 A slide without `space` keeps the previous pose. Flights take 1.4–4.5 s by
 distance and ease in and out.
@@ -73,6 +76,15 @@ shows or hides a group of StagePhoto places from that slide on, with a 1 s
 fade; see the root README's *Place groups*. The engine side is
 `space.setPlaceGroups({ group: bool }, { immediate })`.
 
+A slide's `steps: { det: 1 }` (beside `space`, like `places`) sets the step
+bus from that slide on, **however the slide is reached**: worked out from the
+slide list on every slide change, 0 before the first slide that names a key,
+so a slide opened directly, after a jump or on a back-step has the state it
+has when reached in order (MasterTalk's crossing slide was black opened
+directly: its collision ran only from the slide before). A slide's own
+`<StageSteps>` lands after it. State a later slide relies on belongs here,
+not only in a `<StageSteps>` on the slide before.
+
 ### `stage:` options
 
 | key | default | |
@@ -86,7 +98,7 @@ fade; see the root README's *Place groups*. The engine side is
 | `sound` | `true` | `false` is silent; `{ hum, flight, clip, level }` picks the voices: a low hum while the camera is at `humAt`, a soft whoosh for each flight of any length, a rising tone as a clip condenses. All start after the first key or click, none in the presenter window |
 | `humAt` | `[hero]` | the stations within reach of which the hum plays; `all` (or `'*'`) hums on every pose, out in the open dust too |
 | `stills` | `stills` | the folder under `public/` holding a still per slide (`01.jpg` …) for print, PDF export and the fallback; `false`: none |
-| `tier` | from the device | the quality tier, 0 (full) … 3 (floor); a phone starts at 2, a lost context steps down one |
+| `tier` | from the device | the quality tier, 0 (full) … 3 (floor); a phone starts at 2, an Apple GPU at 1, a lost context or the watchdog steps down one |
 | `motion` | `respect` | under `prefers-reduced-motion`: `respect` shows the still alone; `floor` runs the world all the same, at its floor. A deck a presenter shows from a venue's PC sets `floor`: that machine's accessibility setting is the venue's, not the audience's choice. See [When the world cannot run](#when-the-world-cannot-run) |
 | `plates` | `videos` | the folder under `public/` holding the recorder's `NN-plate.mp4`, played in the world's place where it cannot run; `false`: none, the still breathes instead |
 | `platesRelease` | the videos addon's release | where the plates are pulled from when the deck does not carry them: a URL, or `owner/repo@tag` (a GitHub release); `false`: the deck's own copy only |
@@ -94,7 +106,7 @@ fade; see the root README's *Place groups*. The engine side is
 | `halo` | `true` | the dust borders; `haloOn: '.card, .halo'` picks what gets one |
 | `dim` | `0.6` | the content-slide scrim; `layoutDim: { cover: 0.15, … }` per layout |
 | `hud` | — | `{ kicker, fields: [...] }` for the default stop panel |
-| `options` | — | engine numbers: `nebula` (far clouds in the palette's colours, 0–1), `streak` (grains drawn out along their path while the camera flies, 0–2, default 1), `reach` (a pose within this of a station is *at* it, default 12), `bloom`, `vignette`, `grain`, `aberration`, `exposure`, `density`, `dustSize`, `dustGain`, `gather`, `fov`, `flight: [min, max]`, `maxBufferWidth`, `twinkle` (how far a form's grains swell as they shine, 0–1), `guard` (`false`: no frame-rate guard), `lift` (the ground's lightness raised this far toward white, its hue kept, 0–1) |
+| `options` | — | engine numbers: `nebula` (far clouds in the palette's colours, 0–1), `streak` (grains drawn out along their path while the camera flies, 0–2, default 1), `reach` (a pose within this of a station is *at* it, default 12), `bloom`, `vignette`, `grain`, `aberration`, `exposure`, `density`, `dustSize`, `dustGain`, `gather`, `fov`, `flight: [min, max]`, `maxBufferWidth`, `twinkle` (how far every grain swells as it shines, 0–1; a slide's `steady` stills it), `guard` (`false`: no frame-rate guard), `watchdog` (`false`: no hand-over to the plate and a lower tier when the machine stays slow), `lift` (the ground's lightness raised this far toward white, its hue kept, 0–1) |
 | `auto` | `true` | `false`: the deck mounts `<Stage>` itself from its `global-bottom.vue`, to fill the `#hud` slot |
 | `lang` | — | how `<StageCount>` writes numbers: `lt` or `en` (else the deck's `htmlAttrs.lang`) |
 
@@ -371,6 +383,26 @@ const s = stepper(o.name)              // { step, prev, fresh, off }
   older bus (`master:grains`, `innoday:grains`) is untouched until the talk
   moves its forms onto this one.
 
+**Events end.** A builder that draws an event from world times in uniforms
+(when it started, when it was let go) puts them back to `OFF` (1e9) once the
+event has faded, so nothing of it carries into a later slide:
+`eventLatch(u, { start: 'uShowT', hide: 'uHideT', also: ['uHitT'], fade: 1.3 })`
+gives `start(t, at?)`, `stop(t)` and `tick(t)` (each frame; whether it still
+draws). The lhcb detector and emblem use it. (Užsikrauk karjerai's detector
+kept a collision's crossing time after its stop, and a later slide's calm
+stayed off.)
+
+**One twinkle.** Every grain material of the package shares
+`twinkleUniform` (`{ value }`, 0 steady … 1): `options.twinkle` times the
+slide's `steady`. A deck's own material takes it with `uTwinkle:
+twinkleUniform` among its uniforms and scales its twinkle by it (`grainMaterial`
+does so already). Twinkle on the world's time (`t`, or `worldTime()`), not the
+wall's, so it rests with the world.
+
+**Once per entry.** `whenEntered(useIsSlideActive(), fn)` runs `fn` when its
+slide becomes the current one, and only then. Slidev's `onSlideEnter` re-runs
+on any reactive value its callback reads, a click within the slide among them.
+
 **Grain helpers.** For a builder's own points, `grainMaterial(vertexShader,
 uniforms, { near })`, `grainGeometry(n, { position, aSeed: [array, 1] })` and
 `grainPoints(geo, mat)` give the engine's linear-light additive grains.
@@ -398,13 +430,14 @@ over. With no gate set, the work starts at once.
   - **`reset`** runs as the hand-over starts, and when the slide is left for anywhere but the next one. **`end`** runs on the next slide, including when that slide is opened directly. **`hole: { name, r }`** dims that detector round the mark until the fade-out.
   - **The slot** (the word) shows `wordAfter` s (3.2) after the camera stops, and by `wordBy` s (34) at the latest. Without a running world, printed and in the previews, the slide is the still and the word; over a recorded plate the still fades onto it (see [When the world cannot run](#when-the-world-cannot-run)).
   - **The camera JSON, depth PNG and still** come from `tools/lis/lis_scene.py`. The light injection system's set is in `stage-data` by name (`lis_last.jpg`, `lis_last.depth.png`, `lis.json`, fetched like the geometry), its clip `lis_flag.mp4` in the shared library.
+- `StageSoundtrack` — the deck's music, one piece across the slides that carry it: `<StageSoundtrack src="audio/piece.m4a" :level="0.3" start />`. Only the audience's window plays it; going to a slide without one fades it out; `+` / `-` step every level by a tenth (0 … 2×), the presenter's window showing it a moment; `keys` gives them to the music over a clip. `resync`, `tail`, `tailAt`: a finale's second file. `clipAt`: start when the slide's clip reaches that second. `onClick: { click, file, level, xfade }`: a cross-fade on a click. `drop: { at, file, hit, duck, quiet, out?, fade?, xfade?, clock? }`: the music falls away at `duck`, `file` (cut `hit` s before its peak) comes in quiet so its peak lands at `at`, and the level opens on the peak file's own clock; `clock` counts those seconds on `music` (the audio clock since the slide opened, the default), `clip` (its rate nudged ±10 % to the music) or `world`. Fades are one equal-power curve on the AudioContext and accents are set at the context time of a music second (`music.accent(src, at, { level, call })`), never stepped on frames: Užsikrauk karjerai's accent, timed off the world, missed whenever a frame ran long. `musicClock(src?)` reads the playing track's time off the audio clock; `space.clock: music` keeps the world on it. From Innoday's and Užsikrauk karjerai's `setup/Soundtrack.vue` and `soundLevel.js`, whose props it keeps.
 - `StagePanel` — a translucent panel with a `kicker`, haloed.
 - `StageHalo` — the dust borders. Mounted for you.
 - `StageHero` — a full-bleed hero slide with its own live scene, for a deck without the persistent world: `<StageHero mode="galaxy" kicker="Part I" title="Line one|line two" sound counter />`, modes `proton | galaxy | collider`.
 
 ## Tools
 
-    slidev-stage-check [deck-dir] [--plugins hadron] [--types beacon] [--json]
+    slidev-stage-check [deck-dir] [--plugins hadron] [--types beacon] [--tier 0..3] [--json]
     slidev-stage-shots <dist> <out-dir> [options]   # see Headless review
     slidev-stage-record <dist> <out-dir> [--fps 50] [--slides 2-5] [--plate | --plate-only] [--hold 8]
     slidev-stage-safe <dist> [--broadcast] [--json]
@@ -429,6 +462,7 @@ Slidev counts them, and a code:
 | `camera-inside-form` | warning: a slide's camera stands inside an object's `radius` (every grain is drawn across the screen). Not for a form a camera is meant to stand in: a `ring`, a type registered `registerBuilder(type, fn, { fields, enterable: true })` (a floor, enveloping strands), or an object with `"enterable": true` |
 | `unknown-key` | warning: a key of `stage:` or of a slide's `space:` that nothing reads |
 | `unknown-component` | warning: a `<Count>` tag, and no `Count` the deck registers itself (in `setup/` or `components/`): the addon's counter is `<StageCount>` |
+| `grain-budget` | warning: a slide lights more grains than its tier carries (600k at tier 0, 320k, 120k, 60k; `--tier`, else `stage.tier`, else 0): the dust, every object no step drives, and the stepped ones (`steps:`, `<StageSteps :set>`, a talk's `<Grains :set>`) whose step is above 0, the heaviest named. An estimate: a deck's own type counts when its object says `grains` |
 
 Also `duplicate-station`, `missing-look`, `bad-src`, `missing-file`,
 `unknown-record`, `unknown-plugin`, `no-stations`. Errors exit 1, warnings
@@ -868,7 +902,7 @@ in motion. What stands under the slide's text is read off one table
 | --- | --- |
 | none | `world` |
 | `reduced-motion` | `still`; `world-floor` with `motion: floor` |
-| `no-webgl2`, `no-float-target`, `plugin`, `data`, `init`, `context-lost` | `plate`; `living` with `plates: false`, and on a slide no plate answers for |
+| `no-webgl2`, `no-float-target`, `plugin`, `data`, `init`, `context-lost`, `slow` | `plate`; `living` with `plates: false`, and on a slide no plate answers for |
 
 | layer | what shows |
 | --- | --- |
@@ -1023,8 +1057,20 @@ on a deck with `routerMode: hash` prints only those slides (Slidev read the
 range from the hash's own query and printed every slide; the addon sets it
 from the address).
 
+**Too slow.** The frame guard lowers the pixel ratio, then halves the dust,
+below 40 fps. A machine still slow after it (frames past 83 ms filling half
+of two seconds, or three past 250 ms; not in the first 4 s, and a gap of over
+a second is a resume, not slowness) is the watchdog's (`stage/watchdog.js`):
+the slide goes to its plate from where it is, and the world is built again a
+tier lower behind it, as after a lost context; the next slide is the world
+again. At the floor tier the plates take over for the rest (`slow`).
+`options.watchdog: false` turns it off; the recorder, `holdQuality()` and an
+automated browser never trip it; `slidev-stage:slow` on window says it did.
+Užsikrauk karjerai's close went white on an M2 where Innoday's recorded one
+had played whole: a finale that must not fail is `space.recorded: plate`.
+
 The quality tier (0 full … 3 floor) is picked from the device (a phone starts
-at 2) and caps the simulated field, the drawing buffer and the photo places'
+at 2, an Apple GPU — an M-series Mac — at 1) and caps the simulated field, the drawing buffer and the photo places'
 grains and textures; `stage.tier: <n>` pins it. A lost WebGL context rebuilds
 the world one tier lower, at most twice; a loss past that, or one at the
 floor tier, is `context-lost` for good, and the plate takes over.

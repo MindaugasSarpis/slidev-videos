@@ -4,6 +4,78 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## v0.11.0 — 2026-10-27
+
+slidev-videos 0.11.0 · slidev-addon-stage 0.8.0 · slidev-addon-videos 0.11.0
+
+What Innoday's and Užsikrauk karjerai's closes taught (the owner, 26 Oct, of
+Karjera: "missed the finale with the crash, pointcloud blinking from the start
+and missed soundtrack accent… update tools by taking this into account"). The
+tag waits on the owner's word.
+
+**A v0.10.0 deck behaves as under v0.10.0, except four deliberate changes:**
+the lhcb detector thins to the stage's budget at tier 0 too (`lhcb-dense`:
+446 400 → 223 200 grains); an Apple GPU (an M-series Mac) starts at tier 1;
+the lhcb plugin's and a deck's `grainMaterial` grains follow
+`options.twinkle` (a `broadcast` look's 0.35 calms them as it did the forms);
+and the frame-time watchdog is on (`options.watchdog: false` turns it off).
+
+- **Calm where a slide asks, and no state carried in.** The blink: Karjera's
+  detector kept a collision's crossing time after its stop, so slide 10's
+  collision left slide 16's `steady` off, and other grains twinkled on the
+  wall clock outside it. Every grain material now shares one twinkle uniform
+  (`twinkleUniform`): `options.twinkle` times the slide's new `space.steady`,
+  eased. `eventLatch` puts an event's start, hide and the times beside it
+  back to OFF once its fade is over (the lhcb detector and emblem use it).
+  Depth grains twinkle on the world's clock (`worldTime()`).
+- **State set up however a slide is reached.** The mirror case: MasterTalk's
+  crossing slide was black opened directly, its collision run starting on
+  the slide before. A slide's `steps: { det: 1 }` frontmatter sets the step
+  bus from that slide on, worked out from the slide list on every change (0
+  before the first slide that names a key), so a slide opened directly,
+  jumped to or stepped back into has the state it has in order; its own
+  `<StageSteps>` lands after. `__stage.state().steps` shows the bus.
+  `whenEntered(useIsSlideActive(), fn)` runs once per entry (Slidev's
+  `onSlideEnter` re-ran on a click); StageSteps, StageCount and
+  StageDepthGrains use it.
+- **A slide as its recording.** Innoday's recorded close played whole where
+  Karjera's live one went white. `space.recorded: plate` plays the slide's
+  plate from its top over a running world, which rests under it; `clip`
+  leaves the picture to its clip; `{ kind, music, at }` keeps the video on
+  the playing track's time (`slaveRate`: ±10 %, set where it belongs when a
+  second off, as Innoday's drop did). A slide whose plate does not answer,
+  or with plates off, runs live; under the recorder it is the world.
+- **The watchdog.** The frame guard only lowers the pixel ratio and halves
+  the dust. A machine still slow after it (frames past 83 ms filling half of
+  two seconds, or three past 250 ms; a 4 s grace; a gap past a second is a
+  resume) hands the slide to its plate from where it is and builds the world
+  a tier lower behind it; at the floor tier the plates take over (`slow`, a
+  new fallback reason and `--force` rehearsal). Never under the recorder,
+  after `holdQuality()` or in an automated browser.
+- **`<StageSoundtrack>`.** The talks' `Soundtrack.vue` and `soundLevel.js`,
+  props kept, on `stage/soundtrack.js`: one player per page through the
+  stage's audio output; fades as one equal-power curve on the AudioContext
+  (down along a cosine: the talks' ramp dipped in a cross-fade); accents set
+  at the context time of a music second (`music.accent`), never stepped on
+  frames; `musicClock(src?)` reads the playing track's time off the audio
+  clock. The accent: the drop was timed off the world, whose clock falls
+  behind on any frame past 83 ms. The drop now counts on the audio clock by
+  default (`clock: music`; `clip` and `world` as before) and opens on its
+  peak file's own clock; a slide's `space.clock: music` makes the world's
+  step the music's.
+- **A grain budget per slide.** `slidev-stage-check` estimates the grains
+  each slide lights (the dust, every object no step drives, the stepped
+  ones on where their step is above 0, a deck's `.bin` by its size) and
+  warns `grain-budget` past 600k / 320k / 120k / 60k by tier (`--tier`,
+  else `stage.tier`). On Karjera's deck it flags slides 13–17 at ~632k
+  without counting its own builders.
+- **Tests:** stage 150 → 218 (twinkle and latch, `whenEntered`, the music
+  player against a faked Web Audio, `stepReal`, the recorded layer and
+  `slaveRate`, the watchdog, the budget and tiers, cold entry; the compile
+  check now covers every component); the stage smoke opens every example
+  slide cold. `vue` joins the stage's devDependencies (its tests load it).
+  Python 205 and root 24 unchanged.
+
 ## v0.10.0 — 2026-10-26
 
 slidev-videos 0.10.0 · slidev-addon-stage 0.7.0 · slidev-addon-videos 0.10.0
