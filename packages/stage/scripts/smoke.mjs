@@ -374,6 +374,7 @@ const untilPlate = async (want, timeout = 20000) => {
 const go = async (n) => { await p15.evaluate((k) => { location.hash = `#/${k}` }, n); await p15.waitForFunction((k) => document.querySelector('.stage')?.dataset && location.hash.startsWith(`#/${k}`), n) }
 const since = () => p15.evaluate(() => window.__plateLog.length)
 const valuesFrom = (i) => p15.evaluate((k) => window.__plateLog.slice(k).map((e) => e.v), i)
+const logFrom = (i) => p15.evaluate((k) => window.__plateLog.slice(k).map((e) => `${e.hash}:${e.v}`).join(' '), i)
 
 await untilPlate(['held', 'playing', 'none'])
 await go(2)
@@ -388,7 +389,7 @@ await go(2)
 const backA = await untilPlate(['held'], 8000)
 await p15.waitForTimeout(500)
 let seen = await valuesFrom(mark)
-check('a back-step 3→2 after 2\'s plate ended holds: held, never playing', ended2 === 'held' && backA === 'held' && seen.length > 0 && !seen.includes('playing') && (await plateNow()) === 'held', `${ended2} → ${seen.join(' ')}`)
+check('a back-step 3→2 after 2\'s plate ended holds: held, never playing', ended2 === 'held' && backA === 'held' && seen.length > 0 && !seen.includes('playing') && (await plateNow()) === 'held', `${ended2} → ${await logFrom(mark)}`)
 // (b) back-step after leaving 2 mid-way (the Innoday case: the plate not at its end)
 await go(1)
 await untilPlate(['held', 'playing', 'loading'])
@@ -407,6 +408,41 @@ await p15.close()
 plateServer.close()
 await rm(plated, { recursive: true, force: true })
 check('nothing threw on the plated page', !forcedErrors.some((e) => e.startsWith('plates:')), forcedErrors.filter((e) => e.startsWith('plates:')).join(' | '))
+
+// ---- every slide opened cold ------------------------------------------------------------------
+// A slide reached directly (a link, a reload, a jump) is set up as one reached in order: the world
+// draws, the step bus is the deck's at that slide (`steps:` frontmatter: slide 3 says demo 1, slide 5
+// demo 2), and the frame is not black. MasterTalk's crossing slide was black opened directly.
+const coldSteps = [0, 0, 1, 1, 2, 2, 2]
+for (let n = 1; n <= coldSteps.length; n++) {
+  const pc = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+  const coldErrors = []
+  pc.on('pageerror', (e) => { if (!/Wake Lock/i.test(e.message)) coldErrors.push(e.message.slice(0, 200)) })
+  pc.on('console', (m) => { if (m.type() === 'error' && !/Wake Lock|favicon/i.test(m.text())) coldErrors.push(m.text().slice(0, 200)) })
+  await pc.goto(`http://localhost:${port}/#/${n}`, { waitUntil: 'load' })
+  // (not .slidev-layout: opened past slide 1, the first one in the document is a hidden slide's)
+  await pc.waitForFunction(() => (window.__stage?.state?.().frames ?? 0) > 20, null, { timeout: 60000 }).catch(() => {})
+  const cold = await pc.evaluate(() => new Promise((done) => {
+    const s = window.__stage.state()
+    const c = document.querySelector('.stage canvas.field')
+    // the canvas's light, read in the frame it was drawn (after the engine's own callback)
+    requestAnimationFrame(() => {
+      let light = -1
+      try {
+        const k = document.createElement('canvas'); k.width = 64; k.height = 36
+        const g = k.getContext('2d'); g.drawImage(c, 0, 0, 64, 36)
+        const d = g.getImageData(0, 0, 64, 36).data
+        let sum = 0; for (let i = 0; i < d.length; i += 4) sum += d[i] + d[i + 1] + d[i + 2]
+        light = sum / (d.length / 4) / 3
+      } catch { /* no canvas */ }
+      done({ slide: s.slide, layer: s.layer, frames: s.frames, steps: s.steps, at: s.at, light })
+    })
+  }))
+  check(`slide ${n} opened cold: its own slide, the world, its steps, light`,
+    cold.slide === n && cold.layer === 'world' && cold.frames > 20 && cold.steps?.demo === coldSteps[n - 1] && cold.light > 1 && !coldErrors.length,
+    `${JSON.stringify(cold)}${coldErrors.length ? ` errors: ${coldErrors.join(' | ')}` : ''}`)
+  await pc.close()
+}
 
 await browser.close()
 server.close()

@@ -512,7 +512,7 @@ export function checkStage({ space, records = null, deck = '', pages = [], plugi
   // the grains each slide lights, against its tier's budget (stage/budget.js)
   const T = Math.max(0, Math.min(GRAIN_BUDGET.length - 1, Math.round(Number(tier ?? (cfg.tier === '' || cfg.tier == null ? 0 : cfg.tier)) || 0)));
   const all = space.stations.flatMap((st) => (Array.isArray(st.objects) ? st.objects : []));
-  const steps = slideSteps(slides.map((s) => s.body));
+  const steps = slideSteps(slides.map((s) => s.body), slides.map((s) => s.fm.steps ?? null));
   const stepped = new Set(steps.flatMap((o) => Object.keys(o)));
   let grains = 0;
   slides.forEach((s, i) => {

@@ -46,6 +46,7 @@ space:
   stops: [first, second]
   dim: 0.3
 clicks: 2
+steps: { demo: 1 }   # the step bus from here on, however the slide is reached (the smoke opens every slide cold)
 ---
 
 # A stop flies to a mark
@@ -72,6 +73,7 @@ A named pose
 
 ---
 space: { at: ring, dist: 22, yaw: 10, pitch: 30, dim: 0.7 }
+steps: { demo: 2 }
 ---
 
 # Content keeps its contrast

@@ -49,12 +49,15 @@ export const stepKey = (o) => o?.of ?? STEP_KEY[o?.type] ?? o?.name ?? null;
 const TAG = /<(?:StageSteps|Grains)\b([^>]*?)\/?>/g;
 const PAIR = /([A-Za-z_$][\w$]*|'[^']*'|"[^"]*")\s*:\s*(-?\d+(?:\.\d+)?)/g;
 const pairs = (s) => Object.fromEntries([...String(s).matchAll(PAIR)].map((m) => [m[1].replace(/^['"]|['"]$/g, ''), Number(m[2])]));
-export function slideSteps(bodies) {
+// fm: each slide's `steps:` frontmatter (steps.js stepsAt), applied before its tags
+export function slideSteps(bodies, fm = []) {
   const out = [];
   let now = {};
-  for (const body of bodies) {
+  for (const [i, body] of bodies.entries()) {
     const text = String(body ?? '').replace(/<!--[\s\S]*?-->/g, '');
     now = { ...now };
+    const d = fm[i];
+    if (d && typeof d === 'object' && !Array.isArray(d)) for (const [k, v] of Object.entries(d)) if (Number.isFinite(Number(v)) && typeof v !== 'boolean' && v !== null && v !== '') now[k] = Number(v);
     for (const [, attrs] of text.matchAll(TAG)) {
       const set = /:set="([^"]*)"/.exec(attrs);
       if (set) Object.assign(now, pairs(set[1]));

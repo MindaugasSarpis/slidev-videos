@@ -14,6 +14,7 @@ import { stillsDir, stillUrl, inPrint } from '../stage/stills.js'
 import { fallbackLayer, platesDir, plateRelease, plateLocalFirst } from '../stage/fallback.js'
 import { musicClock } from '../stage/soundtrack.js'
 import { recordedOf, layerNow, slaveRate } from '../stage/recorded.js'
+import { setSteps, stepsAt, allSteps } from '../stage/steps.js'
 
 // The persistent 3D world under a whole deck. The addon mounts it from its
 // own global-bottom.vue whenever the headmatter has a `stage:` block:
@@ -49,6 +50,8 @@ import { recordedOf, layerNow, slaveRate } from '../stage/recorded.js'
 //     recorded: plate      # the slide is its recording over the world (plate | clip | { kind, music, at }; stage/recorded.js)
 //   clicks: 3              # = stops.length
 //
+//   steps: { det: 1 }              # the step bus from this slide on, however it is reached
+//                                  # (0 before the first slide that names it; stage/steps.js)
 //   places: { inventions: true }   # photo places in group "inventions" show from here on
 //                                  # (false hides them); before the first slide that names a
 //                                  # group, it is the opposite (stage/place-groups.js)
@@ -303,6 +306,10 @@ function applyPlaces(immediate = false) {
   if (root.value) root.value.dataset.placeGroups = Object.entries(groups).map(([g, on]) => `${g}:${on ? 'on' : 'off'}`).join(' ')
 }
 watch(() => nav.currentSlideNo.value, () => applyPlaces(false))
+// A slide's `steps:` (stage/steps.js stepsAt): the step bus as the deck stands at this slide,
+// however it was reached. Synchronously on the change, so the slide's own <StageSteps> lands after.
+const stepDecls = computed(() => (nav.slides.value || []).map((r) => r?.meta?.slide?.frontmatter?.steps ?? null))
+watch(() => nav.currentSlideNo.value, (n) => { if (!printRoute()) setSteps(stepsAt(stepDecls.value, n)) }, { immediate: true, flush: 'sync' })
 
 // the engine time of the last pose or step change, for the probes' settle
 let changedAt = 0
@@ -628,6 +635,7 @@ function probeState() {
     dpr: p?.dpr ?? null,
     guard: p?.guardStage ?? null,
     dust: g ? Math.min(g.drawRange.count, g.attributes.position.count) : 0,
+    steps: allSteps(),                  // the step bus now (stage/steps.js)
   }
 }
 function settle({ min = 6, max = 30 } = {}) {

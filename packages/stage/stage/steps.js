@@ -18,6 +18,8 @@ export function setStep(name, step) {
 // several at once: setSteps({ det: 1, ltFlag: 0 })
 export function setSteps(steps) { for (const [name, step] of Object.entries(steps || {})) setStep(name, step); }
 export const stepOf = (name) => state.get(name);
+// every name's step now, as a plain object (the probes' __stage.state().steps)
+export const allSteps = () => Object.fromEntries(state);
 export const hasStep = (name) => state.has(name);
 
 // fn(step) each time `name` changes; returns an unsubscribe
@@ -49,6 +51,26 @@ export function stepper(name, initial = 0) {
   const s = { step: state.get(name) ?? initial, prev: initial, fresh: state.has(name), off: () => {} };
   s.off = onStep(name, (k) => { s.prev = s.step; s.step = k; s.fresh = true; });
   return s;
+}
+
+// A slide's state that must hold however the slide is reached (opened directly, a jump, a
+// back-step): its frontmatter `steps: { det: 1 }`, holding from that slide on. decls: each
+// slide's `steps` in order (null where it says nothing); no: the slide's 1-based number.
+// → { name: step } for every name any slide steps: from the last slide up to `no` that names
+// it, 0 before its first. Worked out from the slide list, as `places:` is (place-groups.js),
+// so a slide entered cold is set up as one reached in order. (MasterTalk's crossing slide was
+// black opened directly: its collision ran only from the slide before it.)
+export function stepsAt(decls, no) {
+  const out = {};
+  (decls || []).forEach((d, i) => {
+    if (!d || typeof d !== 'object' || Array.isArray(d)) return;
+    for (const [k, v] of Object.entries(d)) {
+      if (!Number.isFinite(Number(v)) || v === null || v === '' || typeof v === 'boolean') continue;
+      if (!(k in out)) out[k] = 0;
+      if (i < no) out[k] = Number(v);
+    }
+  });
+  return out;
 }
 
 // tests only
