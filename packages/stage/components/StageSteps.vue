@@ -1,7 +1,8 @@
 <script setup>
 import { watch } from 'vue'
-import { onSlideEnter, useIsSlideActive, useSlideContext } from '@slidev/client'
+import { useIsSlideActive, useSlideContext } from '@slidev/client'
 import { setSteps } from '../stage/steps.js'
+import { whenEntered } from '../stage/slide-hooks.js'
 
 // <StageSteps :set="{ det: 1, ltFlag: 0 }" />: when its slide becomes the current
 // one, each named form in the world goes to that step (stage/steps.js).
@@ -22,7 +23,7 @@ const apply = () => {
   for (const [at, part] of Object.entries(props.clicks)) if ($clicks.value >= Number(at)) Object.assign(steps, part)
   setSteps(steps)
 }
-onSlideEnter(apply)
+whenEntered(active, apply)   // once per entry; a click within the slide is the watch below's
 watch($clicks, () => { if (active.value) apply() })
 </script>
 

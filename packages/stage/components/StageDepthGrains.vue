@@ -1,10 +1,11 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { onSlideEnter, onSlideLeave, useSlideContext, useNav } from '@slidev/client'
+import { onSlideLeave, useIsSlideActive, useSlideContext, useNav } from '@slidev/client'
 import { Vector3 } from 'three'
 import { sampleFrame, placeInDepth, loadDepth, makeDepthGrains, scaleLaw, poseCamera } from '../stage/depth-grains.js'
 import { setSteps } from '../stage/steps.js'
 import { whenGateOpen } from '../stage/gate.js'
+import { whenEntered } from '../stage/slide-hooks.js'
 import { handOverWithout, capShowsWord } from '../stage/fallback.js'
 
 // <StageDepthGrains src="figures/lis_last.jpg" depth="figures/lis_last.depth.png"
@@ -258,7 +259,7 @@ async function showEnd() {
   endState(s, s.h.scene.getObjectByName(NAME))
 }
 
-onSlideEnter(() => { if (live.value) takeOver() })
+whenEntered(useIsSlideActive(), () => { if (live.value) takeOver() })
 onSlideLeave(() => {
   if (!live.value) return
   run++; clear()

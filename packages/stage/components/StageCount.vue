@@ -1,8 +1,9 @@
 <script setup>
 import { ref, computed, onUnmounted } from 'vue'
-import { onSlideEnter, onSlideLeave, useSlideContext, useNav, configs } from '@slidev/client'
+import { onSlideLeave, useIsSlideActive, useSlideContext, useNav, configs } from '@slidev/client'
 import { formatCount, countRun, countAt, countSpan } from '../stage/count.js'
 import { shared } from '../stage/shared.js'
+import { whenEntered } from '../stage/slide-hooks.js'
 
 // <StageCount name="open" :from="800" :to="55000" />: a number that counts
 // when its slide becomes the current one, written the way its language
@@ -70,7 +71,7 @@ const engine = () => {
 }
 
 let raf = 0
-onSlideEnter(() => {
+whenEntered(useIsSlideActive(), () => {
   cancelAnimationFrame(raf)
   if (!live()) { value.value = props.to; run.value = null; return }
   const r = countRun({ from: props.from, to: props.to, ms: props.ms, delay: props.delay, last: props.name ? last.get(props.name) : undefined })
