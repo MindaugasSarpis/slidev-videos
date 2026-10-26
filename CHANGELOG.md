@@ -4,13 +4,13 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
-## v0.10.0 — unreleased
+## v0.10.0 — 2026-10-26
 
 slidev-videos 0.10.0 · slidev-addon-stage 0.7.0 · slidev-addon-videos 0.10.0
 
 v0.8.2 (the live fallback), v0.8.3 (the PPTX), v0.8.4 (a clip slide is
 its clip in the PPTX; a `cut` clip rests the world under it) and v0.8.5 (a
-venue zip opens by double-clicking `index.html`) on top of v0.9.0: the v0.8.x line merged as it is, its entries below. The tag waits on the owner's word.
+venue zip opens by double-clicking `index.html`) on top of v0.9.0: the v0.8.x line merged as it is, its entries below.
 
 **A v0.9.0 deck behaves as under v0.9.0 while its world runs**, with v0.8.2's
 one exception (no `advance-on-end` within half a second of a press); without
@@ -42,7 +42,9 @@ a world it behaves as v0.8.2 says, and a v0.8.2 deck as under v0.8.2.
   component's wiring, the cap's rule; it joins the compile check); Python
   183 → 192 (v0.8.4's embedded clips), and `test_shared_registry` counts the
   44 clips v0.9.0's `lis_flag.mp4` made (main had failed on 43 since
-  v0.9.0), 192 → 199 (v0.8.5's venue bundle, `serve.ps1`, the router check); root 11 → 24
+  v0.9.0), 192 → 199 (v0.8.5's venue bundle, `serve.ps1`, the router check), and
+  `tests/test_versions.py` holds `__version__` (it said 0.1.0), package.json,
+  the README install lines and this heading to pyproject's version; root 11 → 24
   (v0.8.4's cut-clip cover, v0.8.5's venue plugin and shim), and v0.8.5's
   file:// smoke. example-lhcb's hand-over rehearsal passes from `file://` as
   served.
@@ -143,7 +145,8 @@ others after their dates.
 `WebTakeover.vue`, `CollisionStart.vue`, `OpenerStart.vue`, `Strands.vue`,
 `funnel.js`, `takeover.js` (beyond its sampling), `view.js`, `strands.js`,
 `plots.js`, and `components/lhc-opening`. These follow after 26 Oct.
-## v0.8.5 — unreleased
+
+## v0.8.5 — not tagged; released in v0.10.0
 
 slidev-videos 0.8.5 · slidev-addon-stage 0.5.4 · slidev-addon-videos 0.8.5
 
@@ -188,7 +191,7 @@ Gatekeeper; Sequoia has no right-click Open).
 Not tested here: Safari and Firefox, and a double-click on the `.bat`
 (SmartScreen may ask once).
 
-## v0.8.4 — unreleased
+## v0.8.4 — not tagged; released in v0.10.0
 
 slidev-videos 0.8.4 · slidev-addon-stage 0.5.4 · slidev-addon-videos 0.8.4
 
