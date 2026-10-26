@@ -93,6 +93,9 @@ export function pickTier(gl = {}, dev = {}) {
   if (dev.memory && dev.memory <= 4) tier = Math.max(tier, 1);
   if (dev.memory && dev.memory <= 2) tier = Math.max(tier, 2);
   if (gl.maxTexture && gl.maxTexture < 8192) tier = Math.max(tier, 2);
+  // an Apple GPU (an M-series Mac; Safari names every one 'Apple GPU'): tier 1 at most to start —
+  // Užsikrauk karjerai's finale went white at tier 0 on an M2 (Oct 2026)
+  if (/\bApple (M\d|GPU)\b/.test(gl.gpu || '')) tier = Math.max(tier, 1);
   return Math.min(MAX_TIER, tier);
 }
 

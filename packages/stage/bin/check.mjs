@@ -43,17 +43,22 @@
 //                       api.busy: its assemble() calls onDone at once, or it plays its steps
 //                       (listen(…), onStep) with no assemble()
 //   unknown-key         (warning) a key of `stage:` or of a slide's `space:` nothing reads
+//   grain-budget        (warning) a slide lights more grains than its tier carries (stage/budget.js:
+//                       600k at tier 0): the dust, every object no step drives, and the stepped
+//                       ones (<StageSteps :set>, a talk's <Grains :set>) whose step is above 0.
+//                       The tier is --tier, else stage.tier, else 0
 //   unknown-component   (warning) a <Count> tag, and no Count the deck registers itself:
 //                       the addon's counter is <StageCount> (a talk's own Count.vue removed, a tag not renamed)
 //
 // Exit 1 on any error; warnings do not fail. --json prints
 // { ok, problems: [{ slide?, line?, station?, code, level, msg }], stats } to stdout.
-import { readFileSync, existsSync, realpathSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync, realpathSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CORE_TYPES, PLUGIN_TYPES, STAGE_KEYS, OPTION_KEYS, SPACE_KEYS, ENTERABLE, anchorIds } from '../stage/types.js';
 import { PALETTES, DEFAULT_PALETTE } from '../stage/palette.js';
 import { placesDecl } from '../stage/place-groups.js';
+import { GRAIN_BUDGET, slideSteps, litGrains, grainCount } from '../stage/budget.js';
 
 const DECK_NAMES = ['deck.md', 'slides.md'];
 const SETUP_FILE = /\.(js|ts|mjs|mts)$/;
@@ -169,13 +174,13 @@ const unquote = (s) => String(s).replace(/^(['"])(.*)\1$/s, '$2');
 // The deck's slides as Slidev's parser cuts them (@slidev/parser parse()): a
 // `---` line ends a slide, and opens a frontmatter when the next line has
 // text; fenced code and HTML comments are skipped. Hidden and disabled
-// slides take no number. → [{ no, line, fm }], `line` the 1-based line of
-// the slide's first `---` (or of its first line).
+// slides take no number. → [{ no, line, fm, body }], `line` the 1-based line of
+// the slide's first `---` (or of its first line), `body` its text after the frontmatter.
 export function deckSlides(deck) {
   const lines = String(deck ?? '').split(/\r?\n/);
   const raw = [];
-  let start = 0, fm = null, fmLine = 0, inComment = false;
-  const slice = (end) => { if (start === end) return; raw.push({ line: (fm != null ? fmLine : start) + 1, fm }); start = end + 1; fm = null; };
+  let start = 0, fm = null, fmLine = 0, bodyFrom = 0, inComment = false;
+  const slice = (end) => { if (start === end) return; raw.push({ line: (fm != null ? fmLine : start) + 1, fm, body: lines.slice(fm != null ? bodyFrom : start, end).join('\n') }); start = end + 1; fm = null; };
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trimEnd();
     if (inComment) { inComment = commentOpen(lines[i], true); continue; }
@@ -186,6 +191,7 @@ export function deckSlides(deck) {
         const from = i + 1;
         for (i += 1; i < lines.length; i++) if (lines[i].trimEnd() === '---') break;
         fm = lines.slice(from, i).join('\n');
+        bodyFrom = i + 1;
       }
     } else if (line.trimStart().startsWith('```')) {
       const fence = /^\s*`+/.exec(line)[0];
@@ -201,7 +207,7 @@ export function deckSlides(deck) {
     try { parsed = r.fm != null ? readYaml(r.fm) : null; } catch { parsed = null; }
     const f = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
     if (f.hide === true || f.disabled === true) continue;
-    out.push({ no: out.length + 1, line: r.line, fm: f });
+    out.push({ no: out.length + 1, line: r.line, fm: f, body: r.body });
   }
   return out;
 }
@@ -354,7 +360,7 @@ const POSE = { dist: 9, yaw: -20, pitch: 6 };   // space.js DEFAULTS.pose
 const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 const COLOUR_KEYS = Object.keys(DEFAULT_PALETTE);
 
-export function checkStage({ space, records = null, deck = '', pages = [], plugins = null, extraTypes = [], deckOwn = {}, deckEnterable = [], deckClocks: clocks = [], palettes = [], publicDir = null, components = null } = {}) {
+export function checkStage({ space, records = null, deck = '', pages = [], plugins = null, extraTypes = [], deckOwn = {}, deckEnterable = [], deckClocks: clocks = [], palettes = [], publicDir = null, components = null, tier = null, fileBytes = null } = {}) {
   const issues = [];
   const add = (code, msg, where = {}, level = 'error') => issues.push({ ...where, code, level, msg });
   const types = { ...CORE_TYPES };
@@ -503,7 +509,21 @@ export function checkStage({ space, records = null, deck = '', pages = [], plugi
       }
     }
   }
-  return result(issues, { stations: stations.size, objects, places: places.size, poses: nPoses, stops: nStops, slides: slides.length });
+  // the grains each slide lights, against its tier's budget (stage/budget.js)
+  const T = Math.max(0, Math.min(GRAIN_BUDGET.length - 1, Math.round(Number(tier ?? (cfg.tier === '' || cfg.tier == null ? 0 : cfg.tier)) || 0)));
+  const all = space.stations.flatMap((st) => (Array.isArray(st.objects) ? st.objects : []));
+  const steps = slideSteps(slides.map((s) => s.body));
+  const stepped = new Set(steps.flatMap((o) => Object.keys(o)));
+  let grains = 0;
+  slides.forEach((s, i) => {
+    const lit = litGrains({ objects: all, steps: steps[i], tier: T, stepped, fileBytes: fileBytes || (() => null) });
+    grains = Math.max(grains, lit.total);
+    if (lit.total > GRAIN_BUDGET[T]) {
+      const top = lit.top.slice(0, 4).map((p) => `${p.name} ${grainCount(p.grains)}`).join(', ');
+      add('grain-budget', `slide ${s.no}: ~${grainCount(lit.total)} grains lit at tier ${T}, over the ${grainCount(GRAIN_BUDGET[T])} budget (${top}): a laptop's GPU goes white under them; thin a form, let one go, or record the slide (space.recorded)`, { slide: s.no, line: s.line }, 'warning');
+    }
+  });
+  return result(issues, { stations: stations.size, objects, places: places.size, poses: nPoses, stops: nStops, slides: slides.length, grains, tier: T });
 }
 
 // A deck that dropped its own Count.vue for the addon's <StageCount> and kept
@@ -572,8 +592,8 @@ function edits(a, b) {
   return d[a.length][b.length];
 }
 
-function parseArgs(argv) {
-  const out = { dir: '.', deck: null, space: null, records: null, plugins: null, types: [], json: false };
+export function parseArgs(argv) {
+  const out = { dir: '.', deck: null, space: null, records: null, plugins: null, types: [], json: false, tier: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--deck') out.deck = argv[++i];
@@ -582,6 +602,7 @@ function parseArgs(argv) {
     else if (a === '--plugins') out.plugins = argv[++i].split(',').filter(Boolean);
     else if (a === '--types') out.types = argv[++i].split(',').filter(Boolean);
     else if (a === '--json') out.json = true;
+    else if (a === '--tier') out.tier = Number(argv[++i]);
     else if (a === '-h' || a === '--help') out.help = true;
     else if (!a.startsWith('-')) out.dir = a;
     else { console.error(`unknown option ${a}`); process.exit(2); }
@@ -592,7 +613,7 @@ function parseArgs(argv) {
 export function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
   if (args.help) {
-    console.log('usage: slidev-stage-check [deck-dir] [--deck deck.md] [--space data/space.json] [--records data/records.json] [--plugins hadron] [--types a,b] [--json]');
+    console.log('usage: slidev-stage-check [deck-dir] [--deck deck.md] [--space data/space.json] [--records data/records.json] [--plugins hadron] [--types a,b] [--tier 0..3] [--json]');
     return 0;
   }
   const fail = (msg) => { if (args.json) console.log(JSON.stringify({ ok: false, error: msg })); else console.error(msg); return 2; };
@@ -614,8 +635,9 @@ export function main(argv = process.argv.slice(2)) {
   const own = deckTypes(setup);
   // the pages the deck pulls in: their StagePhoto places are pose targets too
   const pages = deckPages(deck).map((p) => { try { return readFileSync(resolve(dir, p), 'utf8'); } catch { return ''; } });
-  const r = checkStage({ space, records, deck, pages, plugins, extraTypes: args.types, deckOwn: own.types, deckEnterable: own.enterable, deckClocks: deckClocks(setup), palettes: own.palettes, publicDir, components: deckComponents(setup, dir) });
-  const stats = { stations: r.stations, objects: r.objects, places: r.places, poses: r.poses, stops: r.stops, slides: r.slides, deckTypes: Object.keys(own.types) };
+  const r = checkStage({ space, records, deck, pages, plugins, extraTypes: args.types, deckOwn: own.types, deckEnterable: own.enterable, deckClocks: deckClocks(setup), palettes: own.palettes, publicDir, components: deckComponents(setup, dir), tier: args.tier,
+    fileBytes: (p) => { try { return statSync(join(publicDir, String(p).replace(/^\//, ''))).size; } catch { return null; } } });
+  const stats = { stations: r.stations, objects: r.objects, places: r.places, poses: r.poses, stops: r.stops, slides: r.slides, grains: r.grains, tier: r.tier, deckTypes: Object.keys(own.types) };
   if (args.json) {
     console.log(JSON.stringify({ ok: r.problems.length === 0, deck: deckFile, problems: r.issues, stats }, null, 2));
     return r.problems.length ? 1 : 0;

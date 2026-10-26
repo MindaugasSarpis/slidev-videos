@@ -86,9 +86,10 @@ function bin(grains) {
   return a.buffer;
 }
 
-test('readGrains keeps all at tier 0 and thins to the budget on a lower tier', () => {
+test('readGrains keeps all within the budget and thins to it on any tier', () => {
   const buf = bin(Array.from({ length: 1000 }, (_, i) => [i, 0, 0, i % 10]));
   assert.equal(lhcb.readGrains(buf).length / 4, 1000);
+  assert.equal(lhcb.readGrains(buf, { tier: 0, budget: 500 }).length / 4, 500);   // v0.11: tier 0 too
   const thin = lhcb.readGrains(buf, { tier: 2, budget: 300 });
   assert.equal(thin.length / 4, 250);                 // every 4th
   assert.deepEqual([...thin.slice(0, 8)], [0, 0, 0, 0, 4, 0, 0, 4]);   // whole records kept

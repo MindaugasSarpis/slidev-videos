@@ -68,10 +68,11 @@ export function partTable(parts, color = '#5b93ff') {
   }));
 }
 
-// the grains of a .bin: every k-th on a lower tier, to the stage's budget for one form
+// the grains of a .bin: every k-th, to the stage's budget for one form — at every tier (v0.11: tier 0
+// took them all, and lhcb-dense's 446 400 helped Užsikrauk karjerai's finale to white on an M2)
 export function readGrains(buf, { tier = 0, budget = 300000 } = {}) {
   const all = new Int16Array(buf);
-  const k = tier === 0 ? 1 : Math.max(1, Math.ceil(all.length / 4 / (budget || 300000)));
+  const k = Math.max(1, Math.ceil(all.length / 4 / (budget || 300000)));
   return k === 1 ? all : all.filter((_, j) => ((j >> 2) % k) === 0);
 }
 
