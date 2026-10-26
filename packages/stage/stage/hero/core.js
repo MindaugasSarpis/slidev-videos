@@ -47,7 +47,7 @@ void main() {
   p *= 1.0 + snoise(normalize(position) * 1.6 + vec3(0.0, uTime * 0.13, 0.0)) * 0.05 * e;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
-  float tw = mix(1.0, 0.75 + 0.25 * sin(uTime * (0.6 + aSeed * 1.7) + aSeed * 40.0), uTwinkle);
+  float tw = 0.75 + 0.25 * uTwinkle * sin(uTime * (0.6 + aSeed * 1.7) + aSeed * 40.0);
   float flash = step(aFlash, uTime) * exp(-(uTime - aFlash) * 2.2);
   float sinceLand = uTime - (aDelay + aDur);
   float land = step(0.0, sinceLand) * exp(-sinceLand * 3.0);

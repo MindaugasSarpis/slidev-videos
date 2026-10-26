@@ -254,7 +254,7 @@ function onSlow(d = {}) {
   console.warn(`stage: slow — ${d.fps ?? '?'} fps at tier ${tier}${tier < MAX_TIER ? `, rebuilding at tier ${tier + 1}` : ''}`)
   try { window.dispatchEvent(new CustomEvent('slidev-stage:slow', { detail: { ...d, tier } })) } catch {}
   if (PLATES) { slowSlide.value = nav.currentSlideNo.value; plateFrom.value = Math.max(0, (space?.realTime ?? 0) - entryReal) }
-  if (tier >= MAX_TIER) return fallback('slow', `tier ${tier}`)
+  if (tier >= MAX_TIER) { space?.setPaused(true); return fallback('slow', `tier ${tier}`) }   // the plates for the rest: the world rests behind them
   Object.assign(status, { status: 'restoring', reason: 'slow', detail: `rebuilding at tier ${tier + 1}` })
   space?.setPaused(true)
   ready.value = false
@@ -525,8 +525,10 @@ const onGesture = () => {
   stageOut(VOICES.level)   // every voice goes out through the stage's level
   updateHum()
 }
-const rest = () => space?.setPaused(document.hidden || covered.value || recordedRest.value)
-watch(recordedRest, () => rest())
+const rest = () => space?.setPaused(document.hidden || covered.value || recordedRest.value || status.status === 'fallback')
+// before it rests, the world stands where the slide settles (it would rest mid-flight, and the
+// next slide cut back to a pose between the last two)
+watch(recordedRest, (on) => { if (on) apply(true); rest() })
 
 // A new slide: the watchdog's hand-over was for the slide it came on; a recorded slide's
 // plate starts from its top. With `music`, the video keeps the playing track's time

@@ -77,3 +77,14 @@ test('StageSoundtrack’s clip drop keeps time through slaveRate', () => {
 test('under the recorder a recorded slide is the world (it films what the plate will be)', () => {
   assert.match(read('../components/Stage.vue'), /const recordedNow = \(\) => \(printing\.value \|\| globalThis\.__stageMaxDt/);
 });
+
+// ---- the review's findings (v0.11 fix pass) ---------------------------------------------------
+test('review #7: before the world rests under a recorded plate it stands at the slide’s settled pose', () => {
+  assert.match(read('../components/Stage.vue'), /watch\(recordedRest, \(on\) => \{ if \(on\) apply\(true\); rest\(\) \}\)/);
+});
+
+test('review #8: over a running world only the current slide’s plate shows', () => {
+  const src = read('../components/StagePlate.vue');
+  assert.match(src, /away: from != null && no !== slide/);
+  assert.match(src, /\.plate video\.away \{ visibility: hidden; \}/);
+});

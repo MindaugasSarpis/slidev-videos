@@ -175,7 +175,7 @@ onUnmounted(() => {
 
 <template>
   <div class="plate" aria-hidden="true">
-    <video v-for="no in slots" :key="no" :ref="(el) => bind(no, el)" :data-slide="no" :class="{ next: no === slide + 1 }" :src="srcOf(no)" muted playsinline preload="auto" disablepictureinpicture
+    <video v-for="no in slots" :key="no" :ref="(el) => bind(no, el)" :data-slide="no" :class="{ next: no === slide + 1, away: from != null && no !== slide }" :src="srcOf(no)" muted playsinline preload="auto" disablepictureinpicture
       @error="onError(no)" @loadedmetadata="sync" @canplay="sync" @playing="sync" @pause="sync" @waiting="sync" @seeked="sync" @emptied="sync" @ended="sync"></video>
   </div>
 </template>
@@ -186,4 +186,6 @@ onUnmounted(() => {
 .plate video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 /* the next loads unseen */
 .plate video.next { visibility: hidden; }
+/* over a running world (`from`) the world is the frame before: only this slide's plate shows */
+.plate video.away { visibility: hidden; }
 </style>

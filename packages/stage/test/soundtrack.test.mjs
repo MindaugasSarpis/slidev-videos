@@ -26,19 +26,23 @@ function fakeContext(t = 100) {
     createMediaElementSource() { return { connect() {} }; },
   };
 }
+// an element whose `playing` comes when the test says (fire), as a real one's comes once its first sample sounds
 function fakeAudio() {
-  const e = { currentTime: 0, paused: true, ended: false, volume: 1, src: '', plays: 0 };
+  const e = { currentTime: 0, paused: true, ended: false, volume: 1, src: '', plays: 0, on: {} };
   e.play = () => { e.paused = false; e.plays++; return Promise.resolve(); };
   e.pause = () => { e.paused = true; };
   e.load = () => {};
-  e.addEventListener = () => {};
+  e.addEventListener = (k, f) => { (e.on[k] ||= []).push(f); };
+  e.fire = (k) => { for (const f of e.on[k] || []) f(); };
   return e;
 }
-function rig({ ctx = fakeContext() } = {}) {
+function rig({ ctx = fakeContext(), level = () => 1 } = {}) {
   const made = [];
-  const m = createMusic({ context: () => ctx, out: () => null, audio: (url) => { const e = fakeAudio(); e.src = url; made.push(e); return e; }, level: () => 1 });
+  const m = createMusic({ context: () => ctx, out: () => null, audio: (url) => { const e = fakeAudio(); e.src = url; made.push(e); return e; }, level });
   return { m, ctx, made };
 }
+// begun and sounding
+const playing = (m, src, lvl) => { const t = m.begin(src, lvl); t.e.fire('playing'); return t; };
 
 test('equalPower keeps the loudness of a cross-fade', () => {
   const up = equalPower(0, 1, 33), down = equalPower(1, 0, 33);
@@ -64,7 +68,7 @@ test('no clock without a playing track', () => {
 
 test('musicClock runs on the context’s time between element updates', () => {
   const { m, ctx } = rig();
-  const t = m.begin('audio/a.m4a', 0.5);
+  const t = playing(m, 'audio/a.m4a', 0.5);
   t.e.currentTime = 12;
   assert.equal(m.musicClock(), 12);
   ctx.currentTime = 100.2;                              // the element has not moved yet
@@ -75,7 +79,7 @@ test('musicClock runs on the context’s time between element updates', () => {
 
 test('musicClock(src) names a playing track by its path', () => {
   const { m } = rig();
-  m.begin('audio/starfire_finale.m4a', 0.5).e.currentTime = 4;
+  playing(m, 'audio/starfire_finale.m4a', 0.5).e.currentTime = 4;
   assert.equal(m.musicClock('starfire_finale'), 4);
   assert.equal(m.musicClock('aphelion'), null);
 });
@@ -98,12 +102,11 @@ test('a fade is one curve on the context’s clock, not frames', () => {
 
 test('an accent is a gain change at the context time of its music second', () => {
   const { m } = rig();
-  const t = m.begin('audio/a.m4a', 0.4);
+  const t = playing(m, 'audio/a.m4a', 0.4);
   t.e.currentTime = 12;                                 // ctx 100 → anchor 88
   m.accent('audio/a.m4a', 16.02, { level: 1 });
   const set = t.gain.gain.calls.filter((c) => c[0] === 'set').pop();
   assert.deepEqual(set, ['set', 1, 104.02]);
-  assert.equal(t.level, 1);
 });
 
 test('an accent waits for its track to play', () => {
@@ -137,4 +140,61 @@ test('clock: music is a slide key the stage wires to the engine', () => {
   assert.ok(SPACE_KEYS.includes('clock'));
   assert.match(read('../components/Stage.vue'), /setClockSource\(/);
   assert.match(read('../stage/space.js'), /stepReal\(/);
+});
+
+// ---- the review's findings (v0.11 fix pass) ---------------------------------------------------
+const curves = (t) => t.gain.gain.calls.filter((c) => c[0] === 'curve');
+
+test('review #5a: a fade cut short starts from where the level is, not from the last target', () => {
+  const { m } = rig();
+  const t = playing(m, 'audio/a.m4a', 0.9);
+  t.gain.gain.value = 0.3;                              // half-way up the 2 s fade-in
+  m.fadeTo(0.5, 100);
+  assert.ok(Math.abs(curves(t).pop()[1][0] - 0.3) < 1e-6);
+});
+
+test('review #5b: an accent sets the level when it lands; a fade before it starts quiet and drops it', async () => {
+  const { m, ctx } = rig();
+  const t = playing(m, 'audio/a.m4a', 0.4);
+  t.e.currentTime = 12;
+  m.accent('audio/a.m4a', 16.02, { level: 1 });
+  assert.equal(t.level, 0.4);                           // not yet: the peak is 4 s away
+  t.gain.gain.value = 0.4;
+  m.fadeTo(0, 100);
+  assert.ok(Math.abs(curves(t).pop()[1][0] - 0.4) < 1e-6);
+  assert.equal(t.accent, null);
+  ctx.currentTime = 104.1; await new Promise((r) => setTimeout(r, 10));
+  assert.notEqual(t.level, 1);
+});
+
+test('review #5c: + / - mid-fade keeps fading, to the new level, over what is left; an accent ahead survives', () => {
+  const L = { v: 1 };
+  const { m, ctx } = rig({ level: () => L.v });
+  const t = playing(m, 'audio/a.m4a', 0.5);             // a 2 s fade-in from ctx 100
+  t.e.currentTime = 1;
+  m.accent('audio/a.m4a', 30, { level: 0.8 });          // ctx 129
+  ctx.currentTime = 101; t.gain.gain.value = 0.35; L.v = 1.5;
+  m.relevel();
+  const c = curves(t).pop();
+  assert.ok(Math.abs(c[1][0] - 0.35) < 1e-6); assert.ok(Math.abs(c[1][c[1].length - 1] - 0.75) < 1e-6);
+  assert.ok(Math.abs(c[3] - 1) < 1e-6);                 // the second left of the fade
+  const later = t.gain.gain.calls.filter((x) => x[0] === 'set' && x[2] > 120).pop();
+  assert.deepEqual(later, ['set', 0.8 * 1.5, 129]);
+});
+
+test('review #6: an accent waits for the track to sound, and follows a seek', () => {
+  const { m, ctx } = rig();
+  const t = m.begin('audio/peak.m4a', 0.4);             // play() called, no sample yet
+  const cancel = m.accent('audio/peak.m4a', 16.02, { level: 1 });
+  assert.equal(t.gain.gain.calls.filter((c) => c[0] === 'set' && c[2] > 100).length, 0);
+  ctx.currentTime = 100.2; t.e.currentTime = 0.05; t.e.fire('playing');
+  assert.deepEqual(t.gain.gain.calls.filter((c) => c[0] === 'set').pop(), ['set', 1, 100.15 + 16.02]);
+  ctx.currentTime = 101; t.e.currentTime = 5; t.e.fire('seeked');
+  assert.deepEqual(t.gain.gain.calls.filter((c) => c[0] === 'set').pop(), ['set', 1, 96 + 16.02]);
+  cancel();
+  assert.equal(t.accent, null);
+});
+
+test('review #16: a drop counts on the slide’s clip when it has one, else on the music (the talks’ default kept)', () => {
+  assert.match(read('../components/StageSoundtrack.vue'), /const mode = d\.clock \|\| \(clipOf\(\) \? 'clip' : 'music'\)/);
 });

@@ -51,18 +51,63 @@ const frame = (fn) => (typeof requestAnimationFrame === 'function' ? requestAnim
 // context(): the AudioContext or null; out(): the node tracks connect to (null: the
 // context's destination); audio(url): a new media element; level(): the presenter's
 // multiplier; url(src): where src is served
+//
+// A track's `level` is the level it is headed for, as written; what sounds now is read off
+// its gain (a fade cut short starts from there, not from the last target). An accent is
+// armed once its track sounds (`playing`), set at the context time of its music second, and
+// moved when a seek or a restart moves that time; the track's level becomes the accent's
+// when it lands. A fade drops a pending accent (the slide asked for something else); the
+// presenter's `+` / `-` (relevel) keeps it, and a fade under way goes on to the new level.
 export function createMusic({ context, out = () => null, audio, level = () => 1, url = (s) => s }) {
   const tracks = new Map();
   const m = { current: null, pending: null };
   const ctxOf = () => { const c = context?.(); return c && c.state !== 'closed' ? c : null; };
+  const amp = (v) => v * level();
+  const nowOf = (c) => (c ? c.currentTime : Date.now() / 1000);
+  // the level sounding now, as written
+  const levelNow = (t) => {
+    const k = level(), c = ctxOf();
+    if (!(k > 0)) return t.level;
+    return t.gain && c ? t.gain.gain.value / k : t.e.volume / k;
+  };
+
+  // ---- accents ----
+  const dropAccent = (t) => {
+    const a = t.accent;
+    if (!a) return;
+    clearTimeout(a.land);
+    const c = ctxOf();
+    if (t.gain && c && a.when > c.currentTime) { try { t.gain.gain.cancelScheduledValues(a.when); } catch { /* gone */ } }
+    t.accent = null;
+  };
+  // set (or move) the pending accent's event at its music second on the track's present anchor
+  const aim = (t) => {
+    const a = t.accent;
+    if (!a || m.musicClock(t.src) == null) return;
+    clearTimeout(a.land);
+    const c = ctxOf();
+    if (t.gain && c && c.state === 'running') {
+      const g = t.gain.gain, n = c.currentTime, when = Math.max(n, t.anchor + a.at);
+      if (a.when > n && a.when !== when) { try { g.cancelScheduledValues(a.when); } catch { /* gone */ } }
+      a.when = when;
+      try { g.setValueAtTime(amp(a.lvl), Math.max(when, t.fadeEnd > when ? t.fadeEnd : when)); } catch { /* inside a curve on an older engine */ }
+      a.land = later(() => { if (t.accent === a) { t.level = a.lvl; t.accent = null; } }, (when - n) * 1000);
+    } else {
+      const left = a.at - m.musicClock(t.src);
+      a.land = later(() => { if (t.accent === a) { t.accent = null; m.set(t, a.lvl); } }, left * 1000);
+    }
+  };
+  // the arms waiting for a track to sound, and the accents to move when its time moves
+  const sounding = (t) => { t.started = true; t.anchor = null; for (const f of [...t.waits]) f(); aim(t); };
 
   m.track = (src) => {
     let t = tracks.get(src);
     if (!t) {
       const e = audio(url(src)); e.preload = 'auto'; e.load?.();
-      t = { src, e, gain: null, level: 1, anchor: null, timer: 0 };
-      e.addEventListener?.('seeked', () => { t.anchor = null; });
-      e.addEventListener?.('playing', () => { t.anchor = null; });
+      t = { src, e, gain: null, level: 1, anchor: null, started: false, timer: 0, then: null, fadeEnd: 0, accent: null, waits: new Set() };
+      e.addEventListener?.('playing', () => sounding(t));
+      e.addEventListener?.('seeked', () => { t.anchor = null; aim(t); });
+      e.addEventListener?.('pause', () => { t.started = false; });
       tracks.set(src, t);
     }
     const c = ctxOf();
@@ -77,35 +122,51 @@ export function createMusic({ context, out = () => null, audio, level = () => 1,
   m.tracks = () => [...tracks.values()];
   m.playing = (t = m.current) => !!t && !t.e.paused && !t.e.ended;
 
-  const amp = (v) => v * level();
+  // at once (a pending accent stays: it is re-set after the cancel)
   m.set = (t, v) => {
-    clearTimeout(t.timer); t.timer = 0;
+    clearTimeout(t.timer); t.timer = 0; t.then = null; t.fadeEnd = 0;
     t.level = v;
     const c = ctxOf();
-    if (t.gain && c) { const g = t.gain.gain; g.cancelScheduledValues(c.currentTime); g.setValueAtTime(amp(v), c.currentTime); }
-    else t.e.volume = Math.max(0, Math.min(1, amp(v)));
+    if (t.gain && c) {
+      const g = t.gain.gain;
+      g.cancelScheduledValues(c.currentTime); g.setValueAtTime(amp(v), c.currentTime);
+      if (t.accent && t.accent.when > c.currentTime) { try { g.setValueAtTime(amp(t.accent.lvl), t.accent.when); } catch { /* gone */ } }
+    } else t.e.volume = Math.max(0, Math.min(1, amp(v)));
   };
-  // to `to` over ms, equal power; then() once there
-  m.fade = (t, to, ms, then) => {
-    clearTimeout(t.timer); t.timer = 0;
-    const c = ctxOf(), from = t.level;
+  // to `to` over ms, equal power, from what sounds now; then() once there. keep: the pending accent stays
+  m.fade = (t, to, ms, then, { keep = false } = {}) => {
+    const c = ctxOf(), from = levelNow(t);
+    clearTimeout(t.timer); t.timer = 0; t.then = then || null;
+    if (!keep) dropAccent(t);
     t.level = to;
     if (t.gain && c && ms > 0) {
-      const g = t.gain.gain, now = c.currentTime;
-      g.cancelScheduledValues(now);
-      try { g.setValueCurveAtTime(equalPower(amp(from), amp(to)), now, ms / 1000); } catch { g.setValueAtTime(amp(to), now); }
+      const g = t.gain.gain, n = c.currentTime;
+      g.cancelScheduledValues(n);
+      try { g.setValueCurveAtTime(equalPower(amp(from), amp(to)), n, ms / 1000); } catch { try { g.setValueAtTime(amp(to), n); } catch { /* an engine that keeps an active curve */ } }
+      t.fadeEnd = n + ms / 1000;
+      // an accent kept: after the curve (an event inside one throws)
+      if (t.accent) { try { g.setValueAtTime(amp(t.accent.lvl), Math.max(t.accent.when, t.fadeEnd)); } catch { /* gone */ } }
     } else if (ms > 0) {
       // no Web Audio: the element's volume, stepped (iOS ignores it; there the context exists)
       const t0 = Date.now();
+      t.fadeEnd = t0 / 1000 + ms / 1000;
       const step = () => {
-        const k = Math.min(1, (Date.now() - t0) / ms);
-        const x = k * Math.PI / 2;
+        const k = Math.min(1, (Date.now() - t0) / ms), x = k * Math.PI / 2;
         t.e.volume = Math.max(0, Math.min(1, amp(to >= from ? from + (to - from) * Math.sin(x) : to + (from - to) * Math.cos(x))));
         if (k < 1 && t.level === to) frame(step);
       };
       frame(step);
-    } else m.set(t, to);
-    if (then) t.timer = later(() => { t.timer = 0; then(); }, ms);
+    } else { m.set(t, to); t.then = then || null; }
+    if (then) t.timer = later(() => { t.timer = 0; t.then = null; then(); }, ms);
+  };
+  // the presenter's `+` / `-`: every track at its level times the new multiplier; a fade under
+  // way goes on to it over what is left, an accent ahead is re-set at the new level
+  m.relevel = () => {
+    const n = nowOf(ctxOf());
+    for (const t of tracks.values()) {
+      if (t.fadeEnd > n) m.fade(t, t.level, (t.fadeEnd - n) * 1000, t.then, { keep: true });
+      else m.set(t, t.level);
+    }
   };
   m.play = (t) => {
     const p = t.e.play();
@@ -116,17 +177,18 @@ export function createMusic({ context, out = () => null, audio, level = () => 1,
     });
   };
   const retire = (old, ms) => { if (old) m.fade(old, 0, ms, () => old.e.pause()); };
+  const restart = (t, from) => { t.e.currentTime = from; t.anchor = null; t.started = false; };
   m.begin = (src, lvl, { fade = 2000, out = 1500 } = {}) => {
     const t = m.track(src), old = m.current;
     if (old && old !== t) retire(old, out);
-    m.current = t; t.e.currentTime = 0; t.anchor = null;
+    m.current = t; restart(t, 0);
     m.set(t, 0); m.play(t); m.fade(t, lvl, fade);
     return t;
   };
   // out: ms for the old track to go (default: the same as the new one's coming in)
   m.crossfade = (src, lvl, ms = 600, { from = 0, out = ms } = {}) => {
     const t = m.track(src), old = m.current;
-    m.current = t; t.e.currentTime = from; t.anchor = null;
+    m.current = t; restart(t, from);
     m.set(t, 0); m.play(t); m.fade(t, lvl, ms);
     if (old && old !== t) retire(old, out);
     return t;
@@ -138,39 +200,43 @@ export function createMusic({ context, out = () => null, audio, level = () => 1,
     return tracks.get(src) || [...tracks.values()].find((t) => t.src.includes(src) && m.playing(t)) || null;
   };
   // the playing track's time, on the context's clock between the element's coarse updates
+  // (the element's own until its first sample has sounded: no anchor from a silent start)
   m.musicClock = (src) => {
     const t = find(src);
     if (!m.playing(t)) return null;
     const c = ctxOf();
-    if (!c || c.state !== 'running') return t.e.currentTime;
+    if (!c || c.state !== 'running' || !t.started) return t.e.currentTime;
     if (t.anchor == null || needsReanchor(c.currentTime - t.anchor, t.e.currentTime)) t.anchor = anchorOf(c.currentTime, t.e.currentTime);
     return c.currentTime - t.anchor;
   };
-  // at `at` s of src: its level set on the context's clock, and/or call() — once src plays
+  // at `at` s of src: its level set on the context's clock, and/or call() — once src sounds
   m.accent = (src, at, { level: lvl, call } = {}) => {
-    let done = false, timer = 0;
+    let done = false, timer = 0, mine = null;
     const fire = () => { if (!done) { done = true; call?.(); } };
     const arm = () => {
-      const t = tracks.get(src) || find(src), now = m.musicClock(src);
       if (done) return;
-      if (now == null || !t) { timer = later(arm, 40); return; }
-      if (lvl != null) {
-        const c = ctxOf();
-        if (t.gain && c && c.state === 'running') {
-          const when = t.anchor + at, g = t.gain.gain;
-          g.cancelScheduledValues(Math.max(c.currentTime, when));
-          g.setValueAtTime(amp(lvl), Math.max(c.currentTime, when));
-          t.level = lvl;
-        } else timer = later(() => m.set(t, lvl), (at - now) * 1000);
+      const t = tracks.get(src) || find(src);
+      if (t) t.waits.delete(arm);
+      if (!t || !t.started || m.musicClock(src) == null) {
+        if (t) t.waits.add(arm);
+        timer = later(arm, 40);
+        return;
       }
-      if (!call) { done = true; return; }
+      clearTimeout(timer);
+      if (lvl != null) { dropAccent(t); mine = t.accent = { at, lvl, when: 0, land: 0 }; aim(t); }
+      if (!call) return;
+      const now = m.musicClock(src);
       if (now >= at) return fire();
       // a timer to just before, then frames on the music's own clock
       const close = () => { const n = m.musicClock(src); if (n == null || n >= at) fire(); else timer = frame(close); };
       timer = later(close, (at - now) * 1000 - 30);
     };
     arm();
-    return () => { done = true; clearTimeout(timer); };
+    return () => {
+      done = true; clearTimeout(timer);
+      const t = tracks.get(src) || find(src);
+      if (t) { t.waits.delete(arm); if (mine && t.accent === mine) dropAccent(t); }
+    };
   };
   return m;
 }

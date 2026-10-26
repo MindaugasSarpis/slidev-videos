@@ -17,7 +17,8 @@ tag waits on the owner's word.
 the lhcb detector thins to the stage's budget at tier 0 too (`lhcb-dense`:
 446 400 → 223 200 grains); an Apple GPU (an M-series Mac) starts at tier 1;
 the lhcb plugin's and a deck's `grainMaterial` grains follow
-`options.twinkle` (a `broadcast` look's 0.35 calms them as it did the forms);
+`options.twinkle` (a `broadcast` look's 0.35 calms them as it did the forms,
+each grain at its mean light);
 and the frame-time watchdog is on (`options.watchdog: false` turns it off).
 
 - **Calm where a slide asks, and no state carried in.** The blink: Karjera's
@@ -49,9 +50,11 @@ and the frame-time watchdog is on (`options.watchdog: false` turns it off).
   the dust. A machine still slow after it (frames past 83 ms filling half of
   two seconds, or three past 250 ms; a 4 s grace; a gap past a second is a
   resume) hands the slide to its plate from where it is and builds the world
-  a tier lower behind it; at the floor tier the plates take over (`slow`, a
-  new fallback reason and `--force` rehearsal). Never under the recorder,
-  after `holdQuality()` or in an automated browser.
+  a tier lower behind it; at the floor tier the plates take over and the
+  world rests behind them (`slow`, a new fallback reason and `--force`
+  rehearsal). It judges once the guard has taken both its steps, and under a
+  `broadcast` look (`guard: false`, Karjera's) too. Never under the
+  recorder, after `holdQuality()` or in an automated browser.
 - **`<StageSoundtrack>`.** The talks' `Soundtrack.vue` and `soundLevel.js`,
   props kept, on `stage/soundtrack.js`: one player per page through the
   stage's audio output; fades as one equal-power curve on the AudioContext
@@ -59,17 +62,19 @@ and the frame-time watchdog is on (`options.watchdog: false` turns it off).
   at the context time of a music second (`music.accent`), never stepped on
   frames; `musicClock(src?)` reads the playing track's time off the audio
   clock. The accent: the drop was timed off the world, whose clock falls
-  behind on any frame past 83 ms. The drop now counts on the audio clock by
-  default (`clock: music`; `clip` and `world` as before) and opens on its
-  peak file's own clock; a slide's `space.clock: music` makes the world's
-  step the music's.
+  behind on any frame past 83 ms. A drop on a slide without a clip now
+  counts on the audio clock (`clock: music`; with a clip, `clip` as before)
+  and opens on its peak file's own clock, armed once that file sounds and
+  moved with a seek; a fade cut short starts from the level that sounds, and
+  `+` / `-` mid-fade go on to the new level. A slide's `space.clock: music`
+  makes the world's step the music's.
 - **A grain budget per slide.** `slidev-stage-check` estimates the grains
   each slide lights (the dust, every object no step drives, the stepped
   ones on where their step is above 0, a deck's `.bin` by its size) and
   warns `grain-budget` past 600k / 320k / 120k / 60k by tier (`--tier`,
   else `stage.tier`). On Karjera's deck it flags slides 13–17 at ~632k
   without counting its own builders.
-- **Tests:** stage 150 → 218 (twinkle and latch, `whenEntered`, the music
+- **Tests:** stage 150 → 229 (twinkle and latch, `whenEntered`, the music
   player against a faked Web Audio, `stepReal`, the recorded layer and
   `slaveRate`, the watchdog, the budget and tiers, cold entry; the compile
   check now covers every component); the stage smoke opens every example

@@ -472,9 +472,10 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   let guardStage = 0, winFrames = 0, winTime = 0;
   // the watchdog: still slow once the guard has done what it can → onEvent('slow') once (Stage.vue hands the
   // slide to its plate and builds the world a tier lower); never under the recorder, which runs slow on purpose
-  // (nor in an automated browser: the smokes and shots run on software GL, slow by design)
+  // (nor in an automated browser: the smokes and shots run on software GL, slow by design). Its own option
+  // alone: a broadcast look's `guard: false` keeps the pixel ratio, not the world, on a slow machine.
   const dog = createWatchdog();
-  const dogOn = opt.watchdog !== false && opt.guard !== false && !(typeof navigator !== 'undefined' && navigator.webdriver);
+  const dogOn = opt.watchdog !== false && !(typeof navigator !== 'undefined' && navigator.webdriver);
   let fpsEma = 60, saidSlow = false;
   const getDelta = () => { const t = performance.now(); const d = (t - lastT) / 1000; lastT = t; return d; };
   const period = FIELD_BOUNDS.clone().multiplyScalar(2);
@@ -539,7 +540,8 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     srcPrev = step.prev;
     const rd = step.rd;
     fpsEma += (1 / Math.max(wallDt, 1e-3) - fpsEma) * 0.05;
-    if (dogOn && !globalThis.__stageMaxDt && !saidSlow && dog.feed(wallDt * 1000, performance.now() / 1000) === 'slow') {
+    // only once the guard has done what it can (both its steps taken, or no guard): the cheap remedy first
+    if (dogOn && (guardStage >= 2 || opt.guard === false) && !globalThis.__stageMaxDt && !saidSlow && dog.feed(wallDt * 1000, performance.now() / 1000) === 'slow') {
       saidSlow = true;
       onEvent?.('slow', { tier, fps: +fpsEma.toFixed(1), guard: guardStage });
     }
@@ -643,7 +645,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
           applyDpr();
           if (guardStage === 1) fieldGeo.setDrawRange(0, Math.floor(count / 2));
           guardStage++;
-          dog.reset(performance.now() / 1000);   // the watchdog judges the guard's new step afresh
+          dog.reset(performance.now() / 1000, { grace: 0 });   // the watchdog judges the guard's last step afresh: a full window, no grace
         }
         winFrames = 0; winTime = 0;
       }

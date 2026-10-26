@@ -30,9 +30,10 @@ import { slaveRate } from '../stage/recorded.js'
 //                starts quiet so its peak lands at `at` s, and on the peak the level opens
 //                again, set on the peak file's own clock (an accent: it lands on the music
 //                whatever the frames do). `xfade` ms: the file comes in by a cross-fade.
-//                The seconds are counted on `clock`: music (the audio clock since the slide
-//                opened; the default), clip (the slide's clip, its rate nudged ±10 % to stay
-//                on the music until the peak), world (the world's time, as the talks had it)
+//                The seconds are counted on `clock`: clip (the slide's clip, its rate nudged ±10 %
+//                to stay on the music until the peak; the default on a slide with a clip, as the
+//                talks had it), music (the audio clock since the slide opened; the default
+//                without one), world (the world's time)
 const props = defineProps({
   src: { type: String, required: true },
   tail: { type: String, default: '' },
@@ -95,7 +96,9 @@ function endDrop() {
 }
 function startDrop() {
   endDrop()
-  const d = props.drop, me = page(), mode = d.clock || 'music'
+  // the talks' default: the slide's clip; a live slide (no clip) counts on the audio clock
+  const d = props.drop, me = page()
+  const mode = d.clock || (clipOf() ? 'clip' : 'music')
   const ac = warmAudio()
   const a0 = ac ? ac.currentTime : performance.now() / 1000
   const world = () => globalThis.__stage?.state?.()?.elapsed
@@ -147,7 +150,7 @@ onSlideLeave(() => { endDrop(); cancelAnimationFrame(cueRaf) })
 onMounted(() => { if (!live()) return; if (props.drop) music.track(props.drop.file); if (props.onClick) music.track(props.onClick.file) })
 onUnmounted(() => { endDrop(); cancelAnimationFrame(cueRaf) })
 // a `+` / `-` (here or in the presenter's window): every track at its level times the new one
-if (!G.level) G.level = onSoundLevel(() => { for (const t of music.tracks()) if (!t.timer) music.set(t, t.level) })
+if (!G.level) G.level = onSoundLevel(() => music.relevel())
 
 // the pages with a live <StageSoundtrack>, counted; leaving them fades the music out
 let mine = null

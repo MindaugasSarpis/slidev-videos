@@ -92,3 +92,11 @@ test('steady is a slide key the engine reads', () => {
   assert.match(read('../stage/space.js'), /twinkleUniform\.value = twinkleAt\(/);
   assert.match(read('../components/Stage.vue'), /setSteady\(/);
 });
+
+test('review #4: steady holds a grain at its mean light (the twinkle’s depth scales, its mean stays)', () => {
+  // `mix(1.0, tw0, uTwinkle)` went to 1.0, above tw0's mean: size and alpha both scale by tw, and a
+  // steady detector carried ~1.5× its light. The form is `mean + depth * uTwinkle * sin(…)`.
+  for (const f of ['grains.js', 'forms.js', 'builders.js', 'hero/core.js', 'depth-grains.js'])
+    for (const line of read(`../stage/${f}`).split('\n').filter((l) => /float tw\s*=.*sin\(/.test(l)))
+      assert.match(line, /float tw = [\d.]+ \+ [\d.]+ \* uTwinkle \* sin\(/, `${f}: ${line.trim()}`);
+});

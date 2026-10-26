@@ -7,7 +7,7 @@
 //
 //   const dog = createWatchdog()
 //   each frame: dog.feed(frameMs, wallSeconds) → 'ok' | 'slow'   (slow once, until reset)
-//   dog.reset(wallSeconds)                     a new world, or the guard's new step: a fresh grace
+//   dog.reset(wallSeconds, { grace })          a fresh start (grace: graceS); the guard's new step: { grace: 0 }
 //
 // Slow: over the last `windowS` of wall time, frames longer than `slowMs` (the
 // engine's MAX_DT, 12 fps) fill at least `share` of it; or `hitches` frames longer
@@ -33,6 +33,6 @@ export function createWatchdog(opts = {}) {
       if (hitches >= o.hitches || (covered && slowMs >= o.share * o.windowS * 1000)) { said = true; return 'slow'; }
       return 'ok';
     },
-    reset(now) { frames = []; said = false; from = now + o.graceS; },
+    reset(now, { grace = o.graceS } = {}) { frames = []; said = false; from = now + grace; },
   };
 }

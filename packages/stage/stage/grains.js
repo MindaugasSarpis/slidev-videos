@@ -18,8 +18,9 @@ varying vec3 vColor; varying float vAlpha;
 void place(vec3 p, float size, float alpha, vec3 color, float seed) {
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
-  // a slow, shallow twinkle (a stream encoder smears fast sparkle); none as uTwinkle goes to 0 (stage/twinkle.js)
-  float tw = mix(1.0, 0.86 + 0.14 * sin(uTime * (0.6 + seed * 1.2) + seed * 40.0), uTwinkle);
+  // a slow, shallow twinkle (a stream encoder smears fast sparkle); as uTwinkle goes to 0 (stage/twinkle.js) it
+  // stills at its mean, neither brighter nor larger (size and alpha both scale by it)
+  float tw = 0.86 + 0.14 * uTwinkle * sin(uTime * (0.6 + seed * 1.2) + seed * 40.0);
   // capped, and faded out within a few units of the camera: a flight that passes through a
   // scattered form must not fill the frame with huge additive sprites (a flash, and a fill-rate spike)
   gl_PointSize = min(uPixelRatio * size * tw * (72.0 / max(-mv.z, 0.1)), uMaxSize * uPixelRatio);

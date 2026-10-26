@@ -78,7 +78,7 @@ test('the engine feeds the watchdog the wall frame time and says slow once; neve
   const src = read('../stage/space.js');
   assert.match(src, /dog\.feed\(wallDt \* 1000, /);
   assert.match(src, /onEvent\?\.\('slow', /);
-  assert.match(src, /if \(dogOn && !globalThis\.__stageMaxDt && !saidSlow && dog\.feed\(/);
+  assert.match(src, /if \(dogOn && \(guardStage >= 2 \|\| opt\.guard === false\) && !globalThis\.__stageMaxDt && !saidSlow && dog\.feed\(/);
 });
 
 test('Stage.vue hands the slide to its plate and rebuilds a tier lower; never in print or the presenter window', () => {
@@ -93,5 +93,28 @@ test('Stage.vue hands the slide to its plate and rebuilds a tier lower; never in
 test('the headless tools never trip it: holdQuality silences it, an automated browser never feeds it', () => {
   const src = read('../stage/space.js');
   assert.match(src, /holdQuality\(\) \{ guardStage = 2; saidSlow = true; \}/);
-  assert.match(src, /const dogOn = opt\.watchdog !== false && opt\.guard !== false && !\(typeof navigator !== 'undefined' && navigator\.webdriver\)/);
+  assert.match(src, /const dogOn = opt\.watchdog !== false && !\(typeof navigator !== 'undefined' && navigator\.webdriver\)/);
+});
+
+// ---- the review's findings (v0.11 fix pass) ---------------------------------------------------
+test('review #1: the watchdog is the watchdog option’s alone — a broadcast look (guard: false) keeps it', () => {
+  const src = read('../stage/space.js');
+  assert.match(src, /const dogOn = opt\.watchdog !== false && !\(typeof navigator/);
+});
+
+test('review #2: it judges only once the guard has done what it can, and the guard’s steps give no new grace', () => {
+  const src = read('../stage/space.js');
+  assert.match(src, /\(guardStage >= 2 \|\| opt\.guard === false\)/);
+  assert.match(src, /dog\.reset\(performance\.now\(\) \/ 1000, \{ grace: 0 \}\)/);
+  const w = createWatchdog();
+  run(w, 16.7, 6, 0);                                // past the first grace
+  w.reset(10, { grace: 0 });
+  const { r, t } = run(w, 100, 5, 10);
+  assert.equal(r, 'slow'); assert.ok(t < 12.5, String(t));   // the window, no grace
+});
+
+test('review #3: a world fallen back for slowness rests, and a fallback keeps it resting', () => {
+  const src = read('../components/Stage.vue');
+  assert.match(src, /if \(tier >= MAX_TIER\) \{ space\?\.setPaused\(true\); return fallback\('slow'/);
+  assert.match(src, /const rest = \(\) => space\?\.setPaused\(document\.hidden \|\| covered\.value \|\| recordedRest\.value \|\| status\.status === 'fallback'\)/);
 });

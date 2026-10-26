@@ -148,7 +148,7 @@ void main() {
   vec3 p = uAnchor + position * sc;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
-  float tw = mix(1.0, 0.85 + 0.15 * sin(uTime * (0.8 + aSeed * 1.9) + aSeed * 40.0), uTwinkle);
+  float tw = 0.85 + 0.15 * uTwinkle * sin(uTime * (0.8 + aSeed * 1.9) + aSeed * 40.0);
   float r = clamp(uReveal * 1.35 - aSeed * 0.35, 0.0, 1.0);
   // a grain is a piece of the form: its size goes with the form's scale
   float ps = uView * aSize * (72.0 / max(-mv.z, 0.05)) * (sc / uS0);
