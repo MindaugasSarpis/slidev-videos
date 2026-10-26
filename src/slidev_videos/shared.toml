@@ -18,6 +18,9 @@
 # entries carried the course reel's 90 s trims). A deck that wants a shorter
 # cut lists the clip in its own manifest with a `trim` and publishes to its
 # own release — the talk release wins the player's chain over the library.
+# The one exception: a cut that several decks share (copied byte for byte from
+# one talk's release to another's) joins the library under a name of its own
+# beside the full clip, with its `trim` (see "shared cuts" below).
 
 [defaults]
 release_tag = "videos-shared"
@@ -238,6 +241,30 @@ notes   = "CERN-FOOTAGE-2025-014-002 — FCC map with labels (0:18). Source: cer
 name    = "cern_footage_2024_010_002.mp4"
 profile = "standard"
 notes   = "CERN-FOOTAGE-2024-010-002 — FCC-hh tunnel render (0:10). Source: cern/cern_footage_2024_010_002.mp4"
+
+# --- shared cuts (2026-10-27: Užsikrauk karjerai's, copied byte for byte by MasterTalk,
+# wanted by Tokyo). The assets are that talk's encodes (release
+# videos-2026-10-26-uzsikraukkarjerai) under these names; a deck moving to them
+# renames its `src` and drops its own copy. ---------------------------------------
+
+[[videos]]
+name     = "cern_footage_2022_013_001_tunnel_cut.mp4"
+profile  = "high-motion"
+trim     = ["2:35", "2:53"]
+loudnorm = false
+notes    = "CERN-FOOTAGE-2022-013-001, the 18 s cut of the LHC tunnel the shared opening (outreach_talks components/lhc-opening/) plays: the travelling shot with the magnets on the right; on its last frame the magnet string vanishes at (0.45, 0.53), where the opening goes on into the beam pipe. Its sound is the tunnel's own ventilation hum at the source's level (loudnorm off). OpenData's and Užsikrauk karjerai's cut (there named cern_footage_2022_013_001_1080p_lhc.mp4, as its raw). Source: cern/cern_footage_2022_013_001_1080p_lhc.mp4"
+
+[[videos]]
+name    = "cern_video_2019_050_008_dipole.mp4"
+profile = "standard"
+trim    = ["0:00", "0:10.8"]
+notes   = "CERN-VIDEO-2019-050-008, its first 10.8 s: a cutaway of an LHC dipole magnet into its two beam pipes, its small English/French labels kept (it dissolves into the beam-vacuum scene at 11 s). Silent (no audio stream; two data tracks dropped). Užsikrauk karjerai's slide (there named cern_video_2019_050_008.mp4, over the full library clip). Source: cern/cern_video_2019_050_008_1080ph265.mp4"
+
+[[videos]]
+name     = "vilnius_zoom.mp4"
+profile  = "high-motion"
+loudnorm = false
+notes    = "The zoom out from Vilnius (NFTMC) to the cosmic web, 49 s at 50 fps, silent: the owner's SpaceEngine edit nftmc_zoom.mp4 (4:27.6, 1080p60 HEVC) remapped by outreach_talks talks/2026_10_26_UzsikraukKarjerai/scripts/remap_zoom.py into four stretches at eased speeds joined by 0.4 s dissolves (Google Earth out to the clouds; the Earth from space; the galaxy whole, lingering on the flight past its stars; the web). Its last frame is Innoday's opener_last.jpg. No Drive raw: the raw is the script's output (outreach_talks videos/raw/vilnius_zoom.mp4); make it again with the script. Source: spaceengine/nftmc_zoom.mp4, through remap_zoom.py"
 
 # --- outreach lineage (venue-grade B-roll reused across the Lithuanian decks) --
 
