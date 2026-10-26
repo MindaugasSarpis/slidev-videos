@@ -18,7 +18,7 @@ const read = (p) => readFileSync(here(p), 'utf8');
 // ---- which layer ---------------------------------------------------------------------------
 test('every reason, every motion, plates on and off: one layer each', () => {
   assert.deepEqual(LAYERS, ['world', 'world-floor', 'plate', 'living', 'still']);
-  assert.deepEqual(PLATE_REASONS, ['no-webgl2', 'no-float-target', 'plugin', 'data', 'init', 'context-lost']);
+  assert.deepEqual(PLATE_REASONS, ['no-webgl2', 'no-float-target', 'plugin', 'data', 'init', 'context-lost', 'slow']);
   assert.deepEqual([...PLATE_REASONS, 'reduced-motion'].sort(), [...FALLBACK_REASONS].sort());   // diagnose.js's list, whole
   const motions = ['respect', 'floor', undefined, 'bogus'];
   const on = ['videos', 'plates', undefined], off = [false, '', null];

@@ -608,7 +608,7 @@ test('--force rehearses a fallback: the reason goes to the stage in the query, b
   assert.equal(o.force, 'no-webgl2');
   assert.equal(parseArgs(['d', 'o']).force, null);
   for (const r of ['reduced-motion', 'no-float-target', 'plugin', 'data', 'init', 'context-lost']) assert.equal(parseArgs(['d', 'o', '--force', r]).force, r, r);
-  assert.match(parseArgs(['d', 'o', '--force', 'no-gpu']).errors.join(), /--force: reduced-motion, no-webgl2, no-float-target, plugin, data, init, context-lost; not no-gpu/);
+  assert.match(parseArgs(['d', 'o', '--force', 'no-gpu']).errors.join(), /--force: reduced-motion, no-webgl2, no-float-target, plugin, data, init, context-lost, slow; not no-gpu/);
   assert.match(parseArgs(['d', 'o', '--force']).errors.join(), /--force needs a value/);
   // a still is the world as it stands: a forced fallback has none
   assert.match(parseArgs(['d', 'o', '--stills', '--force', 'no-webgl2']).errors.join(), /--force: not with --stills/);

@@ -14,7 +14,8 @@
 //   data             space.json could not be read
 //   init             the engine threw while building the world
 //   context-lost     the GPU dropped the WebGL context (iOS does under memory pressure)
-export const FALLBACK_REASONS = ['reduced-motion', 'no-webgl2', 'no-float-target', 'plugin', 'data', 'init', 'context-lost'];
+// slow: the watchdog (stage/watchdog.js) at the last tier — the world ran too slow to keep
+export const FALLBACK_REASONS = ['reduced-motion', 'no-webgl2', 'no-float-target', 'plugin', 'data', 'init', 'context-lost', 'slow'];
 
 // `?stage-debug`, `?stage-debug=1`, or the same in the hash's query (`#/3?stage-debug`)
 export function stageDebugOn(loc = globalThis.location) {

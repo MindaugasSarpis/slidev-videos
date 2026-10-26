@@ -53,6 +53,9 @@ import { recordedOf, layerNow, slaveRate } from '../stage/recorded.js'
 //                                  # (false hides them); before the first slide that names a
 //                                  # group, it is the opposite (stage/place-groups.js)
 //
+// A machine that stays slow after the frame guard (the watchdog, stage/watchdog.js;
+// `options.watchdog: false` turns it off) hands the slide to its plate and the world is
+// built again a tier lower; at the last tier the plates stand in (fallback `slow`).
 // A slide without `space` keeps the previous pose. Without WebGL2 float
 // render targets, or when the engine fails, the slide's recorded plate plays
 // in the world's place, or its still breathes where there is no plate
@@ -237,6 +240,27 @@ const onContextLost = (e) => {
   old?.addEventListener('webglcontextrestored', go, { once: true })
   restoreTimer = setTimeout(go, 1500)
 }
+// The watchdog (stage/watchdog.js): the machine stayed slow after the frame guard. The slide goes
+// to its plate from where it is (when the deck has plates), and the world is built again a tier
+// lower behind it, as after a lost context; at the last tier the plates stand in for the rest of
+// the talk (fallback 'slow'). The audience's window only.
+function onSlow(d = {}) {
+  if (printing.value || nav.isPresenter?.value) return
+  if (status.status !== 'running') return
+  events.slow = (events.slow || 0) + 1
+  console.warn(`stage: slow — ${d.fps ?? '?'} fps at tier ${tier}${tier < MAX_TIER ? `, rebuilding at tier ${tier + 1}` : ''}`)
+  try { window.dispatchEvent(new CustomEvent('slidev-stage:slow', { detail: { ...d, tier } })) } catch {}
+  if (PLATES) { slowSlide.value = nav.currentSlideNo.value; plateFrom.value = Math.max(0, (space?.realTime ?? 0) - entryReal) }
+  if (tier >= MAX_TIER) return fallback('slow', `tier ${tier}`)
+  Object.assign(status, { status: 'restoring', reason: 'slow', detail: `rebuilding at tier ${tier + 1}` })
+  space?.setPaused(true)
+  ready.value = false
+  staticBg.value = true                      // the canvas goes; the plate (or the still) stands
+  if (!PLATES) layerBase.value = 'still'
+  renderDebug()
+  clearTimeout(restoreTimer)
+  restoreTimer = setTimeout(rebuild, 50)
+}
 async function rebuild() {
   if (status.status !== 'restoring') return
   try { space?.dispose() } catch { /* the context is gone */ }
@@ -250,6 +274,7 @@ async function rebuild() {
   const html = document.documentElement
   delete html.dataset.stageFallback    // the plate's marks went with StagePlate: the layer was `still` while restoring
   await boot()
+  entryReal = 0   // the new world's clock starts at 0 on the slide it was rebuilt on
   if (space) try { window.dispatchEvent(new CustomEvent('slidev-stage:rebuilt', { detail: { tier } })) } catch {}
 }
 
@@ -429,6 +454,7 @@ async function boot() {
           if (root.value) root.value.dataset.assemblies = String(Number(root.value.dataset.assemblies || 0) + 1)   // for the probes
         } else if (e === 'assembled') assembled(true)
         else if (e === 'flight') onFlight(detail)
+        else if (e === 'slow') onSlow(detail)
         else if (e === 'fallback') failed = detail
         else if (e === 'shader-error') { events.shaderErrors++; events.lastShaderError = detail?.message || ''; renderDebug() }
       },

@@ -54,5 +54,5 @@ export function anchorIds(o) {
 // DEFAULTS in space.js, plus `poses` and `hero`), and of a slide's `space:`.
 // The tests hold each list to the code that reads it.
 export const STAGE_KEYS = ['space', 'records', 'palette', 'look', 'plugins', 'hero', 'sound', 'humAt', 'videos', 'options', 'auto', 'halo', 'haloOn', 'dim', 'layoutDim', 'hud', 'tint', 'lang', 'stills', 'tier', 'motion', 'plates', 'platesRelease'];
-export const OPTION_KEYS = ['fov', 'pose', 'gather', 'pulseKick', 'stopOffset', 'maxBufferWidth', 'bloom', 'vignette', 'grain', 'aberration', 'exposure', 'dustSize', 'dustGain', 'density', 'nebula', 'streak', 'reach', 'flight', 'twinkle', 'guard', 'poses', 'hero', 'lift'];
+export const OPTION_KEYS = ['fov', 'pose', 'gather', 'pulseKick', 'stopOffset', 'maxBufferWidth', 'bloom', 'vignette', 'grain', 'aberration', 'exposure', 'dustSize', 'dustGain', 'density', 'nebula', 'streak', 'reach', 'flight', 'twinkle', 'guard', 'watchdog', 'poses', 'hero', 'lift'];
 export const SPACE_KEYS = ['at', 'dist', 'yaw', 'pitch', 'sway', 'stops', 'dim', 'asof', 'flight', 'rate', 'rateEase', 'cameraRate', 'path', 'hum', 'ambient', 'steady', 'clock', 'recorded'];

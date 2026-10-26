@@ -20,7 +20,7 @@
 
 export const LAYERS = ['world', 'world-floor', 'plate', 'living', 'still'];
 // the reasons a plate stands in for (diagnose.js FALLBACK_REASONS, all but reduced-motion)
-export const PLATE_REASONS = ['no-webgl2', 'no-float-target', 'plugin', 'data', 'init', 'context-lost'];
+export const PLATE_REASONS = ['no-webgl2', 'no-float-target', 'plugin', 'data', 'init', 'context-lost', 'slow'];
 
 const platesOn = (plates) => plates !== false && plates !== '' && plates !== null;
 

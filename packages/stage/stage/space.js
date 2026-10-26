@@ -21,6 +21,7 @@ import { shell } from './materials.js';
 import { resolvePalette, hexToRgb } from './palette.js';
 import { rampKeys, rampAt, rampLeft, pathAt, readPath, BUDGETS, stepReal } from './clock.js';
 import { twinkleUniform, twinkleAt } from './twinkle.js';
+import { createWatchdog } from './watchdog.js';
 
 // The stage: one persistent 3D world under a whole deck. A path of built
 // scenes (stations) stands in an ambient field of dust; slides steer the
@@ -64,6 +65,7 @@ export const DEFAULTS = {   // the keys of `stage.options` (types.js OPTION_KEYS
   flight: [1.4, 4.5],    // shortest and longest flight, seconds
   twinkle: 1,            // how far a form's grains swell and fade as they shine, 0 (steady) … 1
   guard: true,           // false: no frame-rate guard (the pixel ratio and the dust stay as they are on a slow machine)
+  watchdog: true,        // false: no frame-time watchdog (a machine still slow after the guard keeps its world; stage/watchdog.js)
 };
 
 // The page gradient, drawn by the renderer itself (post-processing wants a
@@ -420,7 +422,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   const filmGrain = num(opt.grain, 0.035);
   finish.uniforms.uGrain.value = filmGrain;
   finish.uniforms.uCA.value = num(opt.aberration, 0.0004);
-  canvas.__space = { scene, composer, bloom, finish, field, renderer, get guardStage() { return guardStage; }, holdQuality() { guardStage = 2; }, get elapsed() { return elapsed; }, get dpr() { return renderer.getPixelRatio(); }, get frames() { return frames; }, get options() { return { ...opt }; }, targets: type === FloatType ? 'float' : 'half-float', sim: size, tier, post: opt.post !== false };   // a handle for the headless probes and the debug panel (options: as resolved, defaults filled in)
+  canvas.__space = { scene, composer, bloom, finish, field, renderer, get guardStage() { return guardStage; }, holdQuality() { guardStage = 2; saidSlow = true; }, get elapsed() { return elapsed; }, get dpr() { return renderer.getPixelRatio(); }, get frames() { return frames; }, get options() { return { ...opt }; }, targets: type === FloatType ? 'float' : 'half-float', sim: size, tier, post: opt.post !== false };   // a handle for the headless probes and the debug panel (options: as resolved, defaults filled in)
 
   // what builds itself at each station, on arrival
   const selfBuilders = (id) => stations.get(id)?.built.apis.filter((a) => a.assemble) || [];
@@ -468,6 +470,12 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   // another clock the world keeps pace with (a slide's `clock: music`): () => seconds | null
   let clockSrc = null, srcPrev = null;
   let guardStage = 0, winFrames = 0, winTime = 0;
+  // the watchdog: still slow once the guard has done what it can → onEvent('slow') once (Stage.vue hands the
+  // slide to its plate and builds the world a tier lower); never under the recorder, which runs slow on purpose
+  // (nor in an automated browser: the smokes and shots run on software GL, slow by design)
+  const dog = createWatchdog();
+  const dogOn = opt.watchdog !== false && opt.guard !== false && !(typeof navigator !== 'undefined' && navigator.webdriver);
+  let fpsEma = 60, saidSlow = false;
   const getDelta = () => { const t = performance.now(); const d = (t - lastT) / 1000; lastT = t; return d; };
   const period = FIELD_BOUNDS.clone().multiplyScalar(2);
   const gather = new Vector3();
@@ -530,6 +538,11 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     const step = stepReal(srcPrev, clockSrc ? clockSrc() : null, wallDt, Math.max(MAX_DT, globalThis.__stageMaxDt || 0));
     srcPrev = step.prev;
     const rd = step.rd;
+    fpsEma += (1 / Math.max(wallDt, 1e-3) - fpsEma) * 0.05;
+    if (dogOn && !globalThis.__stageMaxDt && !saidSlow && dog.feed(wallDt * 1000, performance.now() / 1000) === 'slow') {
+      saidSlow = true;
+      onEvent?.('slow', { tier, fps: +fpsEma.toFixed(1), guard: guardStage });
+    }
     realT += rd;
     worldRate = rampAt(rateKeys, realT - rateT0);
     camRate = camKeys ? rampAt(camKeys, realT - camT0) : worldRate;
@@ -630,6 +643,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
           applyDpr();
           if (guardStage === 1) fieldGeo.setDrawRange(0, Math.floor(count / 2));
           guardStage++;
+          dog.reset(performance.now() / 1000);   // the watchdog judges the guard's new step afresh
         }
         winFrames = 0; winTime = 0;
       }
