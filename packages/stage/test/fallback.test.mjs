@@ -355,10 +355,12 @@ function compilerSfc() {
   return null;
 }
 
-test('Stage.vue, StagePlate.vue, StageLiving.vue and StageDepthGrains.vue compile', (t) => {
+test('every component compiles', (t) => {
   const sfc = compilerSfc();
   if (!sfc) { t.skip('@vue/compiler-sfc not installed'); return; }
-  for (const f of ['Stage.vue', 'StagePlate.vue', 'StageLiving.vue', 'StageDepthGrains.vue']) {
+  const all = readdirSync(here('../components')).filter((f) => f.endsWith('.vue'));
+  assert.ok(all.includes('StageSoundtrack.vue') && all.includes('Stage.vue'));
+  for (const f of all) {
     const { descriptor, errors } = sfc.parse(read(`../components/${f}`), { filename: f });
     assert.deepEqual(errors, [], f);
     const id = f.replace(/\W/g, '');

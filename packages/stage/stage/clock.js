@@ -96,3 +96,18 @@ export function readPath(path) {
 
 // the grains a builder may draw at a tier (ctx.budget)
 export const BUDGETS = [300000, 160000, 60000, 30000];
+
+// ---- an external clock ---------------------------------------------------------
+// A slide whose world keeps another clock's pace (`clock: music`): each frame's
+// real seconds are that clock's step, not the wall's clamped to MAX_DT, so a
+// long frame cannot leave the world behind the music. prev, now: the clock's
+// last and current readings (null: it gives none, as with no music playing);
+// wallDt, maxDt: the frame's wall seconds and the engine's clamp.
+// → { rd: the frame's real seconds, prev: the reading to keep }. A jump is
+// capped at half a second, a step back (a seek) stands the world still.
+export const MAX_EXTERNAL_STEP = 0.5;
+export function stepReal(prev, now, wallDt, maxDt) {
+  if (now == null || !Number.isFinite(now)) return { rd: Math.min(wallDt, maxDt), prev: null };
+  if (prev == null) return { rd: Math.min(wallDt, maxDt), prev: now };
+  return { rd: Math.min(MAX_EXTERNAL_STEP, Math.max(0, now - prev)), prev: now };
+}

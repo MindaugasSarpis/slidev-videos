@@ -19,7 +19,7 @@ import { createPhotoPlace } from './photo-place.js';
 import { buildStation, helpers } from './builders.js';
 import { shell } from './materials.js';
 import { resolvePalette, hexToRgb } from './palette.js';
-import { rampKeys, rampAt, rampLeft, pathAt, readPath, BUDGETS } from './clock.js';
+import { rampKeys, rampAt, rampLeft, pathAt, readPath, BUDGETS, stepReal } from './clock.js';
 import { twinkleUniform, twinkleAt } from './twinkle.js';
 
 // The stage: one persistent 3D world under a whole deck. A path of built
@@ -465,6 +465,8 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   resize();
 
   let lastT = performance.now(), raf = 0, paused = false, elapsed = 0, disposed = false, frames = 0;
+  // another clock the world keeps pace with (a slide's `clock: music`): () => seconds | null
+  let clockSrc = null, srcPrev = null;
   let guardStage = 0, winFrames = 0, winTime = 0;
   const getDelta = () => { const t = performance.now(); const d = (t - lastT) / 1000; lastT = t; return d; };
   const period = FIELD_BOUNDS.clone().multiplyScalar(2);
@@ -522,7 +524,12 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     raf = requestAnimationFrame(frame);
     // the recorder sets __stageMaxDt to its frame time: at under 12 fps a frame is
     // still one frame of the world, not 1/12 s of it (the take ran slow)
-    const rd = Math.min(getDelta(), Math.max(MAX_DT, globalThis.__stageMaxDt || 0));
+    // …and on a slide that keeps another clock's pace (setClockSource), that clock's step, unclamped up to
+    // half a second, so a long frame does not leave the world behind the music (stage/clock.js stepReal)
+    const wallDt = getDelta();
+    const step = stepReal(srcPrev, clockSrc ? clockSrc() : null, wallDt, Math.max(MAX_DT, globalThis.__stageMaxDt || 0));
+    srcPrev = step.prev;
+    const rd = step.rd;
     realT += rd;
     worldRate = rampAt(rateKeys, realT - rateT0);
     camRate = camKeys ? rampAt(camKeys, realT - camT0) : worldRate;
@@ -661,6 +668,9 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     // a slide's calm: every grain's twinkle eased out (true) or back to the deck's (false) over `over` seconds
     setSteady(on, { over = 0.6 } = {}) { setSteadyRamp(!!on, over); },
     get steady() { return steadyNow; },
+    // the clock the world keeps pace with: fn() → seconds (null while it gives none), or null for the wall's
+    setClockSource(fn) { clockSrc = typeof fn === 'function' ? fn : null; srcPrev = null; },
+    get clockSource() { return clockSrc ? 'external' : 'wall'; },
     get busy() { return formsBusy(); },
     get flightProgress() { return flightT0 >= 0 ? flightU : 1; },   // 0..1 in time through the flight, 1 when parked
     get paused() { return paused; },
@@ -783,7 +793,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
       paused = p;
       container.dataset.spacePaused = p ? '1' : '0';
       havePrev = false;   // no streak across the gap
-      if (p) cancelAnimationFrame(raf); else { getDelta(); frame(); }
+      if (p) cancelAnimationFrame(raf); else { getDelta(); srcPrev = null; frame(); }
     },
     dispose() {
       for (const id of [...places.keys()]) dropPlace(id);

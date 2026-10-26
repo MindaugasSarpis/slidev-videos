@@ -1,7 +1,7 @@
 // The stage's clocks (stage/clock.js): rate ramps and the timed camera path.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rampKeys, rampAt, rampLeft, pathAt, readPath, BUDGETS, MAX_RATE } from '../stage/clock.js';
+import { rampKeys, rampAt, rampLeft, pathAt, readPath, BUDGETS, MAX_RATE, stepReal } from '../stage/clock.js';
 
 const near = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} ≈ ${b}`);
 
@@ -51,4 +51,14 @@ test('a slide path reads as sorted keys; budgets per tier', () => {
   assert.equal(readPath('no'), null);
   assert.equal(readPath([]), null);
   assert.deepEqual(BUDGETS, [300000, 160000, 60000, 30000]);
+});
+
+// ---- an external clock (a slide's `clock: music`) --------------------------------------
+test('stepReal: an external clock’s step, capped; wall time otherwise', () => {
+  assert.deepEqual(stepReal(null, 5, 0.016, 1 / 12), { rd: 0.016, prev: 5 });   // its first reading: wall time
+  const slow = stepReal(5, 5.2, 0.2, 1 / 12);
+  assert.ok(Math.abs(slow.rd - 0.2) < 1e-9); assert.equal(slow.prev, 5.2);    // a 200 ms frame keeps the music's pace
+  assert.equal(stepReal(5, 9, 0.016, 1 / 12).rd, 0.5);                         // a jump is capped
+  assert.equal(stepReal(5, 4, 0.016, 1 / 12).rd, 0);                           // a seek back stands still
+  assert.deepEqual(stepReal(5, null, 0.2, 1 / 12), { rd: 1 / 12, prev: null }); // no music: wall time, clamped as before
 });

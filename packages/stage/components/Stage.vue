@@ -12,6 +12,7 @@ import { placeGroupsAt } from '../stage/place-groups.js'
 import { probeGL, stageDebugOn, debugLines, deviceInfo, pickTier, MAX_TIER, stageOverrides } from '../stage/diagnose.js'
 import { stillsDir, stillUrl, inPrint } from '../stage/stills.js'
 import { fallbackLayer, platesDir, plateRelease, plateLocalFirst } from '../stage/fallback.js'
+import { musicClock } from '../stage/soundtrack.js'
 
 // The persistent 3D world under a whole deck. The addon mounts it from its
 // own global-bottom.vue whenever the headmatter has a `stage:` block:
@@ -42,6 +43,8 @@ import { fallbackLayer, platesDir, plateRelease, plateLocalFirst } from '../stag
 //     dist: 7  yaw: -25  pitch: 8  sway: 2.5
 //     stops: [a, b, c]     # click k flies to stops[k-1] and shows its record
 //     dim: 0.6             # how far the world is dimmed behind the slide, 0..1
+//     steady: true         # no grain twinkles here (eased in over 0.6 s; stage/twinkle.js)
+//     clock: music         # the world keeps the playing <StageSoundtrack>'s pace, not the wall's
 //   clicks: 3              # = stops.length
 //
 //   places: { inventions: true }   # photo places in group "inventions" show from here on
@@ -273,6 +276,8 @@ function apply(immediate = false) {
   if (immediate) applyPlaces(true)
   changedAt = space.realTime ?? 0
   const sp = frontmatterSpace.value
+  // `clock: music`: the world keeps the playing <StageSoundtrack>'s pace (a long frame cannot leave it behind)
+  space.setClockSource(sp && sp.clock === 'music' ? () => musicClock() : null)
   if (!sp) { stopId.value = null; space.setStop(null); space.setRate(1); space.setSteady(false); updateHum(); return }
   const stops = Array.isArray(sp.stops) ? sp.stops : null
   const k = clicks.value
