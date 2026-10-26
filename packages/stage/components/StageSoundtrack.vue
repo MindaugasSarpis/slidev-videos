@@ -6,6 +6,7 @@ import { music } from '../stage/soundtrack.js'
 import { warmAudio } from '../stage/sound.js'
 import { onSoundLevel, musicKeys, installSoundKeys } from '../stage/sound-level.js'
 import { shared } from '../stage/shared.js'
+import { slaveRate } from '../stage/recorded.js'
 
 // <StageSoundtrack src="audio/piece.m4a" :level="0.3" start /> on each slide that
 // has the music: one piece across them (Innoday's and Užsikrauk karjerai's
@@ -119,7 +120,8 @@ function startDrop() {
       if (phase === 2 && mode === 'clip' && dropClip) {
         // the clip where the music is: ahead, it slows; behind, it hurries
         const m = music.musicClock(d.file)
-        if (m != null) dropClip.playbackRate = m >= d.hit ? 1 : Math.min(1.1, Math.max(0.9, 1 - (v - (d.at - d.hit + m)) * 1.5))
+        // (the clip's second v belongs at the peak file's m plus where it started; never a seek: a nudge, as Innoday's)
+        if (m != null) dropClip.playbackRate = m >= d.hit ? 1 : slaveRate(v, m + d.at - d.hit, 0, { seekOver: Infinity }).rate
         if (m != null && m >= d.hit) phase = 3
       } else if (phase === 2) phase = 3
     }

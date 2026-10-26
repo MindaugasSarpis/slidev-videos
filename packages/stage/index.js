@@ -27,6 +27,7 @@ import { OFF, eventLatch } from './stage/events.js';
 import { whenEntered } from './stage/slide-hooks.js';
 import { createMusic, music, musicClock, equalPower } from './stage/soundtrack.js';
 import { soundLevel, onSoundLevel, musicKeys, installSoundKeys } from './stage/sound-level.js';
+import { recordedOf, layerNow, slaveRate } from './stage/recorded.js';
 import { GRAIN_GLSL, GRAIN_FRAG, NEAR, grainMaterial, grainPoints, grainGeometry } from './stage/grains.js';
 import { setStageGate, whenGateOpen } from './stage/gate.js';
 import { samplePixels, sampleFrame, decodeDepth, loadDepth, placeInDepth, makeDepthGrains, scaleLaw, poseOf, poseCamera, viewScale, POINT_GLSL } from './stage/depth-grains.js';
@@ -70,6 +71,7 @@ export {
   setStep, setSteps, stepOf, hasStep, onStep, setStepLater, tickSteps, stepWaiting, stepper, worldTime,
   twinkleUniform, twinkleAt, OFF, eventLatch, whenEntered,
   createMusic, music, musicClock, equalPower, soundLevel, onSoundLevel, musicKeys, installSoundKeys,
+  recordedOf, layerNow, slaveRate,
   GRAIN_GLSL, GRAIN_FRAG, NEAR, grainMaterial, grainPoints, grainGeometry,
   setStageGate, whenGateOpen,
   samplePixels, sampleFrame, decodeDepth, loadDepth, placeInDepth, makeDepthGrains, scaleLaw, poseOf, poseCamera, viewScale, POINT_GLSL,

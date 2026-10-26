@@ -16,6 +16,9 @@ import { plateUrls, plateEntry, plateStep } from '../stage/fallback.js'
 //              the release's, and which comes first
 //   covered    a clip covers the slide: the plate pauses under it (Stage.vue
 //              tracks slidev-videos:cover)
+//   from       over a running world (a recorded slide, the watchdog's hand-over):
+//              the current slide's plate plays from this second (0: its top), not
+//              held at its end as a mount mid-deck would be
 //
 // One <video> per slide in a window of three, keyed by the slide's number so
 // a step keeps the elements it has: the slide before (a back-step holds its
@@ -49,6 +52,7 @@ const props = defineProps({
   remote: { type: String, default: '' },
   localFirst: { type: Boolean, default: false },
   covered: { type: Boolean, default: false },
+  from: { type: Number, default: null },
 })
 const emit = defineEmits(['state', 'exhausted'])
 
@@ -59,6 +63,7 @@ const dead = reactive({})      // slide → true once no URL of its chain answer
 const els = new Map()          // slide → its <video>
 const hold = new Set()         // slides whose plate is to hold its settled world (plateEntry), for the whole visit
 const sought = new Set()       // … and whose seek to the end this visit has been made
+let startAt = null             // [slide, second]: the current slide's plate to play from there (`from`), once it has metadata
 let said = ''
 
 const urlsOf = (no) => plateUrls(props.dir, no, { base: props.base, remote: props.remote, localFirst: props.localFirst })
@@ -109,6 +114,10 @@ function seekEnd(no) {
 // where they stand.
 function sync() {
   const hidden = document.hidden
+  if (startAt) {
+    const [no, at] = startAt, el = els.get(no)
+    if (el && el.readyState > 0 && Number.isFinite(el.duration)) { try { el.currentTime = Math.min(at, Math.max(0, el.duration - 0.05)) } catch { /* not seekable yet */ } startAt = null }
+  }
   for (const [no, el] of els) {
     const step = plateStep({ current: no === props.slide, hold: hold.has(no), sought: sought.has(no), covered: props.covered, hidden, ended: el.ended })
     if (step.seek && seekEnd(no)) sought.add(no)
@@ -145,10 +154,14 @@ watch(() => props.slide, (n, was) => {
   })
 })
 watch(() => props.covered, () => sync())
+watch(() => props.from, (at) => { if (at != null) { playFrom(props.slide, at); nextTick(sync) } })
 
+// an entry decision (like plateEntry's), not a hold let go once its seek is issued
+const playFrom = (slide, at) => { hold.delete(slide); sought.delete(slide); startAt = [slide, Math.max(0, at)] }
 onMounted(() => {
   document.addEventListener('visibilitychange', sync)
-  if (plateEntry(null, props.slide) === 'hold') hold.add(props.slide)   // mounted mid-deck (a reload, a late fallback): the settled world, not an arrival
+  if (props.from != null) playFrom(props.slide, props.from)   // over a running world: from that second
+  else if (plateEntry(null, props.slide) === 'hold') hold.add(props.slide)   // mounted mid-deck (a reload, a late fallback): the settled world, not an arrival
   nextTick(sync)
 })
 onUnmounted(() => {
@@ -162,7 +175,7 @@ onUnmounted(() => {
 
 <template>
   <div class="plate" aria-hidden="true">
-    <video v-for="no in slots" :key="no" :ref="(el) => bind(no, el)" :class="{ next: no === slide + 1 }" :src="srcOf(no)" muted playsinline preload="auto" disablepictureinpicture
+    <video v-for="no in slots" :key="no" :ref="(el) => bind(no, el)" :data-slide="no" :class="{ next: no === slide + 1 }" :src="srcOf(no)" muted playsinline preload="auto" disablepictureinpicture
       @error="onError(no)" @loadedmetadata="sync" @canplay="sync" @playing="sync" @pause="sync" @waiting="sync" @seeked="sync" @emptied="sync" @ended="sync"></video>
   </div>
 </template>

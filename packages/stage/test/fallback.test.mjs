@@ -243,6 +243,7 @@ test('StagePlate plays the slide\'s plate muted, holds its last frame, says on <
     remote: { type: 'String', def: "''" },
     localFirst: { type: 'Boolean', def: 'false' },
     covered: { type: 'Boolean', def: 'false' },
+    from: { type: 'Number', def: 'null' },                               // v0.11: over a running world, from that second
   });
   assert.match(src, /defineEmits\(\['state', 'exhausted'\]\)/);
   const tpl = /<template>([\s\S]*?)<\/template>/.exec(src)[1];

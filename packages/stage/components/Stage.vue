@@ -13,6 +13,7 @@ import { probeGL, stageDebugOn, debugLines, deviceInfo, pickTier, MAX_TIER, stag
 import { stillsDir, stillUrl, inPrint } from '../stage/stills.js'
 import { fallbackLayer, platesDir, plateRelease, plateLocalFirst } from '../stage/fallback.js'
 import { musicClock } from '../stage/soundtrack.js'
+import { recordedOf, layerNow, slaveRate } from '../stage/recorded.js'
 
 // The persistent 3D world under a whole deck. The addon mounts it from its
 // own global-bottom.vue whenever the headmatter has a `stage:` block:
@@ -45,6 +46,7 @@ import { musicClock } from '../stage/soundtrack.js'
 //     dim: 0.6             # how far the world is dimmed behind the slide, 0..1
 //     steady: true         # no grain twinkles here (eased in over 0.6 s; stage/twinkle.js)
 //     clock: music         # the world keeps the playing <StageSoundtrack>'s pace, not the wall's
+//     recorded: plate      # the slide is its recording over the world (plate | clip | { kind, music, at }; stage/recorded.js)
 //   clicks: 3              # = stops.length
 //
 //   places: { inventions: true }   # photo places in group "inventions" show from here on
@@ -148,7 +150,14 @@ const onStillError = () => { stillMissing.value = new Set(stillMissing.value).ad
 const layerBase = ref('world')
 const plateMissing = ref(new Set())
 const plateState = ref('none')          // StagePlate's: loading | playing | paused | held | none
-const layer = computed(() => (layerBase.value === 'plate' && plateMissing.value.has(nav.currentSlideNo.value) ? 'living' : layerBase.value))
+// A slide may be its recording over a running world (`space.recorded`, stage/recorded.js), and the
+// watchdog hands a slow slide to its plate (slowSlide): layerNow says which layer stands.
+const slowSlide = ref(null)
+// (not under the recorder, which sets __stageMaxDt: it films the world the plate is made of)
+const recordedNow = () => (printing.value || globalThis.__stageMaxDt || !frontmatterSpace.value?.recorded ? null : recordedOf(frontmatterSpace.value))
+const layer = computed(() => layerNow({ base: layerBase.value, slide: nav.currentSlideNo.value, recorded: recordedNow(), slowSlide: slowSlide.value, plateMissing: plateMissing.value, plates: !!PLATES }))
+// over a running world the plate plays from its top (a recorded slide) or from where the slide is (the watchdog's)
+const plateFrom = ref(null)
 const onPlateExhausted = (no) => { plateMissing.value = new Set(plateMissing.value).add(no) }
 const onPlateState = (s) => { plateState.value = s }
 // a clip covers the slide (slidev-videos:cover): the world rests, and so do the living still and the plate
@@ -157,6 +166,8 @@ const covered = ref(false)
 const livingOn = computed(() => !printing.value && (layerBase.value === 'plate' || layerBase.value === 'living'))
 // … and rests under a plate that is on screen, playing or holding its last frame: nothing of it shows
 const livingRest = computed(() => covered.value || plateState.value === 'playing' || plateState.value === 'held')
+// … and the world rests under a plate that stands for it on screen (a recorded slide, the watchdog's)
+const recordedRest = computed(() => layerBase.value === 'world' && layer.value === 'plate' && (plateState.value === 'playing' || plateState.value === 'held'))
 
 // ---- why it runs as it does ---------------------------------------------------
 const debug = typeof location !== 'undefined' && stageDebugOn(location)
@@ -481,7 +492,40 @@ const onGesture = () => {
   stageOut(VOICES.level)   // every voice goes out through the stage's level
   updateHum()
 }
-const rest = () => space?.setPaused(document.hidden || covered.value)
+const rest = () => space?.setPaused(document.hidden || covered.value || recordedRest.value)
+watch(recordedRest, () => rest())
+
+// A new slide: the watchdog's hand-over was for the slide it came on; a recorded slide's
+// plate starts from its top. With `music`, the video keeps the playing track's time
+// (slaveRate: ±10 %, set where it belongs when more than a second off), in the audience's window.
+let entryReal = 0, slaveRaf = 0
+watch(() => nav.currentSlideNo.value, () => {
+  slowSlide.value = null
+  plateFrom.value = recordedNow()?.kind === 'plate' ? 0 : null
+  entryReal = space?.realTime ?? 0
+  keepTime()
+}, { immediate: true })
+const videoOf = (r, no) => (r.kind === 'plate'
+  ? root.value?.querySelector(`.plate video[data-slide="${no}"]`)
+  : document.querySelector(`.slidev-page-${no} .video-player video`)) || null
+function keepTime() {
+  cancelAnimationFrame(slaveRaf)
+  const r = recordedNow(), me = nav.currentSlideNo.value
+  if (!r?.sync || printing.value || nav.isPresenter?.value) return
+  let last = null
+  const tick = () => {
+    if (nav.currentSlideNo.value !== me) { if (last) try { last.playbackRate = 1 } catch { /* gone */ } return }
+    const v = videoOf(r, me), m = musicClock(r.sync.track)
+    if (v && m != null && !v.paused) {
+      const k = slaveRate(v.currentTime, m, r.sync.at)
+      if (k.seek != null) { try { v.currentTime = k.seek } catch { /* not seekable yet */ } }
+      v.playbackRate = k.rate
+      last = v
+    }
+    slaveRaf = requestAnimationFrame(tick)
+  }
+  slaveRaf = requestAnimationFrame(tick)
+}
 const onVisibility = () => { rest(); updateHum() }
 
 // slidev-addon-videos announces its transitions on window. A clip arriving
@@ -641,6 +685,7 @@ onUnmounted(() => {
   clearTimeout(coverTimer)
   clearInterval(debugTimer)
   clearTimeout(restoreTimer)
+  cancelAnimationFrame(slaveRaf)
   canvas.value?.removeEventListener('webglcontextlost', onContextLost)
   const html = document.documentElement
   const left = Math.max(0, (Number(html.dataset.stageMounts) || 1) - 1)
@@ -676,7 +721,7 @@ onUnmounted(() => {
     <img v-if="stillShown && !livingOn" class="still" :src="stillSrc" alt="" aria-hidden="true" decoding="async" @error="onStillError" />
     <!-- where the world cannot run: the still breathing, and over it the slide's recorded plate (stage/fallback.js); the scrim and the text over both, as over the world -->
     <StageLiving v-if="livingOn" :src="stillShown ? stillSrc : ''" :seed="nav.currentSlideNo.value" :covered="livingRest" :motion="MOTION" @error="onStillError" />
-    <StagePlate v-if="!printing && layerBase === 'plate'" :slide="nav.currentSlideNo.value" :total="nav.total.value" :dir="PLATES" :base="base()" :remote="PLATE_REMOTE" :local-first="PLATE_LOCAL_FIRST" :covered="covered" @state="onPlateState" @exhausted="onPlateExhausted" />
+    <StagePlate v-if="!printing && (layerBase === 'plate' || layer === 'plate')" :from="layerBase === 'world' ? plateFrom : null" :slide="nav.currentSlideNo.value" :total="nav.total.value" :dir="PLATES" :base="base()" :remote="PLATE_REMOTE" :local-first="PLATE_LOCAL_FIRST" :covered="covered" @state="onPlateState" @exhausted="onPlateExhausted" />
     <div class="scrim" aria-hidden="true" :style="{ opacity: dim }"></div>
     <!-- not in print: an SVG noise filter prints as a page-sized raster on every page -->
     <div v-if="!printing" class="grain" aria-hidden="true"></div>
