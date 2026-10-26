@@ -1,6 +1,7 @@
 import {
   Group, Points, ShaderMaterial, BufferGeometry, BufferAttribute, AdditiveBlending, Color,
 } from 'three';
+import { twinkleUniform } from './twinkle.js';
 
 // Forms made of grains. Everything here is drawn as points of light, the
 // same stuff as the dust the world is filled with: no surfaces, no edges, no
@@ -113,7 +114,7 @@ function former(uForm, seconds) {
 function material(vertexShader, uniforms, ctx) {
   return new ShaderMaterial({
     vertexShader, fragmentShader: FRAG, transparent: true, depthWrite: false, depthTest: false, blending: AdditiveBlending,
-    uniforms: { uTime: { value: 0 }, uForm: { value: 0 }, uPixelRatio: { value: Math.min(devicePixelRatio || 1, 2) }, uTwinkle: { value: ctx?.twinkle ?? 1 }, ...uniforms },
+    uniforms: { uTime: { value: 0 }, uForm: { value: 0 }, uPixelRatio: { value: Math.min(devicePixelRatio || 1, 2) }, uTwinkle: twinkleUniform, ...uniforms },
   });
 }
 

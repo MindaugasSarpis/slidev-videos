@@ -11,6 +11,8 @@
 //     depth: { w, h, near, far } (the depth PNG: 16 bits, red high, green low, 0 = no hit),
 //     flagUV?: [[u, v], …] (a polygon in the frame, v down, whose grains keep their own scale) }
 import { Points, BufferGeometry, BufferAttribute, ShaderMaterial, AdditiveBlending, Vector2, Vector3 } from 'three';
+import { twinkleUniform } from './twinkle.js';
+import { worldTime } from './steps.js';
 
 // ---- sizes against the frame --------------------------------------------------------------
 // Grains sized against the frame's height (900 px, the frames the look was approved
@@ -135,7 +137,7 @@ export function placeInDepth(s, depth, meta) {
 const VERT = /* glsl */ `
 attribute vec3 aColor;
 attribute float aSize, aSeed, aKeep, aFlag, aEdge;
-uniform float uTime, uReveal, uGain, uScale, uScaleFlag, uS0, uFade, uRest;
+uniform float uTime, uReveal, uGain, uScale, uScaleFlag, uS0, uFade, uRest, uTwinkle;
 uniform vec3 uAnchor;
 varying vec3 vColor; varying float vAlpha;
 ${POINT_GLSL}
@@ -146,7 +148,7 @@ void main() {
   vec3 p = uAnchor + position * sc;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
-  float tw = 0.85 + 0.15 * sin(uTime * (0.8 + aSeed * 1.9) + aSeed * 40.0);
+  float tw = mix(1.0, 0.85 + 0.15 * sin(uTime * (0.8 + aSeed * 1.9) + aSeed * 40.0), uTwinkle);
   float r = clamp(uReveal * 1.35 - aSeed * 0.35, 0.0, 1.0);
   // a grain is a piece of the form: its size goes with the form's scale
   float ps = uView * aSize * (72.0 / max(-mv.z, 0.05)) * (sc / uS0);
@@ -181,7 +183,7 @@ export function makeDepthGrains(s, placed, { size = 0.07, gain = 1.25, s0 = 18, 
   const mat = new ShaderMaterial({
     vertexShader: VERT, fragmentShader: FRAG,
     uniforms: {
-      uTime: { value: 0 }, uReveal: { value: 0 }, uView: { value: 1 }, uGain: { value: gain },
+      uTime: { value: 0 }, uTwinkle: twinkleUniform, uReveal: { value: 0 }, uView: { value: 1 }, uGain: { value: gain },
       uScale: { value: s0 }, uScaleFlag: { value: s0 }, uS0: { value: s0 }, uFade: { value: 1 }, uRest: { value: 1 },
       uAnchor: { value: new Vector3() },
     },
@@ -191,9 +193,11 @@ export function makeDepthGrains(s, placed, { size = 0.07, gain = 1.25, s0 = 18, 
   pts.frustumCulled = false;
   pts.name = name;
   const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
-  // the twinkle's clock, the frame's size and the form's scale (userData.scale(camera, uniforms)), every frame
+  // the twinkle's clock (the world's, so it rests with the world; the wall's before the world has run),
+  // the frame's size and the form's scale (userData.scale(camera, uniforms)), every frame
   pts.onBeforeRender = (r, _s, cam) => {
-    mat.uniforms.uTime.value = (performance.now() - t0) / 1000; mat.uniforms.uView.value = viewScale(r);
+    const wall = (performance.now() - t0) / 1000;
+    mat.uniforms.uTime.value = worldTime() || wall; mat.uniforms.uView.value = viewScale(r);
     pts.userData.scale?.(cam, mat.uniforms);
   };
   return pts;

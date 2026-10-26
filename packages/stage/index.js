@@ -21,7 +21,9 @@ import { createSpace } from './stage/space.js';
 import { warmAudio, playCollision, playWhoosh, playRise, startHum, stopHum, humProbe, stageOut } from './stage/sound.js';
 import { shared } from './stage/shared.js';
 import { formatCount, countLang } from './stage/count.js';
-import { setStep, setSteps, stepOf, hasStep, onStep, setStepLater, tickSteps, stepWaiting, stepper } from './stage/steps.js';
+import { setStep, setSteps, stepOf, hasStep, onStep, setStepLater, tickSteps, stepWaiting, stepper, worldTime } from './stage/steps.js';
+import { twinkleUniform, twinkleAt } from './stage/twinkle.js';
+import { OFF, eventLatch } from './stage/events.js';
 import { GRAIN_GLSL, GRAIN_FRAG, NEAR, grainMaterial, grainPoints, grainGeometry } from './stage/grains.js';
 import { setStageGate, whenGateOpen } from './stage/gate.js';
 import { samplePixels, sampleFrame, decodeDepth, loadDepth, placeInDepth, makeDepthGrains, scaleLaw, poseOf, poseCamera, viewScale, POINT_GLSL } from './stage/depth-grains.js';
@@ -62,7 +64,8 @@ export {
   PALETTES, DEFAULT_PALETTE, LOOKS, definePalette, resolvePalette, resolveLook, liftGround, paletteVars,
   warmAudio, playCollision, playWhoosh, playRise, startHum, stopHum, humProbe, stageOut,
   formatCount, countLang,
-  setStep, setSteps, stepOf, hasStep, onStep, setStepLater, tickSteps, stepWaiting, stepper,
+  setStep, setSteps, stepOf, hasStep, onStep, setStepLater, tickSteps, stepWaiting, stepper, worldTime,
+  twinkleUniform, twinkleAt, OFF, eventLatch,
   GRAIN_GLSL, GRAIN_FRAG, NEAR, grainMaterial, grainPoints, grainGeometry,
   setStageGate, whenGateOpen,
   samplePixels, sampleFrame, decodeDepth, loadDepth, placeInDepth, makeDepthGrains, scaleLaw, poseOf, poseCamera, viewScale, POINT_GLSL,

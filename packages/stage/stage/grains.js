@@ -10,14 +10,16 @@
 // twinkle; the size from distance, capped; faded out near the camera), hide(),
 // hash(), ease() and turnY().
 import { BufferGeometry, BufferAttribute, Points, ShaderMaterial, AdditiveBlending, Color } from 'three';
+import { twinkleUniform } from './twinkle.js';
 
 export const GRAIN_GLSL = /* glsl */ `
-uniform float uTime, uPixelRatio, uMaxSize, uNear0, uNear1;
+uniform float uTime, uPixelRatio, uMaxSize, uNear0, uNear1, uTwinkle;
 varying vec3 vColor; varying float vAlpha;
 void place(vec3 p, float size, float alpha, vec3 color, float seed) {
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
-  float tw = 0.86 + 0.14 * sin(uTime * (0.6 + seed * 1.2) + seed * 40.0);   // a slow, shallow twinkle: a stream encoder smears fast sparkle
+  // a slow, shallow twinkle (a stream encoder smears fast sparkle); none as uTwinkle goes to 0 (stage/twinkle.js)
+  float tw = mix(1.0, 0.86 + 0.14 * sin(uTime * (0.6 + seed * 1.2) + seed * 40.0), uTwinkle);
   // capped, and faded out within a few units of the camera: a flight that passes through a
   // scattered form must not fill the frame with huge additive sprites (a flash, and a fill-rate spike)
   gl_PointSize = min(uPixelRatio * size * tw * (72.0 / max(-mv.z, 0.1)), uMaxSize * uPixelRatio);
@@ -47,7 +49,7 @@ export function grainMaterial(vertexShader, uniforms = {}, { near = {}, fragment
     // uPixelRatio carries the frame scale (the buffer's height / 900; each builder returns it as
     // `frameScale`), so a grain is the same share of the picture at 1600×900 and on a phone
     uniforms: {
-      uTime: { value: 0 }, uPixelRatio: { value: 1 },
+      uTime: { value: 0 }, uPixelRatio: { value: 1 }, uTwinkle: twinkleUniform,
       uMaxSize: { value: n.size }, uNear0: { value: n.from }, uNear1: { value: n.to },
       ...uniforms,
     },

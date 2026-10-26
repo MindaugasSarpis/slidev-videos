@@ -273,7 +273,7 @@ function apply(immediate = false) {
   if (immediate) applyPlaces(true)
   changedAt = space.realTime ?? 0
   const sp = frontmatterSpace.value
-  if (!sp) { stopId.value = null; space.setStop(null); space.setRate(1); updateHum(); return }
+  if (!sp) { stopId.value = null; space.setStop(null); space.setRate(1); space.setSteady(false); updateHum(); return }
   const stops = Array.isArray(sp.stops) ? sp.stops : null
   const k = clicks.value
   if (stops && stops.length && k >= 1) {

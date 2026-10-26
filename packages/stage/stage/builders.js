@@ -6,6 +6,7 @@ import { makeLabel, makeText } from './labels.js';
 import { marble, shell, ball } from './materials.js';
 import { buildGalaxy, buildCollider } from './forms.js';
 import { shared } from './shared.js';
+import { twinkleUniform } from './twinkle.js';
 
 // What a station is made of. A station (space.json) lists `objects`, each
 // with a `type`; the type names a *builder* registered here. A builder is
@@ -322,7 +323,7 @@ export function buildConstellation(o, ctx) {
   geo.setAttribute('aKind', new BufferAttribute(kind, 1));
   const mat = new ShaderMaterial({
     vertexShader: GRAIN_VERT, fragmentShader: GRAIN_FRAG, transparent: true, depthWrite: false, depthTest: false, blending: AdditiveBlending,
-    uniforms: { uTime: { value: 0 }, uPixelRatio: { value: Math.min(devicePixelRatio || 1, 2) }, uReveal: { value: 1 }, uTrail: { value: 0 }, uTwinkle: { value: ctx.twinkle ?? 1 } },
+    uniforms: { uTime: { value: 0 }, uPixelRatio: { value: Math.min(devicePixelRatio || 1, 2) }, uReveal: { value: 1 }, uTrail: { value: 0 }, uTwinkle: twinkleUniform },
   });
   const pts = new Points(geo, mat); pts.frustumCulled = false; g.add(pts);
   // node centres on tilted orbits through their home positions

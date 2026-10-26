@@ -4,6 +4,7 @@ import {
 } from 'three';
 import { CORE_CENTER, CORE_RADIUS } from './world.js';
 import { NOISE } from '../shaders/noise.glsl.js';
+import { twinkleUniform } from '../twinkle.js';
 
 // The hero's "core": a dense twinkling cloud of points that assembles out of
 // the surrounding dust and then lives as one of three VARIANTS (the deck's
@@ -30,7 +31,7 @@ import { NOISE } from '../shaders/noise.glsl.js';
 // crossings (ring) visibly splash across the structure.
 
 const NODE_VERT = /* glsl */ `
-uniform float uTime, uPixelRatio, uBunch, uOmega, uPhase, uGain;
+uniform float uTime, uPixelRatio, uBunch, uOmega, uPhase, uGain, uTwinkle;
 attribute float aSeed, aFlash, aDelay, aDur, aAngle;
 attribute vec3 aStart, aSwirl;
 varying float vAlpha;
@@ -46,7 +47,7 @@ void main() {
   p *= 1.0 + snoise(normalize(position) * 1.6 + vec3(0.0, uTime * 0.13, 0.0)) * 0.05 * e;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
-  float tw = 0.75 + 0.25 * sin(uTime * (0.6 + aSeed * 1.7) + aSeed * 40.0);
+  float tw = mix(1.0, 0.75 + 0.25 * sin(uTime * (0.6 + aSeed * 1.7) + aSeed * 40.0), uTwinkle);
   float flash = step(aFlash, uTime) * exp(-(uTime - aFlash) * 2.2);
   float sinceLand = uTime - (aDelay + aDur);
   float land = step(0.0, sinceLand) * exp(-sinceLand * 3.0);
@@ -194,7 +195,7 @@ export function addCore(scene, { coarse, variant = 'sphere' } = {}) {
     vertexShader: NODE_VERT, fragmentShader: NODE_FRAG,
     transparent: true, depthWrite: false, depthTest: false, blending: AdditiveBlending,
     uniforms: {
-      uTime: { value: 0 }, uPixelRatio: { value: Math.min(devicePixelRatio || 1, 2) },
+      uTime: { value: 0 }, uPixelRatio: { value: Math.min(devicePixelRatio || 1, 2) }, uTwinkle: twinkleUniform,
       uBunch: { value: variant === 'ring' ? 1 : 0 }, uOmega: { value: RING_OMEGA }, uPhase: { value: RING_IP_PHASE },
       uGain: { value: variant === 'galaxy' ? 1.45 : 1.0 },   // the disc is sparser per pixel than the shell
     },

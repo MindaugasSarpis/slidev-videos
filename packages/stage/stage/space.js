@@ -20,6 +20,7 @@ import { buildStation, helpers } from './builders.js';
 import { shell } from './materials.js';
 import { resolvePalette, hexToRgb } from './palette.js';
 import { rampKeys, rampAt, rampLeft, pathAt, readPath, BUDGETS } from './clock.js';
+import { twinkleUniform, twinkleAt } from './twinkle.js';
 
 // The stage: one persistent 3D world under a whole deck. A path of built
 // scenes (stations) stands in an ambient field of dust; slides steer the
@@ -242,6 +243,8 @@ export function createSpace(canvas, container, { space, records = [], palette, o
   let rateKeys = [[0, 1]], rateT0 = 0, camKeys = null, camT0 = 0;
   let pathKeys = null, pathT0 = 0, pathDone = true, clockSig = null;
   let ambKeys = [[0, 1]], ambT0 = 0, ambient = 1, ambShown = 1;   // the ambient world (ground, nebula, dust field, halo), 0..1
+  let steadyKeys = [[0, 0]], steadyT0 = 0, steadyNow = 0;          // a slide's calm (`steady`): 1 stills every grain's twinkle (stage/twinkle.js)
+  const twinkleBase = Math.max(0, num(opt.twinkle, 1));
   const rateFns = new Set();
   const ctx = {
     records: byId, states: byId, palette: pal, anisotropy: renderer.capabilities.getMaxAnisotropy(), asset: asset || ((s) => s), helpers, twinkle: Math.max(0, num(opt.twinkle, 1)),
@@ -395,6 +398,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     const y = r.yaw * D2R, q = r.pitch * D2R;
     return { pos: [r.target.x + r.dist * Math.sin(y) * Math.cos(q), r.target.y + r.dist * Math.sin(q), r.target.z + r.dist * Math.cos(y) * Math.cos(q)], look: r.target.toArray() };
   };
+  function setSteadyRamp(on, over) { steadyKeys = rampKeys(on ? 1 : 0, steadyNow, over); steadyT0 = realT; }
   // a new ramp for the world's rate (and the camera's: null follows the world)
   function setClock(rate, over, camera) {
     rateKeys = rampKeys(rate, worldRate, over); rateT0 = realT;
@@ -524,6 +528,8 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     camRate = camKeys ? rampAt(camKeys, realT - camT0) : worldRate;
     const dt = rd * worldRate, camDt = rd * camRate;
     ambient = Math.min(1, rampAt(ambKeys, realT - ambT0));
+    steadyNow = Math.min(1, rampAt(steadyKeys, realT - steadyT0));
+    twinkleUniform.value = twinkleAt(twinkleBase, steadyNow);
     bgMat.uniforms.uAmbient.value = ambient;
     fieldMat.uniforms.uGain.value = dustGain * ambient;
     finish.uniforms.uGrain.value = filmGrain * ambient;
@@ -652,6 +658,9 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     // dust field, the halo): 0 is black, for forms of a deck's own alone; eased like a rate
     setAmbient(a, { over = 1 } = {}) { ambKeys = rampKeys(a, ambient, over).map(([t, v]) => [t, Math.min(1, v)]); ambT0 = realT; },
     get ambient() { return ambient; },
+    // a slide's calm: every grain's twinkle eased out (true) or back to the deck's (false) over `over` seconds
+    setSteady(on, { over = 0.6 } = {}) { setSteadyRamp(!!on, over); },
+    get steady() { return steadyNow; },
     get busy() { return formsBusy(); },
     get flightProgress() { return flightT0 >= 0 ? flightU : 1; },   // 0..1 in time through the flight, 1 when parked
     get paused() { return paused; },
@@ -693,11 +702,12 @@ export function createSpace(canvas, container, { space, records = [], palette, o
     // over when it, or what they say, changes, and not on a click within the slide
     setPose(p, { immediate = false, key } = {}) {
       p = p || {};
-      const sig = JSON.stringify([key ?? null, p.rate ?? null, p.rateEase ?? null, p.cameraRate ?? null, p.path ?? null, p.ambient ?? null]);
+      const sig = JSON.stringify([key ?? null, p.rate ?? null, p.rateEase ?? null, p.cameraRate ?? null, p.path ?? null, p.ambient ?? null, !!p.steady]);
       const fresh = sig !== clockSig;
       if (fresh) {
         clockSig = sig; setClock(p.rate ?? 1, num(p.rateEase, 1), p.cameraRate ?? null);
         ambKeys = rampKeys(p.ambient ?? 1, ambient, num(p.rateEase, 1)).map(([t, v]) => [t, Math.min(1, v)]); ambT0 = realT;
+        setSteadyRamp(!!p.steady, immediate || firstFrame ? 0 : 0.6);
       }
       const path = readPath(p.path);
       // with a path, the station, the flight's end and the hum are its last key's

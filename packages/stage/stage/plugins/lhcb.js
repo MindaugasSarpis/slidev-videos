@@ -3,6 +3,7 @@ import { GRAIN_GLSL, grainMaterial, grainPoints, grainGeometry, rgb } from '../g
 import { stepper, stepOf, hasStep, onStep } from '../steps.js';
 import { shared } from '../shared.js';
 import { whenGateOpen } from '../gate.js';
+import { OFF, eventLatch } from '../events.js';
 
 // The LHCb plugin: LHCb's real Run 3 geometry as grains, and what stands with it.
 // Lifted from MasterTalk (setup/route.js `detector`, d3dc728) and Innoday
@@ -200,12 +201,13 @@ function buildDetector(o, ctx) {
   const warm = prewarm(o);
   const s = stepper(o.name);
   let now = 0;
+  // shown and let go through one latch: once faded, its show, hide and hit times are all OFF
+  const ev = eventLatch(u, { start: 'uShowT', hide: 'uHideT', also: ['uHitT'], fade: 1.3 });
   const apply = () => {
     const k = s.step;
-    if (k <= 0) { if (u.uShowT.value < 1e8 && u.uHideT.value > 1e8) u.uHideT.value = now; if (now - u.uHideT.value > 1.3) u.uShowT.value = 1e9; u.uHitT.value = 1e9; return; }
-    if (u.uShowT.value > 1e8 || u.uHideT.value < 1e8) u.uShowT.value = k === 1 && s.prev === 0 ? now : now - 100;
-    u.uHideT.value = 1e9;
-    if (k >= 2) { if (u.uHitT.value > 1e8) u.uHitT.value = s.prev === 1 ? now : now - 100; } else u.uHitT.value = 1e9;
+    if (k <= 0) { ev.stop(now); ev.tick(now); u.uHitT.value = OFF; return; }
+    ev.start(now, k === 1 && s.prev === 0 ? now : now - 100);
+    if (k >= 2) { if (u.uHitT.value > 1e8) u.uHitT.value = s.prev === 1 ? now : now - 100; } else u.uHitT.value = OFF;
   };
   return {
     group: g, labels: [], frameScale: u.uPixelRatio,
@@ -213,7 +215,7 @@ function buildDetector(o, ctx) {
     update(t) {
       now = t; u.uTime.value = t;
       if (s.fresh) { s.fresh = false; apply(); }
-      if (s.step <= 0 && u.uHideT.value < 1e8 && t - u.uHideT.value > 1.3) u.uShowT.value = 1e9;
+      ev.tick(t);
       const warming = warm.tick();
       g.visible = u.uShowT.value < 1e8 || warming;   // hidden, it costs nothing on the other slides
     },
@@ -365,17 +367,15 @@ function buildEmblem(o, ctx) {
   const key = o.of || o.name;
   let now = 0, step = stepOf(key) ?? 0, fresh = hasStep(key);
   const off = onStep(key, (k) => { step = k; fresh = true; });
-  const apply = () => {
-    if (step > 0) { if (u.uT0.value > 1e8 || u.uHide.value < 1e8) { u.uT0.value = now; u.uHide.value = 1e9; } }
-    else if (u.uT0.value < 1e8 && u.uHide.value > 1e8) u.uHide.value = now;
-  };
+  const ev = eventLatch(u, { start: 'uT0', hide: 'uHide', fade: 1.1 });
+  const apply = () => { if (step > 0) ev.start(now); else ev.stop(now); };
   return {
     group: g, labels: [], frameScale: u.uPixelRatio,
     api: { busy: () => u.uT0.value < 1e8 && u.uHide.value > 1e8 && now - u.uT0.value < u.uDur.value * 1.4 },
     update(t) {
       now = t; u.uTime.value = t;
       if (fresh) { fresh = false; apply(); }
-      if (u.uHide.value < 1e8 && t - u.uHide.value > 1.1) { u.uT0.value = 1e9; u.uHide.value = 1e9; }
+      ev.tick(t);
       if (scrim) {
         const on = u.uT0.value > 1e8 ? 0 : Math.min(1, (t - u.uT0.value) / u.uDur.value);
         const out = u.uHide.value > 1e8 ? 1 : Math.max(0, 1 - (t - u.uHide.value));

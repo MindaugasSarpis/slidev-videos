@@ -38,6 +38,8 @@ export function tickSteps(t) {
   clock.t = t;
   for (const p of pending) if (t >= p.at) { pending.delete(p); setStep(p.name, p.step); }
 }
+// the world's clock as tickSteps last saw it (0 before the world has run)
+export const worldTime = () => clock.t;
 export const stepWaiting = (name) => [...pending].some((p) => p.name === name);
 
 // A builder's view of one name: { step, prev, fresh, off }. `fresh` turns true on
