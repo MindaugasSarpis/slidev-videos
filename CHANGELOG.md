@@ -4,34 +4,6 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
-## Unreleased
-
-v0.11's deferred review findings (`fix/v0.11-minors`), and the cause of a flaky smoke check:
-
-- **The plate back-step check flaked** because `data-stage-plate` right after
-  a slide change still held the slide before's state: a wait took slide 2's
-  `held` for slide 3's, and slide 3's `playing`, landing later, counted
-  against the back-step to 2. StagePlate now says whose state it is
-  (`data-stage-plate-slide`), and every wait in the smoke names its slide.
-- **A recorded slide reached by a back-step or a jump** holds its plate's
-  settled end, as the fallback's plates do; only a forward step from the
-  slide before (and the deck's opening) replays its arrival (`plateStart`).
-- **The watchdog's rebuild** waits until the slide's plate stands (or is
-  known missing, at most 3 s) before the world goes, so a deck that never
-  recorded plates does not sit on its still while their URLs 404; its grace
-  starts again when the world resumes.
-- **The music:** a fade or a set holds the level in force where the engine
-  has `cancelAndHoldAtTime`; without Web Audio an accent's level change is
-  cancelled with it.
-- **`clock: music`:** the dust's simulation steps at most 83 ms whatever the
-  music's step; the world's time runs on.
-- **The grain budget** counts the dust at the deck's `density` (a look's,
-  under its own options) and says which types it could not count, on the
-  warning and on a `grains:` line after every check: the figure is a floor
-  where a deck's own builders say no `grains` (Užsikrauk karjerai's finale
-  counts ~582k without its own seven types).
-- **Tests:** stage 229 → 237.
-
 ## v0.11.0 — 2026-10-27
 
 slidev-videos 0.11.0 · slidev-addon-stage 0.8.0 · slidev-addon-videos 0.11.0
@@ -97,12 +69,32 @@ and the frame-time watchdog is on (`options.watchdog: false` turns it off).
   `+` / `-` mid-fade go on to the new level. A slide's `space.clock: music`
   makes the world's step the music's.
 - **A grain budget per slide.** `slidev-stage-check` estimates the grains
-  each slide lights (the dust, every object no step drives, the stepped
-  ones on where their step is above 0, a deck's `.bin` by its size) and
-  warns `grain-budget` past 600k / 320k / 120k / 60k by tier (`--tier`,
-  else `stage.tier`). On Karjera's deck it flags slides 13–17 at ~632k
-  without counting its own builders.
-- **Tests:** stage 150 → 229 (twinkle and latch, `whenEntered`, the music
+  each slide lights (the dust at the deck's `density`, every object no step
+  drives, the stepped ones on where their step is above 0, a deck's `.bin`
+  by its size) and warns `grain-budget` past 600k / 320k / 120k / 60k by
+  tier (`--tier`, else `stage.tier`). The figure is a floor where a deck's
+  own builders say no `grains`: a `grains:` line after every check names the
+  types it could not count. Karjera's finale counts ~582k at its broadcast
+  density without seven of its own types; its builders need `grains` on
+  their objects for the true figure.
+- **The smoke's plate back-step check flaked** because `data-stage-plate` right after
+  a slide change still held the slide before's state: a wait took slide 2's
+  `held` for slide 3's, and slide 3's `playing`, landing later, counted
+  against the back-step to 2. StagePlate now says whose state it is
+  (`data-stage-plate-slide`), and every wait in the smoke names its slide.
+- **A recorded slide reached by a back-step or a jump** holds its plate's
+  settled end, as the fallback's plates do; only a forward step from the
+  slide before (and the deck's opening) replays its arrival (`plateStart`).
+- **The watchdog's rebuild** waits until the slide's plate stands (or is
+  known missing, at most 3 s) before the world goes, so a deck that never
+  recorded plates does not sit on its still while their URLs 404; its grace
+  starts again when the world resumes.
+- **The music:** a fade or a set holds the level in force where the engine
+  has `cancelAndHoldAtTime`; without Web Audio an accent's level change is
+  cancelled with it.
+- **`clock: music`:** the dust's simulation steps at most 83 ms whatever the
+  music's step; the world's time runs on.
+- **Tests:** stage 150 → 237 (twinkle and latch, `whenEntered`, the music
   player against a faked Web Audio, `stepReal`, the recorded layer and
   `slaveRate`, the watchdog, the budget and tiers, cold entry; the compile
   check now covers every component); the stage smoke opens every example
