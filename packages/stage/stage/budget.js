@@ -18,8 +18,11 @@ export const DATA_GRAINS = { lhcb: 93000, 'lhcb-dense': 446400 };
 const STEP_KEY = { floor: 'det', supports: 'det' };
 
 const tierOf = (t) => Math.max(0, Math.min(GRAIN_BUDGET.length - 1, Math.round(Number(t) || 0)));
-// the most a desktop builds (space.js pickTexSize: 352 on the most cores), at most the tier's side
-export const dustGrains = (tier) => Math.min(TIER_SIM[tierOf(tier)], 352) ** 2;
+// the most a desktop builds (space.js pickTexSize: 352 on the most cores, scaled by `density`), at most the tier's side
+export const dustGrains = (tier, density = 1) => {
+  const side = Math.max(96, Math.min(448, Math.round(352 * Math.sqrt(Math.max(0.1, Number(density) || 1)) / 16) * 16));
+  return Math.min(TIER_SIM[tierOf(tier)], side) ** 2;
+};
 // readGrains' every k-th grain, k to keep within the budget
 const thinned = (n, budget) => { const k = Math.max(1, Math.ceil(n / Math.max(1, budget))); return Math.ceil(n / k); };
 
@@ -75,8 +78,8 @@ export function slideSteps(bodies, fm = []) {
 // The grains lit on a slide: the dust, every object no step drives (its key never
 // stepped in the deck: `stepped`), and the stepped ones whose step is above 0.
 // → { total, top: [{ name, grains }] heaviest first, uncounted: [type, …] }
-export function litGrains({ objects = [], steps = {}, tier = 0, stepped = new Set(), fileBytes } = {}) {
-  const parts = [{ name: 'dust', grains: dustGrains(tier) }];
+export function litGrains({ objects = [], steps = {}, tier = 0, stepped = new Set(), fileBytes, density = 1 } = {}) {
+  const parts = [{ name: 'dust', grains: dustGrains(tier, density) }];
   const uncounted = [];
   for (const o of objects) {
     const key = stepKey(o);

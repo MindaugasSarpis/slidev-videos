@@ -14,6 +14,8 @@
 // plate no URL answers for (never recorded, or plates off) runs the world as live.
 // Pure, so node can hold it to account (test/recorded.test.mjs).
 
+import { plateEntry } from './fallback.js';
+
 const KINDS = ['plate', 'clip'];
 
 // a slide's `space` → { kind, sync: { track, at } | null }, or null when it is live
@@ -37,6 +39,13 @@ export function layerNow({ base, slide, recorded = null, slowSlide = null, plate
   const wants = recorded?.kind === 'plate' || (slowSlide != null && slowSlide === slide);
   return wants && plates !== false && !missing ? 'plate' : 'world';
 }
+
+// Where a recorded slide's plate starts over a running world, by how the deck got there
+// (plateEntry, as the fallback's plates): from its top on a forward step from the slide before
+// (and at the deck's opening), else held at its end (HOLD: StagePlate seeks there) — a back-step
+// or a jump shows the settled slide, not an arrival the audience saw the other way.
+export const HOLD = 1e9;
+export const plateStart = (from, to) => (plateEntry(from, to) === 'replay' ? 0 : HOLD);
 
 // The rate for a video that keeps the music's time: videoT its time, musicT the
 // music's, at the music's second at the video's 0 s. Behind, it hurries; ahead, it

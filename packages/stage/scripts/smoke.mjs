@@ -359,51 +359,55 @@ p15.on('pageerror', (e) => { if (!/Wake Lock/i.test(e.message)) forcedErrors.pus
 await p15.addInitScript(() => {
   window.__plateLog = []
   new MutationObserver((rs) => {
-    for (const r of rs) if (r.target === document.documentElement) window.__plateLog.push({ hash: location.hash, v: document.documentElement.dataset.stagePlate ?? null })
-  }).observe(document, { attributes: true, subtree: true, attributeFilter: ['data-stage-plate'] })
+    for (const r of rs) if (r.target === document.documentElement) window.__plateLog.push({ hash: location.hash, slide: document.documentElement.dataset.stagePlateSlide ?? null, v: document.documentElement.dataset.stagePlate ?? null })
+  }).observe(document, { attributes: true, subtree: true, attributeFilter: ['data-stage-plate', 'data-stage-plate-slide'] })
 })
 await p15.goto(`http://localhost:${platePort}/?stage-force=no-webgl2#/1`, { waitUntil: 'load' })
 await p15.waitForSelector('.slidev-layout', { timeout: 60000 })
-const plateNow = () => p15.evaluate(() => document.documentElement.dataset.stagePlate ?? null)
-const untilPlate = async (want, timeout = 20000) => {
+// each read names its slide (data-stage-plate-slide): right after a slide change the attribute still
+// holds the slide before's state, and a wait that took it returned early (the back-step check flaked:
+// slide 2's `held` read as slide 3's, and slide 3's `playing` then counted against the back-step to 2)
+const plateNow = (slide) => p15.evaluate((n) => { const d = document.documentElement.dataset; return d.stagePlateSlide === String(n) ? (d.stagePlate ?? null) : null }, slide)
+const untilPlate = async (want, slide, timeout = 20000) => {
   const deadline = Date.now() + timeout
-  let v = await plateNow()
-  while (!want.includes(v) && Date.now() < deadline) { await p15.waitForTimeout(25); v = await plateNow() }
+  let v = await plateNow(slide)
+  while (!want.includes(v) && Date.now() < deadline) { await p15.waitForTimeout(25); v = await plateNow(slide) }
   return v
 }
 const go = async (n) => { await p15.evaluate((k) => { location.hash = `#/${k}` }, n); await p15.waitForFunction((k) => document.querySelector('.stage')?.dataset && location.hash.startsWith(`#/${k}`), n) }
 const since = () => p15.evaluate(() => window.__plateLog.length)
-const valuesFrom = (i) => p15.evaluate((k) => window.__plateLog.slice(k).map((e) => e.v), i)
-const logFrom = (i) => p15.evaluate((k) => window.__plateLog.slice(k).map((e) => `${e.hash}:${e.v}`).join(' '), i)
+// slide's values logged since entry i
+const valuesFrom = (i, slide) => p15.evaluate(([k, n]) => window.__plateLog.slice(k).filter((e) => e.slide === String(n)).map((e) => e.v), [i, slide])
+const logFrom = (i) => p15.evaluate((k) => window.__plateLog.slice(k).map((e) => `${e.hash}/${e.slide}:${e.v}`).join(' '), i)
 
-await untilPlate(['held', 'playing', 'none'])
+await untilPlate(['held', 'playing', 'none'], 1)
 await go(2)
-const played2 = await untilPlate(['playing'])
+const played2 = await untilPlate(['playing'], 2)
 check('a forward step 1→2 replays 2\'s plate (the browser plays the synthetic plate)', played2 === 'playing', String(played2))
 // (a) back-step after 2's plate has ended
-const ended2 = await untilPlate(['held'], (PLATE_S + 6) * 1000)
+const ended2 = await untilPlate(['held'], 2, (PLATE_S + 6) * 1000)
 await go(3)
-await untilPlate(['playing', 'held'])
+await untilPlate(['playing', 'held'], 3)
 let mark = await since()
 await go(2)
-const backA = await untilPlate(['held'], 8000)
+const backA = await untilPlate(['held'], 2, 8000)
 await p15.waitForTimeout(500)
-let seen = await valuesFrom(mark)
-check('a back-step 3→2 after 2\'s plate ended holds: held, never playing', ended2 === 'held' && backA === 'held' && seen.length > 0 && !seen.includes('playing') && (await plateNow()) === 'held', `${ended2} → ${await logFrom(mark)}`)
+let seen = await valuesFrom(mark, 2)
+check('a back-step 3→2 after 2\'s plate ended holds: held, never playing', ended2 === 'held' && backA === 'held' && seen.length > 0 && !seen.includes('playing') && (await plateNow(2)) === 'held', `${ended2} → ${await logFrom(mark)}`)
 // (b) back-step after leaving 2 mid-way (the Innoday case: the plate not at its end)
 await go(1)
-await untilPlate(['held', 'playing', 'loading'])
+await untilPlate(['held', 'playing', 'loading'], 1)
 await go(2)
-await untilPlate(['playing'])
+await untilPlate(['playing'], 2)
 await p15.waitForTimeout(PLATE_S * 250)
 await go(3)
-await untilPlate(['playing', 'held'])
+await untilPlate(['playing', 'held'], 3)
 mark = await since()
 await go(2)
-const backB = await untilPlate(['held'], 8000)
+const backB = await untilPlate(['held'], 2, 8000)
 await p15.waitForTimeout(500)
-seen = await valuesFrom(mark)
-check('a back-step 3→2 after leaving 2 mid-way holds: held, never playing', backB === 'held' && seen.length > 0 && !seen.includes('playing') && (await plateNow()) === 'held', seen.join(' '))
+seen = await valuesFrom(mark, 2)
+check('a back-step 3→2 after leaving 2 mid-way holds: held, never playing', backB === 'held' && seen.length > 0 && !seen.includes('playing') && (await plateNow(2)) === 'held', await logFrom(mark))
 await p15.close()
 plateServer.close()
 await rm(plated, { recursive: true, force: true })

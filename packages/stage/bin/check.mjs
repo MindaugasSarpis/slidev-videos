@@ -56,7 +56,7 @@ import { readFileSync, existsSync, realpathSync, readdirSync, statSync } from 'n
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CORE_TYPES, PLUGIN_TYPES, STAGE_KEYS, OPTION_KEYS, SPACE_KEYS, ENTERABLE, anchorIds } from '../stage/types.js';
-import { PALETTES, DEFAULT_PALETTE } from '../stage/palette.js';
+import { PALETTES, DEFAULT_PALETTE, resolveLook } from '../stage/palette.js';
 import { placesDecl } from '../stage/place-groups.js';
 import { GRAIN_BUDGET, slideSteps, litGrains, grainCount } from '../stage/budget.js';
 
@@ -514,16 +514,22 @@ export function checkStage({ space, records = null, deck = '', pages = [], plugi
   const all = space.stations.flatMap((st) => (Array.isArray(st.objects) ? st.objects : []));
   const steps = slideSteps(slides.map((s) => s.body), slides.map((s) => s.fm.steps ?? null));
   const stepped = new Set(steps.flatMap((o) => Object.keys(o)));
+  // the dust's density as the engine takes it: the look's, under the deck's own options
+  let density = 1;
+  try { density = Number({ ...resolveLook(cfg.palette, typeof cfg.look === 'string' ? cfg.look : ''), ...(cfg.options || {}) }.density ?? 1) || 1; } catch { /* an unknown palette is its own problem */ }
   let grains = 0;
+  const uncounted = new Set();
   slides.forEach((s, i) => {
-    const lit = litGrains({ objects: all, steps: steps[i], tier: T, stepped, fileBytes: fileBytes || (() => null) });
+    const lit = litGrains({ objects: all, steps: steps[i], tier: T, stepped, fileBytes: fileBytes || (() => null), density });
     grains = Math.max(grains, lit.total);
+    for (const u of lit.uncounted) uncounted.add(u);
     if (lit.total > GRAIN_BUDGET[T]) {
       const top = lit.top.slice(0, 4).map((p) => `${p.name} ${grainCount(p.grains)}`).join(', ');
-      add('grain-budget', `slide ${s.no}: ~${grainCount(lit.total)} grains lit at tier ${T}, over the ${grainCount(GRAIN_BUDGET[T])} budget (${top}): a laptop's GPU goes white under them; thin a form, let one go, or record the slide (space.recorded)`, { slide: s.no, line: s.line }, 'warning');
+      const not = lit.uncounted.length ? `; not counted: ${[...new Set(lit.uncounted)].join(', ')} (no \`grains\`)` : '';
+      add('grain-budget', `slide ${s.no}: ~${grainCount(lit.total)} grains lit at tier ${T}, over the ${grainCount(GRAIN_BUDGET[T])} budget (${top}${not}): a laptop's GPU goes white under them; thin a form, let one go, or record the slide (space.recorded)`, { slide: s.no, line: s.line }, 'warning');
     }
   });
-  return result(issues, { stations: stations.size, objects, places: places.size, poses: nPoses, stops: nStops, slides: slides.length, grains, tier: T });
+  return result(issues, { stations: stations.size, objects, places: places.size, poses: nPoses, stops: nStops, slides: slides.length, grains, tier: T, uncounted: [...uncounted] });
 }
 
 // A deck that dropped its own Count.vue for the addon's <StageCount> and kept
@@ -637,12 +643,15 @@ export function main(argv = process.argv.slice(2)) {
   const pages = deckPages(deck).map((p) => { try { return readFileSync(resolve(dir, p), 'utf8'); } catch { return ''; } });
   const r = checkStage({ space, records, deck, pages, plugins, extraTypes: args.types, deckOwn: own.types, deckEnterable: own.enterable, deckClocks: deckClocks(setup), palettes: own.palettes, publicDir, components: deckComponents(setup, dir), tier: args.tier,
     fileBytes: (p) => { try { return statSync(join(publicDir, String(p).replace(/^\//, ''))).size; } catch { return null; } } });
-  const stats = { stations: r.stations, objects: r.objects, places: r.places, poses: r.poses, stops: r.stops, slides: r.slides, grains: r.grains, tier: r.tier, deckTypes: Object.keys(own.types) };
+  const stats = { stations: r.stations, objects: r.objects, places: r.places, poses: r.poses, stops: r.stops, slides: r.slides, grains: r.grains, tier: r.tier, uncounted: r.uncounted, deckTypes: Object.keys(own.types) };
+  // the grain figure is a floor where the deck's own types say no `grains`
+  const grainLine = `grains: at most ~${Math.round(r.grains / 1000)}k lit on a slide at tier ${r.tier} (budget ${Math.round(GRAIN_BUDGET[r.tier] / 1000)}k)${r.uncounted?.length ? `, not counting ${r.uncounted.join(', ')} (give their objects \`grains\` to count them)` : ''}`;
   if (args.json) {
     console.log(JSON.stringify({ ok: r.problems.length === 0, deck: deckFile, problems: r.issues, stats }, null, 2));
     return r.problems.length ? 1 : 0;
   }
   if (r.warnings.length) console.error(r.warnings.map((w) => `warning: ${w}`).join('\n'));
+  console.error(grainLine);
   if (r.problems.length) {
     console.error(r.problems.join('\n'));
     console.error(`\n${r.problems.length} problem(s) in the stage.`);

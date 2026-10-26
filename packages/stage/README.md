@@ -55,7 +55,7 @@ Then each slide steers the camera from its frontmatter:
 | `hum` | `false`: no hum on this slide |
 | `steady` | `true`: no grain twinkles on this slide, eased in over 0.6 s (every grain material shares one twinkle uniform; see *Steps*). By hand: `space.setSteady(true, { over })` |
 | `clock` | `music`: the world keeps the playing `<StageSoundtrack>`'s pace instead of the wall's, so a long frame cannot leave it behind the music (its step is the music's, up to half a second a frame). By hand: `space.setClockSource(() => seconds \| null)` |
-| `recorded` | the slide is its recording over a running world: `plate` (its `NN-plate.mp4`, from its top; the world rests under it), `clip` (its own clip is the picture), or `{ kind, music, at }`: the video also keeps the time of the playing track whose path holds `music`, its 0 s at the track's `at` s (±10 %, set where it belongs when a second off). A slide whose plate does not answer, or with `plates: false`, runs live; the recorder films it live. See [When the world cannot run](#when-the-world-cannot-run) |
+| `recorded` | the slide is its recording over a running world: `plate` (its `NN-plate.mp4`, from its top; the world rests under it), `clip` (its own clip is the picture), or `{ kind, music, at }`: the video also keeps the time of the playing track whose path holds `music`, its 0 s at the track's `at` s (±10 %, set where it belongs when a second off). Reached by a forward step it plays from its top; by a back-step or a jump it holds its settled end, as the fallback's plates do. A slide whose plate does not answer, or with `plates: false`, runs live; the recorder films it live. See [When the world cannot run](#when-the-world-cannot-run) |
 
 A slide without `space` keeps the previous pose. Flights take 1.4–4.5 s by
 distance and ease in and out.
@@ -462,7 +462,7 @@ Slidev counts them, and a code:
 | `camera-inside-form` | warning: a slide's camera stands inside an object's `radius` (every grain is drawn across the screen). Not for a form a camera is meant to stand in: a `ring`, a type registered `registerBuilder(type, fn, { fields, enterable: true })` (a floor, enveloping strands), or an object with `"enterable": true` |
 | `unknown-key` | warning: a key of `stage:` or of a slide's `space:` that nothing reads |
 | `unknown-component` | warning: a `<Count>` tag, and no `Count` the deck registers itself (in `setup/` or `components/`): the addon's counter is `<StageCount>` |
-| `grain-budget` | warning: a slide lights more grains than its tier carries (600k at tier 0, 320k, 120k, 60k; `--tier`, else `stage.tier`, else 0): the dust, every object no step drives, and the stepped ones (`steps:`, `<StageSteps :set>`, a talk's `<Grains :set>`) whose step is above 0, the heaviest named. An estimate: a deck's own type counts when its object says `grains` |
+| `grain-budget` | warning: a slide lights more grains than its tier carries (600k at tier 0, 320k, 120k, 60k; `--tier`, else `stage.tier`, else 0): the dust (at the deck's `density`), every object no step drives, and the stepped ones (`steps:`, `<StageSteps :set>`, a talk's `<Grains :set>`) whose step is above 0, the heaviest named. A floor: a deck's own type counts only when its object says `grains`, and the `grains:` line after every check names the types it could not count |
 
 Also `duplicate-station`, `missing-look`, `bad-src`, `missing-file`,
 `unknown-record`, `unknown-plugin`, `no-stations`. Errors exit 1, warnings
