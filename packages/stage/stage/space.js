@@ -621,7 +621,9 @@ export function createSpace(canvas, container, { space, records = [], palette, o
       if (st.def.pulse && elapsed >= nextPulse) { burst.set(gather.x, gather.y, gather.z, kick); nextPulse = elapsed + st.def.pulse; }
     } else g4.w = 0;
     if (burst.w > 0) burst.w = Math.max(0, burst.w - kick * 1.3 * dt);
-    velMat.uniforms.uDt.value = dt; velMat.uniforms.uTime.value = elapsed; posMat.uniforms.uDt.value = dt;
+    // the dust steps at most MAX_DT (as before v0.11) when an external clock gives a long step: the world's time runs on
+    const simDt = Math.min(rd, Math.max(MAX_DT, globalThis.__stageMaxDt || 0)) * worldRate;
+    velMat.uniforms.uDt.value = simDt; velMat.uniforms.uTime.value = elapsed; posMat.uniforms.uDt.value = simDt;
     velMat.uniforms.uPos.value = posA.texture; velMat.uniforms.uVel.value = velA.texture; pass(velMat, velB);
     posMat.uniforms.uPos.value = posA.texture; posMat.uniforms.uVel.value = velB.texture; pass(posMat, posB);
     [posA, posB] = [posB, posA]; [velA, velB] = [velB, velA];
@@ -809,7 +811,7 @@ export function createSpace(canvas, container, { space, records = [], palette, o
       paused = p;
       container.dataset.spacePaused = p ? '1' : '0';
       havePrev = false;   // no streak across the gap
-      if (p) cancelAnimationFrame(raf); else { getDelta(); srcPrev = null; frame(); }
+      if (p) cancelAnimationFrame(raf); else { getDelta(); srcPrev = null; dog.reset(performance.now() / 1000); frame(); }
     },
     dispose() {
       for (const id of [...places.keys()]) dropPlace(id);

@@ -372,3 +372,15 @@ test('every component compiles', (t) => {
     for (const s of descriptor.styles) assert.deepEqual(sfc.compileStyle({ id, filename: f, source: s.content, scoped: s.scoped }).errors, [], f);
   }
 });
+
+// The plate's state names its slide (v0.11.1): a probe reading data-stage-plate right after a
+// slide change read the slide before's value (the smoke's back-step check took slide 2's `held`
+// for slide 3's, and slide 3's `playing` then counted against the back-step to 2).
+test('StagePlate says whose state data-stage-plate is: data-stage-plate-slide, set with it, gone with it', () => {
+  const src = read('../components/StagePlate.vue');
+  assert.match(src, /html\.dataset\.stagePlate = s\n\s+html\.dataset\.stagePlateSlide = String\(props\.slide\)/);
+  assert.match(src, /delete html\.dataset\.stagePlateSlide/);
+  const smoke = read('../scripts/smoke.mjs');
+  assert.match(smoke, /attributeFilter: \['data-stage-plate', 'data-stage-plate-slide'\]/);
+  assert.doesNotMatch(smoke, /await untilPlate\(\[[^\]]*\]\)\n/);    // every wait names its slide
+});

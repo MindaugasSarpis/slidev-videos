@@ -13,7 +13,7 @@ import { probeGL, stageDebugOn, debugLines, deviceInfo, pickTier, MAX_TIER, stag
 import { stillsDir, stillUrl, inPrint } from '../stage/stills.js'
 import { fallbackLayer, platesDir, plateRelease, plateLocalFirst } from '../stage/fallback.js'
 import { musicClock } from '../stage/soundtrack.js'
-import { recordedOf, layerNow, slaveRate } from '../stage/recorded.js'
+import { recordedOf, layerNow, slaveRate, plateStart } from '../stage/recorded.js'
 import { setSteps, stepsAt, allSteps } from '../stage/steps.js'
 
 // The persistent 3D world under a whole deck. The addon mounts it from its
@@ -256,14 +256,26 @@ function onSlow(d = {}) {
   if (PLATES) { slowSlide.value = nav.currentSlideNo.value; plateFrom.value = Math.max(0, (space?.realTime ?? 0) - entryReal) }
   if (tier >= MAX_TIER) { space?.setPaused(true); return fallback('slow', `tier ${tier}`) }   // the plates for the rest: the world rests behind them
   Object.assign(status, { status: 'restoring', reason: 'slow', detail: `rebuilding at tier ${tier + 1}` })
+  renderDebug()
+  clearTimeout(restoreTimer)
+  // the world stays up until the plate stands over it (or is known missing: plates default to
+  // videos/, and a deck that never recorded them 404s), at most 3 s; then it is built again
+  if (!PLATES) return slowRebuild()
+  slowWaiting = true
+  restoreTimer = setTimeout(slowRebuild, 3000)
+}
+let slowWaiting = false
+function slowRebuild() {
+  slowWaiting = false
+  clearTimeout(restoreTimer)
+  if (status.status !== 'restoring' || status.reason !== 'slow') return
   space?.setPaused(true)
   ready.value = false
   staticBg.value = true                      // the canvas goes; the plate (or the still) stands
-  if (!PLATES) layerBase.value = 'still'
-  renderDebug()
-  clearTimeout(restoreTimer)
+  if (!PLATES || plateMissing.value.has(slowSlide.value)) layerBase.value = 'still'
   restoreTimer = setTimeout(rebuild, 50)
 }
+watch([plateState, plateMissing], () => { if (slowWaiting && (plateState.value === 'playing' || plateState.value === 'held' || plateMissing.value.has(slowSlide.value))) slowRebuild() })
 async function rebuild() {
   if (status.status !== 'restoring') return
   try { space?.dispose() } catch { /* the context is gone */ }
@@ -534,9 +546,9 @@ watch(recordedRest, (on) => { if (on) apply(true); rest() })
 // plate starts from its top. With `music`, the video keeps the playing track's time
 // (slaveRate: ±10 %, set where it belongs when more than a second off), in the audience's window.
 let entryReal = 0, slaveRaf = 0
-watch(() => nav.currentSlideNo.value, () => {
+watch(() => nav.currentSlideNo.value, (n, was) => {
   slowSlide.value = null
-  plateFrom.value = recordedNow()?.kind === 'plate' ? 0 : null
+  plateFrom.value = recordedNow()?.kind === 'plate' ? plateStart(was, n) : null
   entryReal = space?.realTime ?? 0
   keepTime()
 }, { immediate: true })

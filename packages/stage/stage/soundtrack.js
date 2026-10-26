@@ -46,6 +46,9 @@ export const anchorOf = (ctxNow, mediaT) => ctxNow - mediaT;
 export const needsReanchor = (clockT, mediaT, tol = REANCHOR) => Math.abs(clockT - mediaT) > tol;
 
 const later = (fn, ms) => setTimeout(fn, Math.max(0, ms));
+// drop what is scheduled from `at` on, holding the value in force (an engine that keeps an active curve
+// on cancelScheduledValues would throw on the next event inside it); cancelScheduledValues where not
+const release = (g, at) => (typeof g.cancelAndHoldAtTime === 'function' ? g.cancelAndHoldAtTime(at) : g.cancelScheduledValues(at));
 const frame = (fn) => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(fn) : setTimeout(fn, 16));
 
 // context(): the AudioContext or null; out(): the node tracks connect to (null: the
@@ -129,7 +132,7 @@ export function createMusic({ context, out = () => null, audio, level = () => 1,
     const c = ctxOf();
     if (t.gain && c) {
       const g = t.gain.gain;
-      g.cancelScheduledValues(c.currentTime); g.setValueAtTime(amp(v), c.currentTime);
+      release(g, c.currentTime); g.setValueAtTime(amp(v), c.currentTime);
       if (t.accent && t.accent.when > c.currentTime) { try { g.setValueAtTime(amp(t.accent.lvl), t.accent.when); } catch { /* gone */ } }
     } else t.e.volume = Math.max(0, Math.min(1, amp(v)));
   };
@@ -141,7 +144,7 @@ export function createMusic({ context, out = () => null, audio, level = () => 1,
     t.level = to;
     if (t.gain && c && ms > 0) {
       const g = t.gain.gain, n = c.currentTime;
-      g.cancelScheduledValues(n);
+      release(g, n);
       try { g.setValueCurveAtTime(equalPower(amp(from), amp(to)), n, ms / 1000); } catch { try { g.setValueAtTime(amp(to), n); } catch { /* an engine that keeps an active curve */ } }
       t.fadeEnd = n + ms / 1000;
       // an accent kept: after the curve (an event inside one throws)

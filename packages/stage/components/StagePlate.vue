@@ -40,7 +40,7 @@ import { plateUrls, plateEntry, plateStep } from '../stage/fallback.js'
 //
 // On <html>, for the player's advance-on-end (video-dust/advance.js) and the
 // tools: data-stage-plate = loading | playing | paused | held | none (this
-// slide's), data-stage-plate-next = n+1 once the next slide's plate can play
+// slide's; data-stage-plate-slide says which slide that is), data-stage-plate-next = n+1 once the next slide's plate can play
 // (removed while it cannot, and when there is none). Paused while covered
 // and while the tab is hidden; `state` tells Stage.vue the same.
 
@@ -92,6 +92,7 @@ function publish() {
   const html = document.documentElement
   const s = stateOf()
   html.dataset.stagePlate = s
+  html.dataset.stagePlateSlide = String(props.slide)   // whose state it is: read right after a slide change, the slide before's
   const next = props.slide + 1
   const el = els.get(next)
   if (el && !dead[next] && el.readyState >= 3) html.dataset.stagePlateNext = String(next)
@@ -169,6 +170,7 @@ onUnmounted(() => {
   for (const el of els.values()) { try { el.pause() } catch { /* gone */ } }
   const html = document.documentElement
   delete html.dataset.stagePlate
+  delete html.dataset.stagePlateSlide
   delete html.dataset.stagePlateNext
 })
 </script>
