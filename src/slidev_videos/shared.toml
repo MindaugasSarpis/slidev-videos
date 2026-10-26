@@ -279,3 +279,8 @@ notes   = "Mountain aerial with edited audio, 3:07 — the Yaga 2026-07-18 opene
 name    = "lis_flag.mp4"
 profile = "silent-loop"
 notes   = "A SciFi module's end with its light injection system, a laser engraving the Lithuanian flag on the cold box; 10 s, silent, played once (Innoday's close, Oct 2026). Rendered by tools/lis/lis_scene.py (Blender 4.5 LTS, Cycles) after the owner's SciFi drawing; H.264 25 fps; the raw is that render, not on gdrive. Its last frame, depth and camera (lis_last.jpg, lis_last.depth.png, lis.json, on this release too) are slidev-addon-stage's stage-data `lis`, which <StageDepthGrains> turns into grains in depth."
+
+[[videos]]
+name    = "lis_flag_module.mp4"
+profile = "silent-loop"
+notes   = "Innoday's close as shown (21 Oct, the owner: \"show the full SciFi module panning slowly … then on the bottom I indicate the light injection system\"): 20 s (500 frames at 25 fps), silent, played once. 0-7.2 s the whole SciFi module from below its lower end, panning down and in to the lower readout end; 6.6-10 s the cold box's soft light-blue outline glow; 10-20 s lis_flag.mp4's camera, the laser writing the flag (12.2-17.6 s). A later render than lis_flag.mp4 (its blue fibres gone), so its last frame is not this release's lis_last.jpg: a deck handing over from it with <StageDepthGrains> takes Innoday's 21 Oct still, depth and camera (talks/2026_10_23_Innoday/public/figures/lis_last.jpg, lis_last.depth.png, setup/data/lis.json). Rendered by tools/lis/lis_scene.py --end bottom (Blender 4.5 LTS, Cycles, 160 samples); H.264 CRF 12; the raw is that render, not on gdrive. The asset is Innoday's release file (videos-2026-10-00-innoday), which MasterTalk copied byte for byte."

@@ -12,7 +12,10 @@ on its own). A deck pins both addons and the CLI to the same tag.
   as `cern_video_2019_050_008_dipole.mp4` (each beside its full clip, with its
   `trim`), and the 49 s Vilnius → cosmic web zoom `vilnius_zoom.mp4`. MasterTalk
   had copied them byte for byte; Tokyo wants them. The library's full-length
-  policy gains its one exception, cuts several decks share. Python 205 → 206.
+  policy gains its one exception, cuts several decks share. And Innoday's
+  20 s render of the close, `lis_flag_module.mp4` (the whole SciFi module,
+  then the flag; its own render, beside the library's 10 s `lis_flag.mp4`,
+  whose hand-over stills it does not end on). Python 205 → 207.
 
 ## v0.11.0 — 2026-10-27
 
