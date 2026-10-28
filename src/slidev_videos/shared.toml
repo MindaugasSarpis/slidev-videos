@@ -18,6 +18,9 @@
 # entries carried the course reel's 90 s trims). A deck that wants a shorter
 # cut lists the clip in its own manifest with a `trim` and publishes to its
 # own release — the talk release wins the player's chain over the library.
+# The one exception: a cut that several decks share (copied byte for byte from
+# one talk's release to another's) joins the library under a name of its own
+# beside the full clip, with its `trim` (see "shared cuts" below).
 
 [defaults]
 release_tag = "videos-shared"
@@ -239,6 +242,30 @@ name    = "cern_footage_2024_010_002.mp4"
 profile = "standard"
 notes   = "CERN-FOOTAGE-2024-010-002 — FCC-hh tunnel render (0:10). Source: cern/cern_footage_2024_010_002.mp4"
 
+# --- shared cuts (2026-10-27: Užsikrauk karjerai's, copied byte for byte by MasterTalk,
+# wanted by Tokyo). The assets are that talk's encodes (release
+# videos-2026-10-26-uzsikraukkarjerai) under these names; a deck moving to them
+# renames its `src` and drops its own copy. ---------------------------------------
+
+[[videos]]
+name     = "cern_footage_2022_013_001_tunnel_cut.mp4"
+profile  = "high-motion"
+trim     = ["2:35", "2:53"]
+loudnorm = false
+notes    = "CERN-FOOTAGE-2022-013-001, the 18 s cut of the LHC tunnel the shared opening (outreach_talks components/lhc-opening/) plays: the travelling shot with the magnets on the right; on its last frame the magnet string vanishes at (0.45, 0.53), where the opening goes on into the beam pipe. Its sound is the tunnel's own ventilation hum at the source's level (loudnorm off). OpenData's and Užsikrauk karjerai's cut (there named cern_footage_2022_013_001_1080p_lhc.mp4, as its raw). Source: cern/cern_footage_2022_013_001_1080p_lhc.mp4"
+
+[[videos]]
+name    = "cern_video_2019_050_008_dipole.mp4"
+profile = "standard"
+trim    = ["0:00", "0:10.8"]
+notes   = "CERN-VIDEO-2019-050-008, its first 10.8 s: a cutaway of an LHC dipole magnet into its two beam pipes, its small English/French labels kept (it dissolves into the beam-vacuum scene at 11 s). Silent (no audio stream; two data tracks dropped). Užsikrauk karjerai's slide (there named cern_video_2019_050_008.mp4, over the full library clip). Source: cern/cern_video_2019_050_008_1080ph265.mp4"
+
+[[videos]]
+name     = "vilnius_zoom.mp4"
+profile  = "high-motion"
+loudnorm = false
+notes    = "The zoom out from Vilnius (NFTMC) to the cosmic web, 49 s at 50 fps, silent: the owner's SpaceEngine edit nftmc_zoom.mp4 (4:27.6, 1080p60 HEVC) remapped by outreach_talks talks/2026_10_26_UzsikraukKarjerai/scripts/remap_zoom.py into four stretches at eased speeds joined by 0.4 s dissolves (Google Earth out to the clouds; the Earth from space; the galaxy whole, lingering on the flight past its stars; the web). Its last frame is Innoday's opener_last.jpg. No Drive raw: the raw is the script's output (outreach_talks videos/raw/vilnius_zoom.mp4); make it again with the script. Source: spaceengine/nftmc_zoom.mp4, through remap_zoom.py"
+
 # --- outreach lineage (venue-grade B-roll reused across the Lithuanian decks) --
 
 [[videos]]
@@ -252,3 +279,8 @@ notes   = "Mountain aerial with edited audio, 3:07 — the Yaga 2026-07-18 opene
 name    = "lis_flag.mp4"
 profile = "silent-loop"
 notes   = "A SciFi module's end with its light injection system, a laser engraving the Lithuanian flag on the cold box; 10 s, silent, played once (Innoday's close, Oct 2026). Rendered by tools/lis/lis_scene.py (Blender 4.5 LTS, Cycles) after the owner's SciFi drawing; H.264 25 fps; the raw is that render, not on gdrive. Its last frame, depth and camera (lis_last.jpg, lis_last.depth.png, lis.json, on this release too) are slidev-addon-stage's stage-data `lis`, which <StageDepthGrains> turns into grains in depth."
+
+[[videos]]
+name    = "lis_flag_module.mp4"
+profile = "silent-loop"
+notes   = "Innoday's close as shown (21 Oct, the owner: \"show the full SciFi module panning slowly … then on the bottom I indicate the light injection system\"): 20 s (500 frames at 25 fps), silent, played once. 0-7.2 s the whole SciFi module from below its lower end, panning down and in to the lower readout end; 6.6-10 s the cold box's soft light-blue outline glow; 10-20 s lis_flag.mp4's camera, the laser writing the flag (12.2-17.6 s). A later render than lis_flag.mp4 (its blue fibres gone), so its last frame is not this release's lis_last.jpg: a deck handing over from it with <StageDepthGrains> takes Innoday's 21 Oct still, depth and camera (talks/2026_10_23_Innoday/public/figures/lis_last.jpg, lis_last.depth.png, setup/data/lis.json). Rendered by tools/lis/lis_scene.py --end bottom (Blender 4.5 LTS, Cycles, 160 samples); H.264 CRF 12; the raw is that render, not on gdrive. The asset is Innoday's release file (videos-2026-10-00-innoday), which MasterTalk copied byte for byte."

@@ -4,6 +4,19 @@ One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
 (`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
 on its own). A deck pins both addons and the CLI to the same tag.
 
+## Unreleased
+
+- **Three shared cuts in the library** (`chore/shared-karjera-cuts`; their
+  upload to `videos-shared` waits on the owner): Užsikrauk karjerai's 18 s LHC
+  tunnel cut as `cern_footage_2022_013_001_tunnel_cut.mp4`, its 10.8 s dipole
+  as `cern_video_2019_050_008_dipole.mp4` (each beside its full clip, with its
+  `trim`), and the 49 s Vilnius → cosmic web zoom `vilnius_zoom.mp4`. MasterTalk
+  had copied them byte for byte; Tokyo wants them. The library's full-length
+  policy gains its one exception, cuts several decks share. And Innoday's
+  20 s render of the close, `lis_flag_module.mp4` (the whole SciFi module,
+  then the flag; its own render, beside the library's 10 s `lis_flag.mp4`,
+  whose hand-over stills it does not end on). Python 205 → 207.
+
 ## v0.11.0 — 2026-10-27
 
 slidev-videos 0.11.0 · slidev-addon-stage 0.8.0 · slidev-addon-videos 0.11.0
