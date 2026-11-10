@@ -31,6 +31,9 @@ slide shows the same explainer until its pin is moved.
 | name | what it explains | source |
 |--|--|--|
 | `line-fit-valley` | S(a, b) = Σ (a·x + b − y)² of a straight line through ten yearly mean temperatures is a narrow valley over the slope and the intercept; the 500 steps of gradient descent from (0, 7) cross it, then creep along it to (−0.56 per decade, 7.41) | the course's weather log, `weather.csv` (one row per hour, 2016–2025) |
+| `neuron-plane` | z = w₁x₁ + w₂x₂ + b of one neuron is a plane over the temperature and the humidity of 3646 evenings; where it crosses the height 0 is the decision boundary, a straight line; two neurons, w = (−1, 0), b = 3.8 and w = (−1, 4), b = 0.6 | `weather.csv` |
+| `xor-ridge` | the output of a trained 2-2-1 network over its two inputs is a ridge, high at (0, 1) and (1, 0); each hidden neuron is one slope, an OR and an AND | the nine starting weights of the course's `figures/src/language.py` (`random.Random(0)`), trained here for 2000 steps |
+| `hours-columns` | the 87 552 measured hours counted in cells of temperature × humidity, a column per cell: a histogram of two columns at once, its ridge slanting from cold and humid to warm and dry (r = −0.70) | `weather.csv` |
 
 Each is a folder of `explainers/`:
 
@@ -83,7 +86,8 @@ the source file, whose SHA-256 `input.json` records).
 
 | layer | fields |
 |--|--|
-| `surface` | `grid: { nx, ny, x: [lo, hi], y: [lo, hi] }` (default: the axes' limits), `z`: `ny` rows of `nx` heights, or one such list per state (`{ "plane": "data:z", … }`: a state button morphs between them); `palette` (`viridis` or a list of hex stops), `range` (the heights the palette spans), `color` (one colour instead), `shade`, `opacity`. Cut at the bottom and the top of the box |
+| `surface` | `grid: { nx, ny, x: [lo, hi], y: [lo, hi] }` (default: the axes' limits), `z`: `ny` rows of `nx` heights, or one such list per state (`{ "plane": "data:z", … }`: a state button morphs between them); `palette` (`viridis` or a list of hex stops), `range` (the heights the palette spans), `color` (one colour instead), `split: { at, below, above }` (two colours, the cells cut exactly at that height), `shade`, `opacity`. Cut at the bottom and the top of the box |
+| `bars` | `grid: { nx, ny, x, y }`: `nx` × `ny` cells over those limits; `z`: a height per cell (a cell at or below `base` has no column); `base` (default: the bottom of the box), `gap`, `palette`, `range`. Each column: its top and the two sides that face the eye |
 | `line` | `x`, `y`, `z` (lists, or a number for a constant), `color`, `width`, `dash`, `closed`, `lift` |
 | `points` | `x`, `y`, `z`, `radius`, `color`, or `group` (a whole number per point) with `colors`; drawn in `bands` depth bands, far ones dimmer |
 | `marker` | `at: [x, y, z]`, `label`, `color`, `radius`, `dx`, `dy`, `anchor` |
@@ -131,7 +135,7 @@ const svg = toSVG(drawFrame(scene, { azim: 150, elev: 35 }, size), size, { label
 ```
 
 `engine/`: `camera.js` (projection, the scale of a whole turn), `axes.js` (the
-box, ticks and names), `surface.js` (grid → shaded polygons, cut at the box),
+box, ticks and names), `surface.js` (grid → shaded polygons, cut at the box), `bars.js` (columns),
 `scene.js` (specs and frames), `svg.js` (a frame as a file; `diffSVG`),
 `motion.js` (turning, drags, glides, morphs), `sync.js` (presenter ↔
 audience), `paint.js` (a frame into the page), `palette.js` (colours, the look).

@@ -29,11 +29,12 @@ export function clipZ(poly, zc, side) {
  * grid: { nx, ny, x: [lo, hi], y: [lo, hi] } in data units; z: ny rows of nx
  * values (z[j * nx + i]); maps: three functions, data → box units; zBox: the
  * box's [bottom, top] in box units; step 2 takes every second grid line (the
- * mesh drawn while frames are slow).
+ * mesh drawn while frames are slow). split: { at, below, above } (at in box
+ * units, the colours as RGB triples) colours by side of one height instead.
  * Returns { n, P, off, fill, flat }: polygon q owns the vertices off[q] to
  * off[q + 1] of P (x, y, z, …) and the colour fill[q].
  */
-export function buildSurface({ grid, z, maps, zBox, step = 1, palette = 'viridis', range, shade = true, colour = null }) {
+export function buildSurface({ grid, z, maps, zBox, step = 1, palette = 'viridis', range, shade = true, colour = null, split = null }) {
   const { nx, ny } = grid;
   if (z.length !== nx * ny) throw new Error(`explain3d: a surface of ${nx} × ${ny} needs ${nx * ny} heights, got ${z.length}`);
   const bx = new Float64Array(nx), by = new Float64Array(ny), bz = new Float64Array(nx * ny);
@@ -52,7 +53,7 @@ export function buildSurface({ grid, z, maps, zBox, step = 1, palette = 'viridis
       N[o] = -gx / L; N[o + 1] = -gy / L; N[o + 2] = 1 / L;
     }
   }
-  const pal = colour ? null : ramp(palette, 64);
+  const pal = colour || split ? null : ramp(palette, 64);
   const [r0, r1] = range ? range.map(maps[2]) : zBox;
   const P = [], off = [0], fill = [];
   for (let j = 0; j + step <= ny - 1; j += step) {
@@ -71,6 +72,17 @@ export function buildSurface({ grid, z, maps, zBox, step = 1, palette = 'viridis
         let a = 0, b = 0, c = 0;
         for (const k of ks) { a += N[3 * k]; b += N[3 * k + 1]; c += N[3 * k + 2]; }
         lam = 0.4 + 0.72 * Math.max(0, (a * LIGHT[0] + b * LIGHT[1] + c * LIGHT[2]) / Math.hypot(a, b, c));
+      }
+      if (split) {
+        // two colours, one below a height and one above it: the cell is cut there, so the edge is exact
+        const parts = [[clipZ(poly, split.at, 1), split.below], [clipZ(poly, split.at, -1), split.above]];
+        for (const [part, rgb] of parts) {
+          if (!part.length) continue;
+          fill.push(`rgb(${rgb.map((v) => Math.min(255, Math.round(v * lam))).join(',')})`);
+          for (const v of part) P.push(v);
+          off.push(P.length / 3);
+        }
+        continue;
       }
       const rgb = colour || pal[Math.max(0, Math.min(63, Math.round(((zm - r0) / (r1 - r0)) * 63)))];
       fill.push(`rgb(${rgb.map((v) => Math.min(255, Math.round(v * lam))).join(',')})`);

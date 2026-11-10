@@ -4,7 +4,7 @@
 //   input.json   what the scene needs of its source file, with the file's SHA-256
 //   data.json    the numbers the scene draws (generated: `explain3d make`)
 //   golden.svg   its opening view, 960 × 540 (generated: `explain3d golden`)
-export const EXPLAINERS = ['line-fit-valley'];
+export const EXPLAINERS = ['line-fit-valley', 'neuron-plane', 'xor-ridge', 'hours-columns'];
 
 /** The size of every golden picture. */
 export const GOLDEN = { width: 960, height: 540 };

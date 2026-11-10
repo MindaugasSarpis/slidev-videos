@@ -1,0 +1,19 @@
+{
+ "source": {
+  "file": "figures/src/language.py",
+  "repo": "https://github.com/MindaugasSarpis/CERN_lessons_on_data_analysis",
+  "what": "the nine starting weights of xor_trained(seed=0): random.Random(0), nine draws of uniform(-1, 1), printed as a list",
+  "sha256": "9c5e1da14918cd70f8047d672a217ae6bc0398f777742f8e5b09a1b27050eeeb"
+ },
+ "start": [
+  0.6888437030500962,
+  0.515908805880605,
+  -0.15885683833831,
+  -0.4821664994140733,
+  0.02254944273721704,
+  -0.19013172509917142,
+  0.5675971780695452,
+  -0.3933745478421451,
+  -0.04680609169528838
+ ]
+}

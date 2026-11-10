@@ -5,10 +5,11 @@
 import { makeCamera, projectMany, turnBounds, viewBounds, viewport, toScreen, ease } from './camera.js';
 import { axisMap, boxFrame, fmt } from './axes.js';
 import { buildSurface } from './surface.js';
+import { buildBars, columnFaces } from './bars.js';
 import { color, hexRGB, ramp, TOKENS, PALETTES } from './palette.js';
 
 export const SPEC_VERSION = 1;
-export const LAYER_TYPES = ['surface', 'line', 'points', 'marker'];
+export const LAYER_TYPES = ['surface', 'bars', 'line', 'points', 'marker'];
 const DEFAULT_VIEW = { azim: -55, elev: 25, dist: 5, turn: 40, elevRange: [5, 85] };
 const KEY_W = 92;                 // room for a colour key at the right
 const PAD = { l: 44, r: 22, t: 22, b: 54 };
@@ -66,6 +67,7 @@ export function validateSpec(spec, data = {}) {
       const g = L.grid;
       if (!g || !Number.isInteger(g.nx) || !Number.isInteger(g.ny) || g.nx < 2 || g.ny < 2) { say(`layers[${i}].grid: nx and ny, at least 2 each`); return; }
       if (L.palette != null && !Array.isArray(L.palette) && !PALETTES[L.palette]) say(`layers[${i}].palette: no "${L.palette}"`);
+      if (L.split != null && (!isNum(L.split.at) || typeof L.split.below !== 'string' || typeof L.split.above !== 'string')) say(`layers[${i}].split: { at, below, above } is needed`);
       const zs = L.z && typeof L.z === 'object' && !Array.isArray(L.z) ? L.z : { '': L.z };
       for (const [s, ref] of Object.entries(zs)) {
         if (s && !states.has(s)) say(`layers[${i}].z: no state "${s}"`);
@@ -75,6 +77,14 @@ export function validateSpec(spec, data = {}) {
         else if (arr.some((x) => !isNum(x))) say(`layers[${i}].z${s ? `.${s}` : ''}: not all numbers`);
       }
       if (L.z && typeof L.z === 'object' && !Array.isArray(L.z)) for (const s of states) if (!(s in L.z)) say(`layers[${i}].z: no heights for state "${s}"`);
+    } else if (L.type === 'bars') {
+      const g = L.grid;
+      if (!g || !Number.isInteger(g.nx) || !Number.isInteger(g.ny) || g.nx < 1 || g.ny < 1) { say(`layers[${i}].grid: nx and ny cells, at least 1 each`); return; }
+      if (L.palette != null && !Array.isArray(L.palette) && !PALETTES[L.palette]) say(`layers[${i}].palette: no "${L.palette}"`);
+      const arr = resolve(L.z, data);
+      if (!Array.isArray(arr)) say(`layers[${i}].z: no heights`);
+      else if (arr.length !== g.nx * g.ny) say(`layers[${i}].z: ${arr.length} heights for ${g.nx} × ${g.ny} cells`);
+      else if (arr.some((x) => !isNum(x))) say(`layers[${i}].z: not all numbers`);
     } else if (L.type === 'line' || L.type === 'points') {
       let n = null;
       for (const key of ['x', 'y', 'z']) n = column(L, i, key, n);
@@ -88,7 +98,7 @@ export function validateSpec(spec, data = {}) {
       if (!Array.isArray(L.at) || L.at.length !== 3 || L.at.some((x) => !isNum(x))) say(`layers[${i}].at: [x, y, z] is needed`);
     }
   });
-  if (spec.key && !(spec.layers || []).some((L) => L?.type === 'surface' && !L.color)) say('key: there is no surface coloured by height');
+  if (spec.key && !(spec.layers || []).some((L) => (L?.type === 'surface' && !L.color && !L.split) || L?.type === 'bars')) say('key: there is no surface coloured by height');
   return bad;
 }
 
@@ -107,13 +117,20 @@ export function prepareScene(spec, data = {}) {
     return Float64Array.from({ length: n }, (_, i) => m(isNum(arr) ? arr : arr[i]));
   };
   const layers = spec.layers.map((L) => {
-    const base = { type: L.type, in: L.in || null, opacity: L.opacity ?? 1, lift: L.lift ?? (L.type === 'surface' ? 0 : 0.05) };
+    const base = { type: L.type, in: L.in || null, opacity: L.opacity ?? 1, lift: L.lift ?? (L.type === 'surface' || L.type === 'bars' ? 0 : 0.05) };
     if (L.type === 'surface') {
       const grid = { nx: L.grid.nx, ny: L.grid.ny, x: L.grid.x || [axes[0].lo, axes[0].hi], y: L.grid.y || [axes[1].lo, axes[1].hi] };
       const perState = L.z && typeof L.z === 'object' && !Array.isArray(L.z);
       const z = perState ? Object.fromEntries(Object.entries(L.z).map(([s, ref]) => [s, resolve(ref, data)])) : resolve(L.z, data);
-      const flat = L.color ? hexRGB(TOKENS[L.color] && TOKENS[L.color].startsWith('#') ? TOKENS[L.color] : L.color) : null;
-      return { ...base, grid, z, perState, palette: L.palette || 'viridis', range: L.range || null, shade: L.shade !== false, flat, cache: new Map() };
+      const rgbOf = (c) => hexRGB(TOKENS[c] && TOKENS[c].startsWith('#') ? TOKENS[c] : c);
+      const flat = L.color ? rgbOf(L.color) : null;
+      const split = L.split ? { at: maps[2](L.split.at), below: rgbOf(L.split.below), above: rgbOf(L.split.above) } : null;
+      return { ...base, grid, z, perState, palette: L.palette || 'viridis', range: L.range || null, shade: L.shade !== false, flat, split, cache: new Map() };
+    }
+    if (L.type === 'bars') {
+      const grid = { nx: L.grid.nx, ny: L.grid.ny, x: L.grid.x || [axes[0].lo, axes[0].hi], y: L.grid.y || [axes[1].lo, axes[1].hi] };
+      const bars = buildBars({ grid, z: resolve(L.z, data), maps, zBox: [-lens[2] / 2, lens[2] / 2], base: L.base ?? axes[2].lo, gap: L.gap ?? 0.12, palette: L.palette || 'viridis', range: L.range || null });
+      return { ...base, bars, palette: L.palette || 'viridis', range: L.range || null, face: { X: new Float64Array(4), Y: new Float64Array(4), D: new Float64Array(4) } };
     }
     if (L.type === 'marker') {
       return { ...base, at: L.at.map((v, k) => maps[k](v)), label: L.label || '', color: L.color || 'fg', radius: L.radius ?? 4.5, dx: L.dx ?? 10, dy: L.dy ?? -11, anchor: L.anchor || 'start' };
@@ -132,7 +149,7 @@ export function prepareScene(spec, data = {}) {
 
 function surfaceOf(scene, L, state, coarse) {
   const zBox = [-scene.lens[2] / 2, scene.lens[2] / 2];
-  const build = (z) => buildSurface({ grid: L.grid, z, maps: scene.maps, zBox, step: coarse ? 2 : 1, palette: L.palette, range: L.range, shade: L.shade, colour: L.flat });
+  const build = (z) => buildSurface({ grid: L.grid, z, maps: scene.maps, zBox, step: coarse ? 2 : 1, palette: L.palette, range: L.range, shade: L.shade, colour: L.flat, split: L.split });
   if (!L.perState) {
     const k = coarse ? 'c' : 'f';
     if (!L.cache.has(k)) L.cache.set(k, build(L.z));
@@ -208,6 +225,20 @@ export function drawFrame(scene, view = {}, size, opts = {}) {
         }
         items.push({ key: md + L.lift, d: `${d}Z`, fill: m.fill[q], op: L.opacity });
       }
+    } else if (L.type === 'bars') {
+      const b = L.bars;
+      const { X, Y, D } = L.face;
+      for (let k = 0; k < b.n; k++) {
+        // a column's place in the order: how near its foot is, so a tall far column never covers a short near one
+        const key = b.cx[k] * cam.v[0] + b.cy[k] * cam.v[1] + b.z0 * cam.v[2] + L.lift;
+        const faces = columnFaces(b, k, cam.v);
+        for (let f = 0; f < faces.length; f++) {
+          projectMany(cam, vp, faces[f].P, 4, X, Y, D);
+          let d = '';
+          for (let v = 0; v < 4; v++) d += `${v ? 'L' : 'M'}${r1(X[v])} ${r1(Y[v])}`;
+          items.push({ key: key + f * 1e-7, d: `${d}Z`, fill: faces[f].fill, stroke: faces[f].fill, sw: 0.5, op: L.opacity });
+        }
+      }
     } else if (L.type === 'line') {
       const { X, Y, D } = L.buf;
       projectMany(cam, vp, L.P, L.n, X, Y, D);
@@ -244,7 +275,7 @@ export function drawFrame(scene, view = {}, size, opts = {}) {
   items.sort((p, q) => p.key - q.key);
   let key = null;
   if (scene.key) {
-    const L = scene.layers.find((l) => l.type === 'surface' && !l.flat);
+    const L = scene.layers.find((l) => (l.type === 'surface' && !l.flat && !l.split) || l.type === 'bars');
     const [lo, hi] = L.range || [scene.axes[2].lo, scene.axes[2].hi];
     const top = PAD.t + 30, bottom = size.height - PAD.b;
     const pal = ramp(L.palette, 12);

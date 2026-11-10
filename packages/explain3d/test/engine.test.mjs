@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { makeCamera, project, projectMany, turnBounds, viewBounds, viewport, toScreen, wrapAzim, nearAzim } from '../engine/camera.js';
 import { axisMap, boxFrame, fmt } from '../engine/axes.js';
 import { buildSurface, clipZ } from '../engine/surface.js';
+import { buildBars, columnFaces } from '../engine/bars.js';
 import { validateSpec, prepareScene, drawFrame } from '../engine/scene.js';
 import { toSVG, diffSVG } from '../engine/svg.js';
 import { createMotion, GLIDE_MS, MORPH_MS, HOME } from '../engine/motion.js';
@@ -134,6 +135,42 @@ test('a surface: one polygon per cell, cut at the top of the box, coloured from 
   const coarse = buildSurface({ grid: { nx: 9, ny: 9, x: [-1, 1], y: [-1, 1] }, z: data.z, maps, zBox: [-0.5, 0.5], step: 2 });
   assert.ok(coarse.n <= 16);
   assert.throws(() => buildSurface({ grid: { nx: 9, ny: 8, x: [-1, 1], y: [-1, 1] }, z: data.z, maps, zBox: [-0.5, 0.5] }), /72 heights, got 81/);
+});
+
+test('a surface split at a height: each cell is cut there, one colour below and one above', () => {
+  const maps = [axisMap({ lo: 0, hi: 1, len: 1 }), axisMap({ lo: 0, hi: 1, len: 1 }), axisMap({ lo: -1, hi: 1, len: 1 })];
+  // a plane rising along x from −1 to 1: it crosses 0 in the middle of its one cell
+  const m = buildSurface({ grid: { nx: 2, ny: 2, x: [0, 1], y: [0, 1] }, z: [-1, 1, -1, 1], maps, zBox: [-0.5, 0.5], shade: false, split: { at: 0, below: [255, 0, 0], above: [0, 0, 255] } });
+  assert.equal(m.n, 2);
+  assert.deepEqual(m.fill, ['rgb(255,0,0)', 'rgb(0,0,255)']);
+  const xs = (q) => Array.from(m.P.slice(3 * m.off[q], 3 * m.off[q + 1])).filter((_, i) => i % 3 === 0);
+  near(Math.max(...xs(0)), 0); near(Math.min(...xs(1)), 0);       // the cut runs at x = 0 in box units: the middle
+});
+
+test('columns: one per cell with a count, the top and the two sides that face the eye, far columns first', () => {
+  const maps = [axisMap({ lo: 0, hi: 2, len: 1 }), axisMap({ lo: 0, hi: 2, len: 1 }), axisMap({ lo: 0, hi: 10, len: 1 })];
+  const b = buildBars({ grid: { nx: 2, ny: 2, x: [0, 2], y: [0, 2] }, z: [10, 0, 2, 5], maps, zBox: [-0.5, 0.5], gap: 0.2 });
+  assert.equal(b.n, 3);                                           // the empty cell has no column
+  near(b.hw, 0.2); near(b.z0, -0.5); near(b.z1[0], 0.5); near(b.z1[1], -0.3);
+  const cam = makeCamera(-60, 30, 5);
+  const faces = columnFaces(b, 0, cam.v);
+  assert.equal(faces.length, 3);
+  assert.equal(faces.at(-1).fill, b.top[0]);                      // the top is drawn last
+  assert.equal(columnFaces(b, 0, makeCamera(-90, 90, 5).v).length, 1);     // from above: the top alone
+  assert.throws(() => buildBars({ grid: { nx: 2, ny: 2, x: [0, 2], y: [0, 2] }, z: [1], maps, zBox: [-0.5, 0.5] }), /4 heights, got 1/);
+  const spec = {
+    explain3d: 1, name: 'cols', label: 'columns',
+    axes: [{ lo: 0, hi: 2, len: 1 }, { lo: 0, hi: 2, len: 1 }, { lo: 0, hi: 10, len: 1 }],
+    key: { label: 'count', ticks: [0, 10] },
+    layers: [{ type: 'bars', grid: { nx: 2, ny: 2 }, z: [10, 0, 2, 5] }],
+  };
+  assert.deepEqual(validateSpec(spec), []);
+  const f = drawFrame(prepareScene(spec), { azim: -60, elev: 30 }, SIZE);
+  assert.equal(f.items.length, 9);
+  // the tall column (the cell at x 0–1, y 0–1) is the nearest from azim −60 … no: the eye is at +x, −y; the nearest foot is x 1–2, y 0–1, which is empty; the last drawn is one beside it
+  const tall = f.items.findIndex((i) => i.fill === b.top[0]);
+  assert.ok(tall >= 0 && f.key.ticks.length === 2);
+  assert.ok(validateSpec({ ...spec, layers: [{ type: 'bars', grid: { nx: 2, ny: 2 }, z: [1, 2] }] }).some((m) => m.includes('2 heights for 2 × 2 cells')));
 });
 
 test('a palette is a ramp between its stops; a token follows the deck when live', () => {

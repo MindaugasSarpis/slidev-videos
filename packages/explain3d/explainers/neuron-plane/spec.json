@@ -1,0 +1,176 @@
+{
+  "explain3d": 1,
+  "name": "neuron-plane",
+  "label": "z = w₁x₁ + w₂x₂ + b of one neuron as a plane over the temperature and the humidity of 3646 evenings; where the plane crosses the height z = 0 is the decision boundary, a straight line; drag to turn",
+  "axes": [
+    {
+      "label": "x₁: temperature at 18:00 (°C)",
+      "lo": -15,
+      "hi": 32,
+      "len": 1.7,
+      "ticks": [
+        -10,
+        0,
+        10,
+        20,
+        30
+      ]
+    },
+    {
+      "label": "x₂: humidity at 18:00",
+      "lo": 0.4,
+      "hi": 1,
+      "len": 1.25,
+      "ticks": [
+        0.4,
+        0.6,
+        0.8,
+        1
+      ],
+      "decimals": 1
+    },
+    {
+      "label": "z",
+      "lo": -20,
+      "hi": 20,
+      "len": 0.9,
+      "ticks": [
+        -20,
+        -10,
+        0,
+        10,
+        20
+      ]
+    }
+  ],
+  "view": {
+    "azim": -62,
+    "elev": 24,
+    "dist": 5,
+    "turn": 60,
+    "elevRange": [
+      0,
+      90
+    ]
+  },
+  "views": [
+    {
+      "id": "side",
+      "label": "from the side",
+      "azim": -90,
+      "elev": 0
+    },
+    {
+      "id": "above",
+      "label": "from above",
+      "azim": -90,
+      "elev": 90
+    }
+  ],
+  "states": [
+    {
+      "id": "upright",
+      "label": "w = (−1, 0)"
+    },
+    {
+      "id": "tilted",
+      "label": "w = (−1, 4)"
+    }
+  ],
+  "layers": [
+    {
+      "type": "line",
+      "x": "data:level_x1",
+      "y": "data:level_x2",
+      "z": 0,
+      "closed": true,
+      "color": "dim",
+      "width": 1,
+      "lift": 0
+    },
+    {
+      "type": "points",
+      "x": "data:x1",
+      "y": "data:x2",
+      "z": 0,
+      "group": "data:frost",
+      "colors": [
+        "warn",
+        "accent"
+      ],
+      "radius": 1.9,
+      "bands": 24,
+      "lift": 0
+    },
+    {
+      "type": "surface",
+      "grid": {
+        "nx": 17,
+        "ny": 17
+      },
+      "z": {
+        "upright": "data:z_upright",
+        "tilted": "data:z_tilted"
+      },
+      "split": {
+        "at": 0,
+        "below": "warn",
+        "above": "accent"
+      },
+      "opacity": 0.42,
+      "shade": false
+    },
+    {
+      "type": "line",
+      "x": "data:stem_x1",
+      "y": "data:stem_x2",
+      "z": "data:stem_upright_z",
+      "color": "fg",
+      "width": 2,
+      "in": [
+        "upright"
+      ],
+      "lift": 0.3
+    },
+    {
+      "type": "marker",
+      "at": [
+        2.6,
+        0.85,
+        1.2
+      ],
+      "label": "8 Dec 2025: z = 1.2",
+      "color": "fg",
+      "in": [
+        "upright"
+      ],
+      "lift": 0.3
+    },
+    {
+      "type": "line",
+      "x": "data:stem_x1",
+      "y": "data:stem_x2",
+      "z": "data:stem_tilted_z",
+      "color": "fg",
+      "width": 2,
+      "in": [
+        "tilted"
+      ],
+      "lift": 0.3
+    },
+    {
+      "type": "marker",
+      "at": [
+        2.6,
+        0.85,
+        1.4
+      ],
+      "label": "8 Dec 2025: z = 1.4",
+      "color": "fg",
+      "in": [
+        "tilted"
+      ],
+      "lift": 0.3
+    }
+  ]
+}
