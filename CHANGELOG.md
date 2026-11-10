@@ -7,6 +7,19 @@ its own). A deck pins the addons it uses and the CLI to the same tag.
 
 ## Unreleased
 
+## v0.12.1 — 2026-11-10
+
+slidev-videos 0.12.1 · slidev-addon-stage 0.8.0 · slidev-addon-videos 0.12.1 · slidev-addon-explain3d 0.1.1
+
+- **explain3d on a real slide.** Under a title and a caption a slide leaves
+  an explainer about 870 × 300 px, and v0.12.0 drew the box small in it and
+  dropped most axes while it turned. The plot keeps less margin and fills
+  its rectangle; an axis is left out only when its tick labels would touch
+  (17 px, not 34) or it is seen end-on; a side-anchored axis name stands
+  clear of the tick labels; `neuron-plane`'s height axis has three ticks.
+  `explain3d render --left` draws a view with the room a slide keeps for
+  its buttons. The golden pictures are drawn again.
+
 ## v0.12.0 — 2026-11-10
 
 slidev-videos 0.12.0 · slidev-addon-stage 0.8.0 · slidev-addon-videos 0.12.0 · slidev-addon-explain3d 0.1.0

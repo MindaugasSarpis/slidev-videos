@@ -20,7 +20,7 @@ addons:
 ```
 
 ```json
-"slidev-addon-explain3d": "github:MindaugasSarpis/slidev-videos#v0.12.0&path:/packages/explain3d"
+"slidev-addon-explain3d": "github:MindaugasSarpis/slidev-videos#v0.12.1&path:/packages/explain3d"
 ```
 
 A deck depends on a tag of this repository, never on a branch or a path, so a

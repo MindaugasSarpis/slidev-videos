@@ -6,7 +6,8 @@
 //   explain3d make   [name]                 input.json → data.json
 //   explain3d golden [name]                 spec + data → golden.svg (the opening view)
 //   explain3d check  [name]                 data.json and golden.svg are what make and golden give (exit 1 if not)
-//   explain3d render <name> [--azim A] [--elev E] [--state S] [--width W] [--height H]   one view to stdout
+//   explain3d render <name> [--azim A] [--elev E] [--state S] [--width W] [--height H] [--left L]   one view to stdout
+//                                           (--left: pixels kept free at the left, as a slide keeps for its buttons)
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -32,10 +33,10 @@ export async function makeData(name) {
   const m = await module_(name);
   return m.make(readJSON(join(dir(name), 'input.json')));
 }
-export function renderOne(name, view = {}, size = GOLDEN) {
+export function renderOne(name, view = {}, size = GOLDEN, opts = {}) {
   const spec = readJSON(join(dir(name), 'spec.json'));
   const scene = prepareScene(spec, readJSON(join(dir(name), 'data.json')));
-  return toSVG(drawFrame(scene, view, size), size, { label: spec.label, id: `x3d-${name}` });
+  return toSVG(drawFrame(scene, view, size, opts), size, { label: spec.label, id: `x3d-${name}` });
 }
 /** What is stale in one explainer's generated files: [] when nothing. */
 export async function checkOne(name) {
@@ -79,10 +80,10 @@ async function main(argv) {
     if (flags.azim) view.azim = Number(flags.azim);
     if (flags.elev) view.elev = Number(flags.elev);
     if (flags.state) view.state = { a: flags.state };
-    process.stdout.write(renderOne(args[0], view, { width: Number(flags.width || GOLDEN.width), height: Number(flags.height || GOLDEN.height) }));
+    process.stdout.write(renderOne(args[0], view, { width: Number(flags.width || GOLDEN.width), height: Number(flags.height || GOLDEN.height) }, { left: Number(flags.left || 0) }));
     return 0;
   }
-  console.error('explain3d list | reduce <name> <file> | make [name] | golden [name] | check [name] | render <name> [--azim --elev --state --width --height]');
+  console.error('explain3d list | reduce <name> <file> | make [name] | golden [name] | check [name] | render <name> [--azim --elev --state --width --height --left]');
   return 2;
 }
 

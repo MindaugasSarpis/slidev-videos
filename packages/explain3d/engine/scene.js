@@ -12,7 +12,7 @@ export const SPEC_VERSION = 1;
 export const LAYER_TYPES = ['surface', 'bars', 'line', 'points', 'marker'];
 const DEFAULT_VIEW = { azim: -55, elev: 25, dist: 5, turn: 40, elevRange: [5, 85] };
 const KEY_W = 92;                 // room for a colour key at the right
-const PAD = { l: 44, r: 22, t: 22, b: 54 };
+const PAD = { l: 44, r: 22, t: 12, b: 44 };
 const SEAM = 0.45;                // px each corner of an opaque polygon is pushed outwards: no seam shows
 const r1 = (v) => Math.round(v * 10) / 10;
 
@@ -277,7 +277,7 @@ export function drawFrame(scene, view = {}, size, opts = {}) {
   if (scene.key) {
     const L = scene.layers.find((l) => (l.type === 'surface' && !l.flat && !l.split) || l.type === 'bars');
     const [lo, hi] = L.range || [scene.axes[2].lo, scene.axes[2].hi];
-    const top = PAD.t + 30, bottom = size.height - PAD.b;
+    const top = PAD.t + 40, bottom = size.height - PAD.b + 14;
     const pal = ramp(L.palette, 12);
     key = {
       x: size.width - KEY_W + 16, top, bottom, label: scene.key.label,

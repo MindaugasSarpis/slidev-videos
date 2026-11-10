@@ -1,6 +1,6 @@
 {
   "name": "slidev-addon-explain3d",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Slidev addon: 3D explainers for lecture slides, drawn as SVG — a scene declared as data (axes, surfaces, lines, points), turned by hand, with a presenter-to-audience sync and a static vector fallback",
   "repository": {

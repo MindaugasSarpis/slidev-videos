@@ -69,7 +69,7 @@ export function turnBounds(lens, elev, dist) {
 }
 
 /** Scale and centre that put screen bounds b inside rect {x, y, w, h} (pixels, y down). */
-export function viewport(b, rect, fill = 0.97) {
+export function viewport(b, rect, fill = 1) {
   const S = Math.max(1, fill * Math.min(rect.w / (b[1] - b[0]), rect.h / (b[3] - b[2])));
   return { S, cx: rect.x + rect.w / 2 - (S * (b[0] + b[1])) / 2, cy: rect.y + rect.h / 2 + (S * (b[2] + b[3])) / 2 };
 }

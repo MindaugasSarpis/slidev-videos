@@ -18,12 +18,12 @@ renderer under a clip that covers the slide. Either works alone.
 
 ## Install (per consumer repo)
 
-    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.12.0"
-    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.12.0
-    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.12.0&path:/packages/stage"   # the stage, if wanted
-    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.12.0&path:/packages/explain3d"   # the 3D explainers, if wanted
-    pip install "slidev-videos[depth] @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.12.0"   # + depth maps for photo places
-    pip install "slidev-videos[pptx] @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.12.0"    # + the PPTX of a recorded talk
+    pip install "slidev-videos @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.12.1"
+    pnpm add -D github:MindaugasSarpis/slidev-videos#v0.12.1
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.12.1&path:/packages/stage"   # the stage, if wanted
+    pnpm add -D "github:MindaugasSarpis/slidev-videos#v0.12.1&path:/packages/explain3d"   # the 3D explainers, if wanted
+    pip install "slidev-videos[depth] @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.12.1"   # + depth maps for photo places
+    pip install "slidev-videos[pptx] @ git+https://github.com/MindaugasSarpis/slidev-videos@v0.12.1"    # + the PPTX of a recorded talk
 
 What changed between releases: [CHANGELOG.md](CHANGELOG.md).
 
