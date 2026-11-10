@@ -7,6 +7,13 @@ its own). A deck pins the addons it uses and the CLI to the same tag.
 
 ## Unreleased
 
+## v0.12.0 — 2026-11-10
+
+slidev-videos 0.12.0 · slidev-addon-stage 0.8.0 · slidev-addon-videos 0.12.0 · slidev-addon-explain3d 0.1.0
+
+A new package, the 3D explainers of the course's lectures; the stage and the
+player are as in v0.11.0.
+
 - **`slidev-addon-explain3d` 0.1.0, a new package** (`packages/explain3d`,
   `feat/explain3d`): 3D explainers for lecture slides, drawn as SVG (the
   owner, 10 Nov: "build a few 3D explainers for the course. Make them
@@ -33,8 +40,10 @@ its own). A deck pins the addons it uses and the CLI to the same tag.
   height), `xor-ridge` (Lecture 11: the trained 2-2-1 network's output as a
   ridge, its hidden neurons as two slopes) and `hours-columns` (Lecture 8:
   the 87 552 hours counted in cells of temperature × humidity; a `bars`
-  layer). Node tests 52; a browser smoke on `example/` (`explain3d:smoke`),
-  and a CI job.
+  layer). Node tests 52; a browser smoke on `example/` (`explain3d:smoke`,
+  29 checks), and a CI job. On a machine without a GPU the valley's 6260
+  paths are too slow to turn in full: the watchdog draws 1974 at 19 ms a
+  frame while it moves, all of them at rest.
 - **Three shared cuts in the library** (`chore/shared-karjera-cuts`; their
   upload to `videos-shared` waits on the owner): Užsikrauk karjerai's 18 s LHC
   tunnel cut as `cern_footage_2022_013_001_tunnel_cut.mp4`, its 10.8 s dipole

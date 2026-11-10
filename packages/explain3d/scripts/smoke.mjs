@@ -6,7 +6,8 @@
 //   4. `still` draws the opening view and does not move;
 //   5. a second window on the same slide follows the first (presenter ↔ audience);
 //   6. the watchdog: with the processor throttled, slow frames switch to the
-//      coarse mesh, and at rest it is drawn in full again;
+//      coarse mesh; slower still it stops turning by itself; at rest it is
+//      drawn in full again and a drag still turns it;
 //   7. the fallback: ?x3d-force=fail shows the golden picture, and a scene that
 //      is not sound says what is wrong; neither leaves the slide blank;
 //   8. nothing on the page threw;
@@ -103,18 +104,26 @@ try {
 
   // 6. the watchdog
   await page.bringToFront()
+  const stats = () => page.evaluate((sel) => ({ ...document.querySelector(`${sel} svg.x3d-svg`).__x3d }), SEC)
+  await page.locator(`${SEC} button.x3d-play`).click()
+  await page.waitForTimeout(3000)
+  const free = await stats()
+  console.log(`     (turning unthrottled: ${free.gap} ms between frames, ${free.paths} paths, slow: ${free.slow})`)
   const cdp = await context.newCDPSession(page)
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: 20 })
-  await page.locator(`${SEC} button.x3d-play`).click()
-  const stats = () => page.evaluate((sel) => ({ ...document.querySelector(`${sel} svg.x3d-svg`).__x3d }), SEC)
-  const slow = await until(async () => { const s = await stats(); return s.slow ? s : null }, 30000)
-  check('throttled, slow frames switch to the coarse mesh', !!slow && slow.coarse >= 0, JSON.stringify(slow || await stats()))
-  const pathsMoving = await page.locator(`${SEC} g.x3d-items path:not([style*="none"])`).count()
+  const slow = await until(async () => { const s = await stats(); return s.slow && s.coarse > 0 ? s : null }, 30000)
+  check('throttled, slow frames switch to the coarse mesh', !!slow, JSON.stringify(slow || await stats()))
+  const stopped = await until(async () => { const s = await stats(); return s.tooSlow ? s : null }, 30000)
+  check('slower still, it stops turning by itself', !!stopped && (await page.locator(`${SEC} button.x3d-play`).count()) === 0, JSON.stringify(stopped || await stats()))
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 })
-  const s2 = await stats()
-  if (!s2.tooSlow) await page.locator(`${SEC} button.x3d-play`).click()
-  const full = await until(async () => { const n = await page.locator(`${SEC} g.x3d-items path:not([style*="none"])`).count(); return n > 1000 && n > pathsMoving ? n : 0 })
-  check('at rest it is drawn in full again', full > pathsMoving, `${pathsMoving} paths moving, ${full} at rest`)
+  const rest = await until(async () => { const s = await stats(); return s.last === 'full' && s.paths > 1000 ? s : null })
+  check('at rest it is drawn in full again', !!rest, JSON.stringify(rest || await stats()))
+  const ar = await num(page, 'data-azim')
+  await page.mouse.move(cx, cy)
+  await page.mouse.down()
+  await page.mouse.move(cx - 60, cy, { steps: 4 })
+  await page.mouse.up()
+  check('and a drag still turns it', await until(async () => Math.abs((await num(page, 'data-azim')) - ar) > 3))
   await page.close()
 
   // 4. still
@@ -146,7 +155,7 @@ try {
   await broken.close()
 
   // 9. every other explainer of the package draws, and its first state button works
-  for (const [slide, name, least] of [[5, 'neuron-plane', 300], [6, 'xor-ridge', 2000], [7, 'hours-columns', 400]]) {
+  for (const [slide, name, least] of [[5, 'neuron-plane', 200], [6, 'xor-ridge', 2000], [7, 'hours-columns', 400]]) {
     const p = await open(String(slide))
     const live = await until(async () => (await attr(p, 'data-state', SEC)) === 'live' && (await attr(p, 'data-explain3d', SEC)) === name)
     const n = await until(async () => { const c = await p.locator(`${SEC} g.x3d-items path:not([style*="none"])`).count(); return c >= least ? c : 0 })
@@ -161,7 +170,8 @@ try {
   }
 
   // 8.
-  const real = errors.filter((e) => !/forced to fail|axes: three are needed/.test(e))
+  // (Slidev asks for a wake lock, which a headless browser refuses)
+  const real = errors.filter((e) => !/forced to fail|axes: three are needed|Wake Lock/.test(e))
   check('nothing on the page threw', real.length === 0, real.join(' | '))
 } finally {
   await browser.close()

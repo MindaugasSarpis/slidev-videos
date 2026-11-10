@@ -113,7 +113,7 @@ const isActive = useIsSlideActive()
 const live = computed(() => $renderContext?.value === 'slide' || $renderContext?.value === 'presenter')
 const thumb = computed(() => $renderContext?.value === 'overview' || $renderContext?.value === 'previewNext')
 // read by the tests (svg.__x3d): how many frames of each kind, and what the watchdog decided
-const stats = { full: 0, coarse: 0, gap: 0, slow: false, tooSlow: false, paths: 0 }
+const stats = { full: 0, coarse: 0, gap: 0, slow: false, tooSlow: false, paths: 0, last: '' }
 let raf = 0
 let dragging = null
 let slow = false                  // full frames in motion are too slow: every second grid line
@@ -131,6 +131,7 @@ function draw(coarse) {
     painter.paint(f.items)
     frame.value = f
     if (useCoarse) stats.coarse++; else stats.full++
+    stats.last = useCoarse ? 'coarse' : 'full'
     stats.paths = f.items.length
   } catch (e) { fail(e) }
 }
