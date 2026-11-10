@@ -1,0 +1,44 @@
+{
+ "source": {
+  "file": "lectures/workbook/docs/data/weather.csv",
+  "repo": "https://github.com/MindaugasSarpis/CERN_lessons_on_data_analysis",
+  "what": "the course's weather log: one row per hour, 2016 to 2025; a temperature of −999 marks a missing hour",
+  "sha256": "3f1ad06d3bb5773eac79dfc964cdf8af998689ef58aa8623f25d2050fbe00756"
+ },
+ "years": [
+  2016,
+  2017,
+  2018,
+  2019,
+  2020,
+  2021,
+  2022,
+  2023,
+  2024,
+  2025
+ ],
+ "hours": [
+  8784,
+  8760,
+  8760,
+  8640,
+  8784,
+  8760,
+  8760,
+  8760,
+  8784,
+  8760
+ ],
+ "means": [
+  7.604542349726787,
+  6.507819634703202,
+  7.97450913242012,
+  7.269652777777786,
+  6.831409380692178,
+  7.247796803652953,
+  6.599668949771701,
+  8.310182648401808,
+  7.272871129326058,
+  5.982077625570779
+ ]
+}

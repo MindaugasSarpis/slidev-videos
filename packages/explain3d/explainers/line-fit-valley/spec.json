@@ -1,0 +1,128 @@
+{
+  "explain3d": 1,
+  "name": "line-fit-valley",
+  "label": "S(a, b) of a straight line through the ten yearly means, as a surface over the slope and the intercept: a narrow valley, with the 500 steps of gradient descent from (0, 7) to its lowest point; drag to turn",
+  "axes": [
+    {
+      "label": "slope a (°C per decade)",
+      "lo": -1.2,
+      "hi": 0.5,
+      "len": 1.7,
+      "ticks": [
+        -1,
+        -0.5,
+        0,
+        0.5
+      ],
+      "decimals": 1
+    },
+    {
+      "label": "intercept b (°C)",
+      "lo": 6.85,
+      "hi": 7.75,
+      "len": 1.25,
+      "ticks": [
+        7,
+        7.25,
+        7.5,
+        7.75
+      ],
+      "decimals": 2
+    },
+    {
+      "label": "S (°C²)",
+      "lo": 4.0,
+      "hi": 5.4,
+      "len": 0.9,
+      "ticks": [
+        4.5,
+        5.0
+      ],
+      "decimals": 1
+    }
+  ],
+  "view": {
+    "azim": 150,
+    "elev": 35,
+    "dist": 5,
+    "turn": 60
+  },
+  "views": [
+    {
+      "id": "along",
+      "label": "along the valley",
+      "azim": 147.5,
+      "elev": 10
+    },
+    {
+      "id": "across",
+      "label": "across it",
+      "azim": 57.5,
+      "elev": 10
+    },
+    {
+      "id": "above",
+      "label": "from above",
+      "azim": -90,
+      "elev": 90
+    }
+  ],
+  "key": {
+    "label": "S (°C²)",
+    "ticks": [
+      4.2,
+      4.5,
+      5,
+      5.4
+    ],
+    "decimals": 1
+  },
+  "layers": [
+    {
+      "type": "surface",
+      "grid": {
+        "nx": 97,
+        "ny": 97
+      },
+      "z": "data:S",
+      "palette": "viridis",
+      "range": [
+        4.19,
+        5.4
+      ]
+    },
+    {
+      "type": "line",
+      "x": "data:path_a",
+      "y": "data:path_b",
+      "z": "data:path_S",
+      "color": "c1",
+      "width": 2.4,
+      "lift": 0.08
+    },
+    {
+      "type": "marker",
+      "at": [
+        0,
+        7,
+        4.7074
+      ],
+      "label": "start (0, 7)",
+      "color": "c1",
+      "lift": 0.1
+    },
+    {
+      "type": "marker",
+      "at": [
+        -0.5553,
+        7.4099,
+        4.1968
+      ],
+      "label": "(−0.56, 7.41)",
+      "color": "c2",
+      "lift": 0.1,
+      "dx": 10,
+      "dy": 14
+    }
+  ]
+}

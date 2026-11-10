@@ -19,7 +19,10 @@
     "stage:build": "pnpm --filter slidev-addon-stage build:example",
     "stage:smoke": "pnpm --filter slidev-addon-stage smoke",
     "stage:smoke:dev": "pnpm --filter slidev-addon-stage smoke:dev",
-    "test:all": "pnpm test && pnpm make:clip && pnpm build:example && pnpm smoke && pnpm build:example:file && pnpm smoke:file && pnpm stage:test && pnpm stage:build && pnpm stage:smoke && pnpm stage:smoke:dev"
+    "explain3d:test": "pnpm --filter slidev-addon-explain3d test",
+    "explain3d:build": "pnpm --filter slidev-addon-explain3d build:example",
+    "explain3d:smoke": "pnpm --filter slidev-addon-explain3d smoke",
+    "test:all": "pnpm test && pnpm make:clip && pnpm build:example && pnpm smoke && pnpm build:example:file && pnpm smoke:file && pnpm stage:test && pnpm stage:build && pnpm stage:smoke && pnpm stage:smoke:dev && pnpm explain3d:test && pnpm explain3d:build && pnpm explain3d:smoke"
   },
   "devDependencies": {
     "@slidev/cli": "^52.1.0",

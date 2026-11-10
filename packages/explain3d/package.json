@@ -1,0 +1,53 @@
+{
+  "name": "slidev-addon-explain3d",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Slidev addon: 3D explainers for lecture slides, drawn as SVG — a scene declared as data (axes, surfaces, lines, points), turned by hand, with a presenter-to-audience sync and a static vector fallback",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MindaugasSarpis/slidev-videos.git",
+    "directory": "packages/explain3d"
+  },
+  "license": "MIT",
+  "keywords": [
+    "slidev-addon",
+    "svg",
+    "3d",
+    "lecture",
+    "presentation"
+  ],
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./explainers": "./explainers/index.js",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "explain3d": "bin/explain3d.mjs"
+  },
+  "files": [
+    "components",
+    "engine",
+    "explainers",
+    "bin",
+    "index.js",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "make": "node bin/explain3d.mjs make",
+    "golden": "node bin/explain3d.mjs golden",
+    "check": "node bin/explain3d.mjs check",
+    "build:example": "slidev build example/slides.md --out dist --base /",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "peerDependencies": {
+    "@slidev/cli": ">=52"
+  },
+  "devDependencies": {
+    "@slidev/cli": "^52.1.0",
+    "@slidev/theme-default": "0.25.0",
+    "playwright-chromium": "~1.59.1",
+    "vue": "3.5.42"
+  }
+}
