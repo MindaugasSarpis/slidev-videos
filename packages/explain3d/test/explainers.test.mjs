@@ -100,3 +100,59 @@ test('line-fit-valley: the ten yearly means give the line, the lowest S and the 
   const r = m.reduce('time,temp_c,humidity_pct,wind_ms\n2016-01-01T00:00,2.0,90,1\n2016-01-01T01:00,-999,90,1\n2016-01-01T02:00,4.0,90,1\n2017-01-01T00:00,-1.5,90,1\n');
   assert.deepEqual(r, { years: [2016, 2017], hours: [2, 1], means: [3, -1.5] });
 });
+
+// ---- neuron-plane: the numbers of Lecture 10, "The Decision Boundary Is a Line" ----------------
+test('neuron-plane: 3646 evenings, and the two neurons get right what the slide says', async () => {
+  const m = await import('../explainers/neuron-plane/make.mjs');
+  const n = readJSON('neuron-plane', 'data.json').numbers;
+  assert.equal(n.evenings, 3646);
+  assert.equal((1 - n.frost / n.evenings).toFixed(3), '0.663');            // "never frost" is right 66.3 % of the time
+  assert.deepEqual([n.upright.right, n.tilted.right], [3490, 3494]);
+  assert.deepEqual(n.tonight, { date: '2025-12-08', x1: 2.6, x2: 0.85, frost: 1 });
+  assert.deepEqual([n.upright.z_tonight, n.tilted.z_tonight], [1.2, 1.4]);
+  const spec = readJSON('neuron-plane', 'spec.json');
+  assert.deepEqual(spec.layers.filter((l) => l.type === 'marker').map((l) => l.at), [[2.6, 0.85, 1.2], [2.6, 0.85, 1.4]]);
+  assert.equal(m.saysFrost(1e-16), false);                                // an evening on the line is "no frost"
+  // reduce: 18:00 beside 06:00 of the next day; a missing hour drops the evening
+  const day = (d, t18, t06) => Array.from({ length: 24 }, (_, h) => `${d}T${String(h).padStart(2, '0')}:00,${h === 18 ? t18 : h === 6 ? t06 : 5},80,1`).join('\n');
+  const r = m.reduce(`time,temp_c,humidity_pct,wind_ms\n${day('2025-12-07', 3, 9)}\n${day('2025-12-08', 2.6, -1)}\n${day('2025-12-09', -999, 1)}\n${day('2025-12-10', 1, -4)}\n`);
+  assert.deepEqual(r, { temp: [3, 2.6], humidity: [80, 80], frost: [1, 0], tonight: 1 });
+});
+
+// ---- xor-ridge: the numbers of Lecture 11, "XOR Learned from Random Weights" ---------------------
+test('xor-ridge: 2000 steps from the course\'s nine starting weights reach the loss and the hidden outputs of the slide', async () => {
+  const m = await import('../explainers/xor-ridge/make.mjs');
+  const input = readJSON('xor-ridge', 'input.json');
+  const n = readJSON('xor-ridge', 'data.json').numbers;
+  assert.equal(input.start.length, 9);
+  assert.equal(input.start[0], 0.6888437030500962);                       // random.Random(0).uniform(-1, 1), the first draw
+  assert.deepEqual([n.loss_start.toFixed(3), n.loss_end.toFixed(3)], ['0.696', '0.003']);
+  assert.deepEqual(n.h1, [0.03, 0.98, 0.98, 1]);                           // an OR
+  assert.deepEqual(n.h2, [0, 0.05, 0.05, 0.93]);                           // an AND
+  assert.deepEqual(n.y.map((v) => Math.round(v)), m.XOR);
+  assert.throws(() => m.reduce('[1, 2]'), /nine numbers/);
+  const spec = readJSON('xor-ridge', 'spec.json');
+  const marks = spec.layers.filter((l) => l.type === 'marker');
+  assert.equal(marks.length, 12);
+  for (const mk of marks) {
+    const k = m.GATE.findIndex(([a, b]) => a === mk.at[0] && b === mk.at[1]);
+    assert.equal(mk.at[2], n[mk.in[0]][k], `${mk.in[0]} at ${mk.at}`);
+  }
+});
+
+// ---- hours-columns: the numbers of Lecture 8, "Temperature and Humidity of Every Hour" -------------
+test('hours-columns: every measured hour is in a cell, and r is the slide\'s', async () => {
+  const m = await import('../explainers/hours-columns/make.mjs');
+  const d = readJSON('hours-columns', 'data.json');
+  const n = d.numbers;
+  assert.deepEqual([n.hours, n.in_cells, n.outside], [87552, 87552, 0]);
+  assert.equal(n.r.toFixed(2), '-0.70');
+  assert.equal(n.mean_t.toFixed(2), '7.16');
+  assert.equal(Math.max(...d.counts), n.tallest.count);
+  const spec = readJSON('hours-columns', 'spec.json');
+  const mark = spec.layers.find((l) => l.type === 'marker');
+  assert.deepEqual(mark.at, [...n.tallest.at, n.tallest.count]);
+  assert.ok(mark.label.startsWith(`${n.tallest.count} hours`));
+  const r = m.reduce('time,temp_c,humidity_pct,wind_ms\n2016-01-01T00:00,-1.0,83,1\n2016-01-01T01:00,-999,90,1\n2016-01-01T02:00,33.9,100,1\n2016-01-01T03:00,-20,26,1\n');
+  assert.deepEqual([r.hours, r.outside, r.counts[0], r.counts.at(-1), r.counts.reduce((a, b) => a + b, 0)], [3, 0, 1, 1, 3]);
+});

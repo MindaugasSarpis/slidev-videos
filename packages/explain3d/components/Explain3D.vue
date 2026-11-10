@@ -407,8 +407,7 @@ onBeforeUnmount(() => {
   font-family: inherit;
   font-size: 0.875rem;
   font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
   color: var(--x3d-fg-2, var(--fg-2, #c3ccd8));
   background: none;
   border: none;

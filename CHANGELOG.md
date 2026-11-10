@@ -28,7 +28,12 @@ its own). A deck pins the addons it uses and the CLI to the same tag.
   moves, slower still and it stops turning by itself. First explainer:
   `line-fit-valley` (Lecture 9, "The Path Downhill"): S(a, b) of a line
   through the ten yearly means as a valley, with the 500 steps of gradient
-  descent. Node tests 32; a browser smoke on `example/` (`explain3d:smoke`),
+  descent. Then `neuron-plane` (Lecture 10: one neuron's z as a plane over
+  3646 evenings, the boundary where it crosses 0; a surface `split` at a
+  height), `xor-ridge` (Lecture 11: the trained 2-2-1 network's output as a
+  ridge, its hidden neurons as two slopes) and `hours-columns` (Lecture 8:
+  the 87 552 hours counted in cells of temperature × humidity; a `bars`
+  layer). Node tests 52; a browser smoke on `example/` (`explain3d:smoke`),
   and a CI job.
 - **Three shared cuts in the library** (`chore/shared-karjera-cuts`; their
   upload to `videos-shared` waits on the owner): Užsikrauk karjerai's 18 s LHC
