@@ -9,7 +9,8 @@
 //      coarse mesh, and at rest it is drawn in full again;
 //   7. the fallback: ?x3d-force=fail shows the golden picture, and a scene that
 //      is not sound says what is wrong; neither leaves the slide blank;
-//   8. nothing on the page threw.
+//   8. nothing on the page threw;
+//   9. every other explainer of the package draws, and morphs to its second state.
 // Every assertion polls for the state it expects, so a slow runner is only slow.
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -143,6 +144,21 @@ try {
   const broken = await open('4')
   check('a scene that is not sound says what is wrong', await until(async () => /axes: three are needed/.test(await broken.locator(`${SEC} p.x3d-msg`).textContent())))
   await broken.close()
+
+  // 9. every other explainer of the package draws, and its first state button works
+  for (const [slide, name, least] of [[5, 'neuron-plane', 300], [6, 'xor-ridge', 2000], [7, 'hours-columns', 400]]) {
+    const p = await open(String(slide))
+    const live = await until(async () => (await attr(p, 'data-state', SEC)) === 'live' && (await attr(p, 'data-explain3d', SEC)) === name)
+    const n = await until(async () => { const c = await p.locator(`${SEC} g.x3d-items path:not([style*="none"])`).count(); return c >= least ? c : 0 })
+    check(`${name} draws`, !!live && n >= least, `${n} paths`)
+    const states = p.locator(`${SEC} button[data-state-id]`)
+    if (await states.count()) {
+      const id = await states.nth(1).getAttribute('data-state-id')
+      await states.nth(1).click()
+      check(`${name}: its second state is shown`, await until(async () => (await attr(p, 'data-shown')) === id))
+    }
+    await p.close()
+  }
 
   // 8.
   const real = errors.filter((e) => !/forced to fail|axes: three are needed/.test(e))

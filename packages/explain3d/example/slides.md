@@ -79,3 +79,36 @@ const spec = {
 .box { height: 400px; display: flex; }
 .box > * { flex: 1; }
 </style>
+
+---
+
+# neuron-plane
+
+<div class="box"><Explain3D name="neuron-plane" /></div>
+
+<style>
+.box { height: 400px; display: flex; }
+.box > * { flex: 1; }
+</style>
+
+---
+
+# xor-ridge
+
+<div class="box"><Explain3D name="xor-ridge" /></div>
+
+<style>
+.box { height: 400px; display: flex; }
+.box > * { flex: 1; }
+</style>
+
+---
+
+# hours-columns
+
+<div class="box"><Explain3D name="hours-columns" /></div>
+
+<style>
+.box { height: 400px; display: flex; }
+.box > * { flex: 1; }
+</style>
