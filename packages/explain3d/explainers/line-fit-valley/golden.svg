@@ -6283,7 +6283,7 @@
 <text x="496.6" y="458" text-anchor="middle" dominant-baseline="central">7.50</text>
 <line x1="414.8" y1="479" x2="417.3" y2="484.8" stroke="#f2f5f9" stroke-width="1"/>
 <text x="419.9" y="491" text-anchor="middle" dominant-baseline="central">7.75</text>
-<text x="555.8" y="455.4" text-anchor="middle" dominant-baseline="central" font-size="15.625">intercept b (°C)</text>
+<text x="566.5" y="480.4" text-anchor="middle" dominant-baseline="central" font-size="15.625">intercept b (°C)</text>
 </g>
 <g font-size="13.75" fill="#f2f5f9">
 <line x1="241.2" y1="197.9" x2="235" y2="197.9" stroke="#f2f5f9" stroke-width="1"/>

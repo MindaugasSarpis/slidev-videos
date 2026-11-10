@@ -13,8 +13,8 @@ export const axisMap = (a) => (v) => ((v - a.lo) / (a.hi - a.lo) - 0.5) * a.len;
 
 /**
  * axes: three of { lo, hi, len, ticks, label, decimals }. Returns the edges in
- * pixels, and for every axis its ticks and name;
- * the height axis is left out when the scene is seen from above (a tilt over 75°).
+ * pixels, and for every axis its ticks and name; the height axis is left
+ * out when the scene is seen from above (a tilt over 75°), and any axis seen end-on.
  */
 export function boxFrame(axes, cam, vp, size) {
   const lens = axes.map((a) => a.len);
@@ -47,6 +47,8 @@ export function boxFrame(axes, cam, vp, size) {
       }
     }
     if (k === 2 && fromAbove) return null;
+    const edgeLen = Math.hypot(best.b.x - best.a.x, best.b.y - best.a.y);
+    if (edgeLen < 70) return null;                           // an axis seen end-on
     // outward: the edge's normal on the screen, on the side away from the centre
     let ox = -(best.b.y - best.a.y), oy = best.b.x - best.a.x;
     const n = Math.hypot(ox, oy) || 1;
@@ -60,12 +62,15 @@ export function boxFrame(axes, cam, vp, size) {
       const p = toScreen(cam, vp, ...best.at(map(t)));
       return { text: fmt(t, ax.decimals ?? 0), x: p.x, y: p.y, x2: p.x + ox * LOOK.tickLen, y2: p.y + oy * LOOK.tickLen, lx: p.x + ox * LOOK.tickOff, ly: p.y + oy * LOOK.tickOff };
     });
+    // … or nearly: its tick labels would lie on one another
+    for (let t = 1; t < ticks.length; t++) if (Math.hypot(ticks[t].x - ticks[t - 1].x, ticks[t].y - ticks[t - 1].y) < 34) return null;
     const label = ax.label || '';
-    const width = label.length * LOOK.name * 0.46;            // about the name's width
+    const width = label.length * LOOK.name * 0.55;            // about the name's width, rather more than less
     let name;
     if (k === 2) name = { x: best.b.x, y: best.b.y - 18, anchor: 'middle' };
     else {
-      const far = anchor === 'middle' ? LOOK.nameOff : LOOK.nameOff + 24;     // beside the tick labels, not over them
+      // beside the tick labels, not over them; under a slanted edge, far enough for the name's ends to clear it
+      const far = anchor === 'middle' ? LOOK.nameOff + (Math.abs(best.b.y - best.a.y) / edgeLen) * width * 0.5 : LOOK.nameOff + 24;
       name = { x: best.mid.x + ox * far, y: best.mid.y + oy * far, anchor };
     }
     const lo = name.anchor === 'start' ? 4 : name.anchor === 'end' ? 4 + width : 4 + width / 2;
