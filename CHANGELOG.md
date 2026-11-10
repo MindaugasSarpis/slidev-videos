@@ -1,11 +1,49 @@
 # Changelog
 
 One tag covers the whole repo: the CLI (`slidev-videos`), the player addon
-(`slidev-addon-videos`) and the stage addon (`slidev-addon-stage`, versioned
-on its own). A deck pins both addons and the CLI to the same tag.
+(`slidev-addon-videos`), the stage addon (`slidev-addon-stage`, versioned
+on its own) and the explainers addon (`slidev-addon-explain3d`, versioned on
+its own). A deck pins the addons it uses and the CLI to the same tag.
 
 ## Unreleased
 
+## v0.12.0 — 2026-11-10
+
+slidev-videos 0.12.0 · slidev-addon-stage 0.8.0 · slidev-addon-videos 0.12.0 · slidev-addon-explain3d 0.1.0
+
+A new package, the 3D explainers of the course's lectures; the stage and the
+player are as in v0.11.0.
+
+- **`slidev-addon-explain3d` 0.1.0, a new package** (`packages/explain3d`,
+  `feat/explain3d`): 3D explainers for lecture slides, drawn as SVG (the
+  owner, 10 Nov: "build a few 3D explainers for the course. Make them
+  versioned and repeatable, implement in tools"). The engine is extracted
+  from the course's two turning figures (`TurningSurface.vue`,
+  `TurningScatter.vue`): the camera of matplotlib's `view_init` with a mild
+  perspective, a scale that holds over a whole turn, the painter's order,
+  surfaces cut at the box and shaded, lines and points in depth, the box
+  with ticks on its outer edges, a drag to turn, glides to named views,
+  morphs between states, the presenter ↔ audience sync. A scene is data
+  (`spec.json`), its numbers come from a script (`make.mjs`: source file →
+  `input.json` with the file's SHA-256 → `data.json`; no clock, no random
+  numbers, no network), and its opening view is a committed `golden.svg`
+  that the tests compare and a slide shows when the live picture cannot be
+  drawn. `<Explain3D name="…" />`; the `explain3d` CLI (`list`, `reduce`,
+  `make`, `golden`, `check`, `render`). One look for every explainer, that
+  of the course's static figures (the owner, 10 Nov: "Make the style
+  uniform"). A watchdog: slow frames draw every second grid line while it
+  moves, slower still and it stops turning by itself. First explainer:
+  `line-fit-valley` (Lecture 9, "The Path Downhill"): S(a, b) of a line
+  through the ten yearly means as a valley, with the 500 steps of gradient
+  descent. Then `neuron-plane` (Lecture 10: one neuron's z as a plane over
+  3646 evenings, the boundary where it crosses 0; a surface `split` at a
+  height), `xor-ridge` (Lecture 11: the trained 2-2-1 network's output as a
+  ridge, its hidden neurons as two slopes) and `hours-columns` (Lecture 8:
+  the 87 552 hours counted in cells of temperature × humidity; a `bars`
+  layer). Node tests 52; a browser smoke on `example/` (`explain3d:smoke`,
+  29 checks), and a CI job. On a machine without a GPU the valley's 6260
+  paths are too slow to turn in full: the watchdog draws 1974 at 19 ms a
+  frame while it moves, all of them at rest.
 - **Three shared cuts in the library** (`chore/shared-karjera-cuts`; their
   upload to `videos-shared` waits on the owner): Užsikrauk karjerai's 18 s LHC
   tunnel cut as `cern_footage_2022_013_001_tunnel_cut.mp4`, its 10.8 s dipole

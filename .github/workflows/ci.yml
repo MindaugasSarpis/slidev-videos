@@ -43,3 +43,16 @@ jobs:
       - run: pnpm stage:build
       - run: pnpm stage:smoke
       - run: pnpm stage:smoke:dev   # the example under `slidev dev`: a deck's own builder, one engine, no WebGL in export
+  explain3d:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm explain3d:test      # the engine, and every explainer's data, golden picture and numbers
+      - run: pnpm explain3d:build
+      - run: pnpm explain3d:smoke     # live, drag, views, states, two windows, the watchdog, the fallbacks

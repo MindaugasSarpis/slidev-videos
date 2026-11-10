@@ -34,17 +34,18 @@ def test_init_matches_pyproject():
 
 
 def test_readme_install_lines_name_this_version():
-    for rel in ("README.md", "packages/stage/README.md"):
+    for rel in ("README.md", "packages/stage/README.md", "packages/explain3d/README.md"):
         tags = re.findall(r"slidev-videos[@#]v(\d+\.\d+\.\d+)", (ROOT / rel).read_text(encoding="utf-8"))
         assert tags, f"{rel} has no install line"
         assert set(tags) == {version()}, rel
 
 
-def test_changelog_has_this_version_with_its_stage():
+def test_changelog_has_this_version_with_its_packages():
     stage = json.loads((ROOT / "packages/stage/package.json").read_text(encoding="utf-8"))["version"]
-    assert SEMVER.match(stage)
+    explain3d = json.loads((ROOT / "packages/explain3d/package.json").read_text(encoding="utf-8"))["version"]
+    assert SEMVER.match(stage) and SEMVER.match(explain3d)
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     section = re.search(rf"^## v{re.escape(version())} — (\d{{4}}-\d{{2}}-\d{{2}})\n\n(.*)$", changelog, re.M)
     assert section, f"CHANGELOG.md has no dated '## v{version()} — YYYY-MM-DD' section"
     assert section.group(2) == (f"slidev-videos {version()} · slidev-addon-stage {stage}"
-                                f" · slidev-addon-videos {version()}")
+                                f" · slidev-addon-videos {version()} · slidev-addon-explain3d {explain3d}")
