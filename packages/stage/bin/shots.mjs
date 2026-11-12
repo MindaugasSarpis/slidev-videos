@@ -43,6 +43,10 @@ export const LOCK = '/tmp/slidev-stage-shots.lock';
 const VERSION = 2;
 // the headless browser's own complaints, not the deck's
 const NOISE = /Wake Lock|favicon/i;
+// What the overflow check leaves out: elements full-bleed by design. A clip's
+// player, and anything a talk marks with data-full-bleed (a pan or a push that
+// runs past the slide's edges on purpose; a component's root, and all inside it)
+export const FULL_BLEED = '.video-player, [data-full-bleed]';
 const STEP_MS = 100;   // a fast frame: past the engine's 1/12 s clamp, so every frame is one full engine step
 
 // ---- serving ------------------------------------------------------------------------------
@@ -535,7 +539,7 @@ function pageInit(cfg) {
     const scale = lay.offsetWidth ? r.width / lay.offsetWidth : 1;
     let bottom = 0, right = 0;
     for (const el of lay.querySelectorAll('*')) {
-      if (el.closest('.video-player')) continue;     // full-bleed by design
+      if (el.closest(cfg.bleed)) continue;           // full-bleed by design (FULL_BLEED)
       const b = el.getBoundingClientRect();
       if (b.height > 0 && b.width > 0) { bottom = Math.max(bottom, b.bottom); right = Math.max(right, b.right); }
     }
@@ -663,7 +667,7 @@ class Deck {
     const { o } = this;
     this.context = await this.browser.newContext({ viewport: { width: o.size[0], height: o.size[1] }, deviceScaleFactor: o.draft ? 0.5 : 1 });
     const page = this.page = await this.context.newPage();
-    await page.addInitScript(pageInit, { seed: o.seed, step: STEP_MS, halo: o.halo, stills: o.stills, over: STAGE_OVER_WORLD });
+    await page.addInitScript(pageInit, { seed: o.seed, step: STEP_MS, halo: o.halo, stills: o.stills, over: STAGE_OVER_WORLD, bleed: FULL_BLEED });
     const origin = new URL(this.url).origin;
     page.on('pageerror', (e) => { if (!NOISE.test(e.message)) this.sink.errors.push(`pageerror: ${e.message.slice(0, 300)}`); });
     page.on('console', (m) => {

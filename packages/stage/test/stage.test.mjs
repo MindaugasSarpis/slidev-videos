@@ -11,7 +11,7 @@ import { resolvePalette, PALETTES, DEFAULT_PALETTE, LOOKS, hexToRgb, rgbTriplet,
 import { checkStage, readStageConfig, deckPoses, deckSlides, deckTypes, deckClocks, deckComponents, readYaml, deckPlaces, deckPlaceList, deckPlaceGroups, deckPages, main as checkMain } from '../bin/check.mjs';
 import { formatCount, countRun, countAt, countSpan, COUNT_DOWN_MS } from '../stage/count.js';
 import { deckHasThree } from '../vite.config.js';
-import { parseSlides, parseArgs, detectBase, clicksFor, frameName, parseProcLocks, problemsOf, cacheable, split, serve, staticKey, clipName, deckUrl, forcedSettled, LIVING_FRAMES } from '../bin/shots.mjs';
+import { parseSlides, parseArgs, detectBase, clicksFor, frameName, parseProcLocks, problemsOf, cacheable, split, serve, staticKey, clipName, deckUrl, forcedSettled, LIVING_FRAMES, FULL_BLEED } from '../bin/shots.mjs';
 import { placesDecl, placeGroupsAt } from '../stage/place-groups.js';
 
 const here = (p) => new URL(p, import.meta.url);
@@ -912,4 +912,15 @@ test('--changed never keeps a failure: an unsettled, failed or erroring frame is
   assert.equal(cacheable({ settled: true, pageErrors: ['x'] }), false);
   assert.equal(cacheable({ settled: true, httpErrors: [{ local: true }] }), false);
   assert.equal(cacheable({ settled: true, httpErrors: [{ local: false }] }), true);
+});
+
+// Tokyo (12 Nov): a photo's pan runs past the slide's edges on purpose, and the overflow check
+// counted it (only a clip's player was left out). An element marked data-full-bleed is left out,
+// with everything inside it.
+test('shots: the overflow check leaves out a clip\'s player and what is marked data-full-bleed', () => {
+  assert.equal(FULL_BLEED, '.video-player, [data-full-bleed]');
+  const src = readFileSync(SHOTS, 'utf8');
+  assert.match(src, /el\.closest\(cfg\.bleed\)/);
+  assert.match(src, /bleed: FULL_BLEED/);
+  assert.doesNotMatch(src, /el\.closest\('\.video-player'\)\) continue/);
 });

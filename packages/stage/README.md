@@ -508,6 +508,13 @@ the page is photographed. The halo and the talks' counters read the same
 clock, so they have finished too. `--wait` caps one frame's settle in wall
 time; a frame that reaches it is reported as not settled.
 
+The page's clock runs ahead of the wall clock while it settles, so whatever
+a slide times on it — a CSS `animation-delay`, a `setTimeout`, a component
+that waits for the clip to end — is already under way, or done, when the
+frame is shot. A delay does not keep an element out of the picture or out of
+the overflow check (Tokyo, 12 Nov: a pan's scaled `<img>`, delayed, still
+ran off the slide in every frame).
+
 The frame-rate guard is held from the first frame, so every picture has the
 full pixel ratio and dust (the report records `dpr` and `dust`).
 `Math.random` is seeded (`--seed`, default 1) and the clock moves in whole
@@ -682,7 +689,7 @@ run goes (a crash keeps what was photographed):
 | `flying`, `assembled`, `dpr`, `dust`, `dustTotal` | the world's state in the picture (`dust`: grains drawn, of `dustTotal`) |
 | `probe` | `stage` (window.__stage), `handles` (an older engine's canvas.__space) or `none` |
 | `fallback`, `layer` | `html[data-stage-fallback]` and `[data-stage-layer]` in the picture: why the world does not run, and what stands in (`world` while it runs) |
-| `overflowPx`, `overflowRightPx` | how far the slide's content runs past its bottom and right edges (negative: inside) |
+| `overflowPx`, `overflowRightPx` | how far the slide's content runs past its bottom and right edges (negative: inside). Left out: elements full-bleed by design, a clip's `.video-player` and anything inside an element with `data-full-bleed` (a photo's pan or push that runs past the edges on purpose) |
 | `textBoxes` | `[{ text, x, y, w, h, fontPx, lumMean, lumVar, white }]`: every visible box of text on the slide and in the stop HUD, in screen px; luminance (0–1) of its area in the picture, and the share of clipped white |
 | `wordsOnScreen`, `minFontPx` | |
 | `pageErrors`, `consoleWarnings`, `httpErrors` | since the frame before (`httpErrors`: `{ status, url, local }`) |
@@ -773,7 +780,7 @@ unknown. The stop HUD needs the world and is not measured.
 
     slidev-stage-record <dist> <out-dir> [--fps 50] [--size 1920x1080] [--slides 2-5]
                         [--plate | --plate-only] [--hold 8] [--max 40] [--clicks all|none|'{"3":1}']
-                        [--base auto] [--seed 1] [--flash] [--skip-clips]
+                        [--base auto] [--seed 1] [--flash] [--skip-clips] [--cold all|6,9-10]
                         [--gl auto|gpu-nvidia|d3d12|llvmpipe|swiftshader|gl]
                         [--chromium path] [--encoder auto|nvenc|x264]
 
@@ -798,6 +805,15 @@ from the others by about a level after its first frame).
 | `NN-cK.mp4` | the same slide after its K-th click (a stop), for slides with clicks |
 | `NN-plate.mp4` | with `--plate`: the same frames as the world alone — without the slide's text, the halo, the stop HUD, the scrim, the paper grain or the videos addon's push overlay — for an editor's own type, and for the stage to play under the slide where the world cannot run ([When the world cannot run](#when-the-world-cannot-run)): it draws its scrim and grain over the plate as over the world, so neither is in the plate. `--plate-only` writes the plates alone, half the frames shot. A clip slide has no plate: the clip is the picture itself, and the edit list says so |
 | `index.json` | the edit list: each file's length, when it settled, where the camera stood, its frame hashes, the renderer, flash warnings, the clips it shows or could not record (a clip in the dist by its path there), and the clips ended before it arrived; `hold`, `plateFps` (the plates' rate, the same as `fps`; `null` without plates) and `plateOnly`, for whoever plays the plates. The takes are silent: a clip's `sound` says where it played in the take (`start` and `end` in the take's seconds, `t` the clip's own second at `start`, `muted`, the loudest `volume`, `loop`; `null` when it never played), for laying the source clip's sound back under it |
+
+`--cold` opens the slides it names (`all`, or slides and ranges) on
+themselves instead: the page loads at the slide, with nothing of the slide
+before it, so the take has no flight in and carries none of that slide's
+running effects (a form still dissolving, grains in flight, a clip run out);
+the world comes up as on a page load, out of its fade-in.
+For a take that must start clean: Tokyo's finale world take came in after
+its globe take and carried the globe's grains across the frame, until the
+talk put an empty slide between them. The segment says `cold: true`.
 
 `--skip-clips` does not film a clip slide (a `VideoPlayer`'s; a bare
 `<video>` beside text is filmed): its segment in the edit list has no file

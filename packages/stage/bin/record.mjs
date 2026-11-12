@@ -8,7 +8,7 @@
 //
 //   slidev-stage-record <dist> <out-dir> [--fps 50] [--size 1920x1080] [--slides 2-5]
 //                       [--plate | --plate-only] [--hold 8] [--max 40] [--clicks all|none|'{"3":1}']
-//                       [--base auto] [--seed 1] [--flash] [--skip-clips]
+//                       [--base auto] [--seed 1] [--flash] [--skip-clips] [--cold all|6,9-10]
 //                       [--gl auto|gpu-nvidia|d3d12|llvmpipe|swiftshader|gl]
 //                       [--chromium path] [--encoder auto|nvenc|x264]
 //
@@ -38,6 +38,16 @@
 // it: that slide at its last click, settled, and its clips played to their
 // end (a presenter waits for a clip), so the arrival starts over the clip's
 // last frame; the edit list names those clips (`from`).
+//
+//   --cold    these slides (or all) open on themselves instead: the page is
+//             loaded at the slide, with nothing of the slide before it — no
+//             flight in, no clip run out, none of its running effects (a
+//             form still dissolving, grains in flight). For a take that has
+//             to start clean (Tokyo, 12 Nov: the finale's world take came in
+//             after the globe take and carried its grains across the frame;
+//             the talk had put an empty slide between them). The world
+//             comes up as on a page load, out of its fade-in. The segment
+//             says `cold: true`
 //
 // A clip slide has no plate: the clip is the picture itself. The next slide's
 // plate begins on the world as it stood under the clip (the clip and the push
@@ -97,7 +107,7 @@ import { resolveFfmpeg, pickEncoder, plateEncoder, encoder, decodeSmall } from '
 import { seedRandom, recorderHooks, PLATE_HIDDEN } from './lib/record-page.mjs';
 import { findFlashes } from './lib/record-flash.mjs';
 
-const USAGE = "usage: slidev-stage-record <dist> <out-dir> [--fps 50] [--size 1920x1080] [--slides 2-5] [--plate | --plate-only] [--hold 8] [--max 40] [--clicks all|none|'{\"3\":1}'] [--base auto] [--seed 1] [--flash] [--skip-clips] [--gl auto|gpu-nvidia|d3d12|llvmpipe|swiftshader|gl] [--chromium path] [--encoder auto|nvenc|x264]";
+const USAGE = "usage: slidev-stage-record <dist> <out-dir> [--fps 50] [--size 1920x1080] [--slides 2-5] [--plate | --plate-only] [--hold 8] [--max 40] [--clicks all|none|'{\"3\":1}'] [--base auto] [--seed 1] [--flash] [--skip-clips] [--cold all|6,9-10] [--gl auto|gpu-nvidia|d3d12|llvmpipe|swiftshader|gl] [--chromium path] [--encoder auto|nvenc|x264]";
 const GL = MODES.filter((m) => m !== 'none');
 const PREROLL_STEP = 83;     // ms: the engine's own frame-time clamp (12 fps), so the world gets there in the fewest frames
 const NOISE = /Wake Lock/;   // page errors that say nothing about the deck
@@ -105,7 +115,7 @@ const NOISE = /Wake Lock/;   // page errors that say nothing about the deck
 // A malformed or unknown option throws (a usage error, exit 2): a typo would
 // otherwise record something other than what was asked.
 export function parseArgs(argv) {
-  const o = { dist: null, out: null, fps: 50, size: [1920, 1080], slides: null, plate: false, plateOnly: false, skipClips: false, hold: 8, max: 40, clicks: 'all', base: 'auto', seed: 1, flash: false, gl: 'auto', chromium: '', encoder: 'auto' };
+  const o = { dist: null, out: null, fps: 50, size: [1920, 1080], slides: null, plate: false, plateOnly: false, skipClips: false, cold: null, hold: 8, max: 40, clicks: 'all', base: 'auto', seed: 1, flash: false, gl: 'auto', chromium: '', encoder: 'auto' };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -123,6 +133,10 @@ export function parseArgs(argv) {
     else if (a === '--seed') o.seed = Number(value());
     else if (a === '--flash') o.flash = true;
     else if (a === '--skip-clips') o.skipClips = true;
+    else if (a === '--cold') {
+      const v = value();
+      try { o.cold = v === 'all' ? v : checkSlides(v); } catch { throw new Error(`--cold wants all or slides and ranges, e.g. 6,9-10 (got ${v})`); }
+    }
     else if (a === '--gl') o.gl = oneOf(...GL);
     else if (a === '--chromium') o.chromium = value();
     else if (a === '--encoder') o.encoder = oneOf('auto', 'nvenc', 'x264');
@@ -149,6 +163,13 @@ export function glMode(o, env = process.env) {
   if (mode === 'none') throw new Error('slidev-stage-record: SLIDEV_STAGE_GL=none leaves nothing to record (the recorder draws every frame of the world); unset it or pass --gl');
   if (!GL.includes(mode)) throw new Error(`slidev-stage-record: SLIDEV_STAGE_GL wants ${GL.join(', ')} (got ${mode})`);
   return mode;
+}
+
+// The slide whose page a take of slide n is opened on: the one before it (the
+// arrival an audience sees), or n itself where --cold names it.
+export function arrivesFrom(o, n) {
+  const cold = o.cold === 'all' || (o.cold != null && parseSlides(o.cold, 500).includes(n));
+  return cold ? n : Math.max(1, n - 1);
 }
 
 // 'all' | 'none' | '{"3":1}' (slide → how many of its clicks)
@@ -428,12 +449,13 @@ export async function record(o, log = console.log) {
     for (const n of parseSlides(o.slides, 500)) {
       // each slide starts fresh, from the slide before it (at its last click),
       // settled and with its clips played out: the arrival is the one a
-      // presenter's audience would see
-      const from = Math.max(1, n - 1);
+      // presenter's audience would see; a --cold slide on itself
+      const from = arrivesFrom(o, n), cold = from === n && n > 1;
       const deck = await openDeck(browser, o, url, from, errors);
       let ended = [];
       try {
-        if (n > 1) {
+        if (cold && !(await shown(deck.page, n))) { log(`slide ${n} not found: the deck ends before it`); break; }
+        if (from < n) {
           if (!(await shown(deck.page, from))) { log(`slide ${n} not found: the deck ends before slide ${from}`); break; }
           const before = await look(deck.page, from);
           if (before.clicksTotal) await goTo(deck.page, from, before.clicksTotal);
@@ -458,6 +480,7 @@ export async function record(o, log = console.log) {
           if (seg.skipped) seg.clip.src = named(seg.clip.src);
           // the arrival begins on the last frame of these
           if (k === 0 && ended.length) seg.from = { slide: from, clipsEnded: ended.map((c) => named(c.src)) };
+          if (cold) seg.cold = true;
           if (seg.embed) log(`${pad(n)}${k ? `-c${k}` : ''}  the clip, not filmed (--skip-clips): ${seg.clip.src}, ${seg.clip.duration?.toFixed?.(2) ?? '?'} s${seg.clip.muted ? ', muted' : `, volume ${seg.clip.volume}`}`);
           else if (!seg.skipped) {
             if (o.flash) {

@@ -6,7 +6,7 @@ import { readFileSync, mkdtempSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LOOKS, PALETTES, resolveLook, resolvePalette, liftGround, definePalette, paletteVars } from '../stage/palette.js';
-import { parseArgs as recordArgs, main as recordMain, glMode, trackClip, clipEntry, embedEntry } from '../bin/record.mjs';
+import { parseArgs as recordArgs, main as recordMain, glMode, trackClip, clipEntry, embedEntry, arrivesFrom } from '../bin/record.mjs';
 import { parseArgs as safeArgs, main as safeMain, judge, RULES } from '../bin/safe.mjs';
 import { detectBase, normaliseBase, parseSlides, checkSlides, parseSize } from '../bin/lib/record-serve.mjs';
 import { findFlashes } from '../bin/lib/record-flash.mjs';
@@ -87,6 +87,21 @@ test('every type size of the CSS kit follows the scale and the floor', () => {
 });
 
 // ---- the recorder --------------------------------------------------------------------
+// --cold (Tokyo, 12 Nov): a take came to its slide from the slide before it and carried that slide's
+// running effects in (the globe take's grains strung across the finale's world take); the talk put an
+// empty slide between them. Opened cold, a slide's take starts on the slide itself.
+test('record --cold: these slides open on themselves, not from the slide before', () => {
+  assert.equal(recordArgs(['d', 'o']).cold, null);
+  assert.equal(recordArgs(['d', 'o', '--cold', 'all']).cold, 'all');
+  assert.equal(recordArgs(['d', 'o', '--cold', '6,9-10']).cold, '6,9-10');
+  assert.throws(() => recordArgs(['d', 'o', '--cold']), /--cold wants a value/);
+  assert.throws(() => recordArgs(['d', 'o', '--cold', 'x']), /--cold wants all or slides/);
+  const warm = recordArgs(['d', 'o']), some = recordArgs(['d', 'o', '--cold', '6,9-10']), every = recordArgs(['d', 'o', '--cold', 'all']);
+  assert.deepEqual([1, 2, 6, 7].map((n) => arrivesFrom(warm, n)), [1, 1, 5, 6]);
+  assert.deepEqual([5, 6, 9, 10, 11].map((n) => arrivesFrom(some, n)), [4, 6, 9, 10, 10]);
+  assert.deepEqual([1, 2, 6].map((n) => arrivesFrom(every, n)), [1, 2, 6]);
+});
+
 test('record arguments', () => {
   const o = recordArgs(['dist', 'out']);
   assert.equal(o.fps, 50);
