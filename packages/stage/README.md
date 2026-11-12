@@ -285,6 +285,25 @@ hero's type, `.src`, `.quote-hero`, `.world-caption`, `.plate`, `.row` +
 `.col-40…60`) is keyed on `html[data-stage]`; override any of it from the
 deck's own `styles/index.css`.
 
+### A slide's own components
+
+Two things a talk's components ran into (Tokyo, 12 Nov):
+
+- **A WebGL scene of a slide's own** (a three.js renderer in a component, apart
+  from the world) keeps its renderer for as long as the component lives:
+  pause its loop when the slide is left, start it again on entry, and
+  dispose on unmount. Never call `renderer.forceContextLoss()` on leaving the
+  slide. A canvas has one WebGL context for its life; once it is lost, every
+  later start draws into the lost context, and the slide stays black after a
+  step back to it (Tokyo's quark recipes and Dalitz plot, "not refreshable").
+  `forceContextLoss()` belongs only where the canvas goes too: on unmount, or
+  when a fresh canvas replaces it, as the stage's own rebuild does.
+- **A component's name and the icon resolver.** Slidev resolves a tag whose
+  name starts with an icon set's name as an icon, at build time, before the
+  deck's `app.component` is consulted: `<FlagsBehind>` was read as the icon
+  set `flag` and never reached the talk's component. Give the component a
+  name no icon set's name starts (`BehindFlags`).
+
 ### Custom builders
 
 A builder is `(object, ctx) => parts`, called once per object of its type
