@@ -47,8 +47,17 @@ export const needsReanchor = (clockT, mediaT, tol = REANCHOR) => Math.abs(clockT
 
 const later = (fn, ms) => setTimeout(fn, Math.max(0, ms));
 // drop what is scheduled from `at` on, holding the value in force (an engine that keeps an active curve
-// on cancelScheduledValues would throw on the next event inside it); cancelScheduledValues where not
-const release = (g, at) => (typeof g.cancelAndHoldAtTime === 'function' ? g.cancelAndHoldAtTime(at) : g.cancelScheduledValues(at));
+// on cancelScheduledValues would throw on the next event inside it); cancelScheduledValues where not.
+// Chromium's cancelAndHoldAtTime itself throws ("setValueCurveAtTime … overlaps") when a press comes
+// while a fade's curve runs (Tokyo, 12 Nov: music across many slides at different levels); then what
+// the call means, by hand: the whole schedule cancelled, the value sounding now held from `at`
+export const release = (g, at) => {
+  if (typeof g.cancelAndHoldAtTime !== 'function') return g.cancelScheduledValues(at);
+  try { g.cancelAndHoldAtTime(at); } catch {
+    const v = g.value;
+    try { g.cancelScheduledValues(0); g.setValueAtTime(v, at); } catch { /* no device */ }
+  }
+};
 const frame = (fn) => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(fn) : setTimeout(fn, 16));
 
 // context(): the AudioContext or null; out(): the node tracks connect to (null: the

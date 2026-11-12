@@ -198,3 +198,35 @@ test('review #6: an accent waits for the track to sound, and follows a seek', ()
 test('review #16: a drop counts on the slide’s clip when it has one, else on the music (the talks’ default kept)', () => {
   assert.match(read('../components/StageSoundtrack.vue'), /const mode = d\.clock \|\| \(clipOf\(\) \? 'clip' : 'music'\)/);
 });
+
+// ---- Tokyo (12 Nov): what a talk with music across many slides found -------------------------
+
+// Chromium's cancelAndHoldAtTime throws ("setValueCurveAtTime … overlaps") when a press comes
+// while a fade's curve is still running: the error went uncaught and the level stayed where it was.
+// Tokyo's guard (setup/main.ts, holdOnOverlap) did what the call means: the schedule cancelled,
+// the present value held.
+function overlapping(p) {
+  p.cancelAndHoldAtTime = (t) => {
+    if (p.calls.some((c) => c[0] === 'curve' && c[2] < t && c[2] + c[3] > t)) {
+      throw new DOMException("Failed to execute 'cancelAndHoldAtTime' on 'AudioParam': setValueCurveAtTime overlaps", 'NotSupportedError');
+    }
+    p.calls.push(['hold', t]);
+  };
+  return p;
+}
+
+test('Tokyo (a): a press during a fade does not throw when cancelAndHoldAtTime refuses; the value is held', () => {
+  const { m, ctx } = rig();
+  const t = playing(m, 'audio/bed.m4a', 0.6);            // a 2 s fade-in from ctx 100
+  overlapping(t.gain.gain);
+  ctx.currentTime = 100.5; t.gain.gain.value = 0.3;      // half-way up
+  assert.doesNotThrow(() => m.fadeTo(0.35, 1200));       // the next slide's level, mid-fade
+  const calls = t.gain.gain.calls;
+  const i = calls.findIndex((c) => c[0] === 'cancel' && c[1] <= 100.5);
+  assert.ok(i >= 0, 'the schedule was cancelled');
+  assert.ok(calls.slice(i).some((c) => c[0] === 'set' && Math.abs(c[1] - 0.3) < 1e-9 && c[2] === 100.5), 'the present value held at now');
+  const c = calls.filter((x) => x[0] === 'curve').pop();
+  assert.equal(c[2], 100.5);                             // and the new fade from there
+  assert.ok(Math.abs(c[1][0] - 0.3) < 1e-6);
+  assert.doesNotThrow(() => m.set(t, 0.2));              // a set mid-curve too
+});

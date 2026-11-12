@@ -46,3 +46,30 @@ test('the three components enter through whenEntered, not Slidev’s onSlideEnte
     assert.doesNotMatch(src, /\bonSlideEnter\(/, c);
   }
 });
+
+// Tokyo (12 Nov): after a step back and forward again onto a slide with `start`, the music did not
+// start; the next slide started it. The slide's entry ran before the watcher that keeps the previous
+// slide, so it read the slide it had just come back from (its own number) and took the arrival for
+// a step back. The previous slide has to be known before any slide's entry runs.
+import { computed } from 'vue';
+import { trackPrev } from '../stage/slide-hooks.js';
+
+test('Tokyo (b): back and forward again onto a slide is a forward arrival', async () => {
+  const cur = ref(1);
+  const seen = [];
+  // slide 2's soundtrack enters first (its setup ran before the first one's onMounted made the watcher)
+  whenEntered(computed(() => cur.value === 2), () => seen.push({ prev: h.prev, forward: h.prev == null || h.prev < 2 }));
+  const h = trackPrev(cur);
+  cur.value = 2; await nextTick();       // 1 → 2
+  cur.value = 1; await nextTick();       // back
+  cur.value = 2; await nextTick();       // forward again
+  assert.equal(seen.length, 2);
+  assert.deepEqual(seen.map((s) => s.prev), [1, 1]);
+  assert.ok(seen.every((s) => s.forward));
+});
+
+test('StageSoundtrack reads the previous slide from trackPrev', () => {
+  const src = read('../components/StageSoundtrack.vue');
+  assert.match(src, /trackPrev\(/);
+  assert.doesNotMatch(src, /G\.prev = old/);
+});

@@ -14,3 +14,14 @@ import { watch } from 'vue';
 export function whenEntered(active, cb) {
   return watch(active, (on) => { if (on) cb(); }, { immediate: true });
 }
+
+// The slide the deck was on before the current one: { prev, off }. StageSoundtrack's `start`
+// asks it whether an arrival is forward. Kept as the slide changes (flush: 'sync'), before any
+// slide's entry runs: a watcher in the pre-flush queue ran after the entries made before it, so
+// after a step back and forward again the entry read the slide it had come back from (Tokyo,
+// 12 Nov: the music did not start).
+export function trackPrev(current) {
+  const h = { prev: null, off: () => {} };
+  h.off = watch(current, (n, old) => { h.prev = old ?? null; }, { flush: 'sync' });
+  return h;
+}

@@ -1,7 +1,7 @@
 <script setup>
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted, effectScope } from 'vue'
 import { onSlideLeave, useIsSlideActive, useSlideContext, useNav } from '@slidev/client'
-import { whenEntered } from '../stage/slide-hooks.js'
+import { whenEntered, trackPrev } from '../stage/slide-hooks.js'
 import { music } from '../stage/soundtrack.js'
 import { warmAudio } from '../stage/sound.js'
 import { onSoundLevel, musicKeys, installSoundKeys } from '../stage/sound-level.js'
@@ -51,8 +51,11 @@ const nav = useNav()
 const page = () => $page?.value ?? $page
 // the audience's window only: not the presenter, the overview, a preview or print
 const live = () => $renderContext?.value === 'slide' && !nav.isPrintMode?.value && !nav.isPresenter?.value
-const G = shared('soundtrack', () => ({ pages: new Map(), prev: null, watching: false }))
+// G.hist.prev: the slide before the current one, kept before any slide's entry runs (trackPrev)
+const G = shared('soundtrack', () => ({ pages: new Map(), hist: null, watching: false }))
 if (props.keys) musicKeys(page())
+// once a page, for its life (a scope of its own: not stopped with the component that made it)
+if (live() && !G.hist) G.hist = effectScope(true).run(() => trackPrev(() => nav.currentSlideNo?.value))
 installSoundKeys()
 
 const root = ref(null)
@@ -61,7 +64,8 @@ const unlock = () => { const c = warmAudio(); c?.state === 'suspended' && c.resu
 
 function arrive() {
   unlock()
-  const forward = G.prev == null || G.prev < page()
+  const prev = G.hist?.prev ?? null
+  const forward = prev == null || prev < page()
   if (props.start && !music.playing() && forward) return music.begin(props.src, props.level)
   if (props.resync && props.tail) {
     if (!music.playing()) return music.begin(props.tail, props.level)   // opened here: the build onward
@@ -170,8 +174,7 @@ onMounted(() => {
   // no press yet when a track was asked to play: the next press plays it
   const onPress = () => { const p = music.pending; music.pending = null; p?.() }
   window.addEventListener('keydown', onPress); window.addEventListener('pointerdown', onPress)
-  const off = watch(() => nav.currentSlideNo?.value, (n, old) => {
-    G.prev = old ?? null
+  const off = watch(() => nav.currentSlideNo?.value, (n) => {
     if (!G.pages.has(n) && music.playing()) { const t = music.current; music.fade(t, 0, 1500, () => t.e.pause()) }
   })
   stop = () => { off(); window.removeEventListener('keydown', onPress); window.removeEventListener('pointerdown', onPress); G.watching = false }
