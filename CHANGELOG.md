@@ -7,6 +7,31 @@ its own). A deck pins the addons it uses and the CLI to the same tag.
 
 ## Unreleased
 
+From the Tokyo talk (2026-11-18), what it built or worked round, taken into
+the stage (slidev-addon-stage):
+
+- **StageSoundtrack: a press during a fade.** Chromium's
+  `cancelAndHoldAtTime` throws ("setValueCurveAtTime … overlaps") when a press
+  comes while a fade's curve runs; the error went uncaught and the level
+  stayed. `release` (stage/soundtrack.js) now falls back to what the call
+  means: the schedule cancelled, the value sounding now held.
+- **StageSoundtrack: `start` after a step back.** After a step back and
+  forward again onto a slide with `start`, the music did not start (the next
+  slide started it): the slide's entry ran before the watcher that keeps the
+  previous slide. The previous slide is now kept on a sync watcher for the
+  page's life (`trackPrev`, stage/slide-hooks.js).
+- **`slidev-stage-record --cold all|6,9-10`**: the named slides' takes open
+  on the slide itself, with nothing of the slide before it (no flight in, none
+  of its running effects). The segment says `cold: true`.
+- **Shots: `data-full-bleed`.** The overflow check leaves out anything inside
+  an element with `data-full-bleed`, as it left out a clip's player. The
+  README's Headless review says the page's clock runs ahead while a frame
+  settles, so a delayed animation is already under way when it is shot.
+- **README: a slide's own components.** A slide's own WebGL renderer is kept
+  while its component lives (never `forceContextLoss()` on leaving the
+  slide); a component's name must not start with an icon set's name
+  (`FlagsBehind` was read as the set `flag`).
+
 ## v0.12.1 — 2026-11-10
 
 slidev-videos 0.12.1 · slidev-addon-stage 0.8.0 · slidev-addon-videos 0.12.1 · slidev-addon-explain3d 0.1.1
